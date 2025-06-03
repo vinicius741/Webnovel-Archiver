@@ -99,6 +99,12 @@ def test_archive_story_successful_run_default_workspace(runner, mock_successful_
         data = json.load(f)
         assert data['story_url'] == story_url
 
+    # Verify temp dirs are NOT present (default behavior)
+    raw_dir_path = os.path.join(temp_workspace, RAW_CONTENT_DIR, "test_story_id_123")
+    processed_dir_path = os.path.join(temp_workspace, PROCESSED_CONTENT_DIR, "test_story_id_123")
+    assert not os.path.exists(raw_dir_path), f"Raw directory {raw_dir_path} should have been deleted."
+    assert not os.path.exists(processed_dir_path), f"Processed directory {processed_dir_path} should have been deleted."
+
 def test_archive_story_with_output_dir_and_options(runner, mock_successful_orchestrator, temp_workspace):
     story_url = "http://example.com/anothermock"
     custom_output_dir = os.path.join(temp_workspace, "custom_out")
@@ -199,6 +205,42 @@ def test_archive_story_orchestrator_failure(runner, monkeypatch, temp_workspace)
     assert "An error occurred during the archival process: Core Orchestrator Failed!" in result.output
     # Click by default exits with 1 on unhandled exceptions. If specific exit codes are desired,
     # the handler's except block would need to sys.exit(code).
+
+def test_archive_story_deletion_with_other_options(runner, mock_successful_orchestrator, temp_workspace):
+    """Test that temp files are deleted by default even with other options like title override."""
+    story_url = "http://example.com/deletetest"
+    custom_output_dir = os.path.join(temp_workspace, "delete_out")
+    title_override = "Deletion Test Novel"
+
+    result = runner.invoke(archiver, [
+        'archive-story', story_url,
+        '--output-dir', custom_output_dir,
+        '--ebook-title-override', title_override
+        # Note: --keep-temp-files is NOT passed, so it's False
+    ])
+
+    assert result.exit_code == 0, f"CLI errored: {result.output}"
+    assert f"Using provided output directory: {custom_output_dir}" in result.output
+
+    mock_successful_orchestrator.assert_called_once()
+    args, kwargs = mock_successful_orchestrator.call_args
+    assert kwargs['story_url'] == story_url
+    assert kwargs['workspace_root'] == custom_output_dir
+    assert kwargs['ebook_title_override'] == title_override
+    assert kwargs['keep_temp_files'] is False # Explicitly check it's passed as False
+
+    # Verify progress file was created
+    progress_file = os.path.join(custom_output_dir, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    assert os.path.exists(progress_file)
+    with open(progress_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+        assert data['effective_title'] == title_override
+
+    # Verify temp dirs are NOT present
+    raw_dir_path = os.path.join(custom_output_dir, RAW_CONTENT_DIR, "test_story_id_123")
+    processed_dir_path = os.path.join(custom_output_dir, PROCESSED_CONTENT_DIR, "test_story_id_123")
+    assert not os.path.exists(raw_dir_path), f"Raw directory {raw_dir_path} should have been deleted."
+    assert not os.path.exists(processed_dir_path), f"Processed directory {processed_dir_path} should have been deleted."
 
 # Add more tests:
 # - Invalid story URL (if CLI does any pre-validation, though likely orchestrator handles this)

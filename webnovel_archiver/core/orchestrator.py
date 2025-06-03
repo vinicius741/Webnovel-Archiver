@@ -1,4 +1,5 @@
 import os
+import shutil
 import datetime
 from typing import Dict, Any, Optional
 import requests # For specific exception types like requests.exceptions.RequestException
@@ -330,6 +331,32 @@ def archive_story(
         logger.info(f"Progress saved to {os.path.join(workspace_root, ARCHIVAL_STATUS_DIR, s_id, 'progress_status.json')}")
     except Exception as e:
         logger.error(f"Error saving progress for story ID {s_id}: {e}")
+
+    # 7. Clean up temporary files if not requested to keep them
+    if not keep_temp_files:
+        logger.info(f"Attempting to remove temporary content directories for story ID: {s_id}")
+        raw_story_dir = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id)
+        processed_story_dir = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id)
+
+        try:
+            if os.path.exists(raw_story_dir):
+                shutil.rmtree(raw_story_dir)
+                logger.info(f"Successfully removed raw content directory: {raw_story_dir}")
+            else:
+                logger.info(f"Raw content directory not found, no need to remove: {raw_story_dir}")
+
+            if os.path.exists(processed_story_dir):
+                shutil.rmtree(processed_story_dir)
+                logger.info(f"Successfully removed processed content directory: {processed_story_dir}")
+            else:
+                logger.info(f"Processed content directory not found, no need to remove: {processed_story_dir}")
+
+        except OSError as e: # shutil.rmtree can raise OSError
+            logger.error(f"Error removing temporary content directories for story ID {s_id}: {e}", exc_info=True)
+        except Exception as e: # Catch any other unexpected errors during cleanup
+            logger.error(f"An unexpected error occurred during temporary file cleanup for story ID {s_id}: {e}", exc_info=True)
+    else:
+        logger.info(f"Keeping temporary content directories for story ID: {s_id} as per 'keep_temp_files' flag.")
 
     logger.info(f"Archiving process completed for story ID: {s_id}")
 

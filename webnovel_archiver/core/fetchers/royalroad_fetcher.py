@@ -1,6 +1,9 @@
 from typing import List
 import re
+import requests
+from requests.exceptions import HTTPError, RequestException
 from bs4 import BeautifulSoup, Tag
+import logging # Added for logging
 
 from .base_fetcher import BaseFetcher, StoryMetadata, ChapterInfo
 
@@ -310,32 +313,44 @@ EXAMPLE_STORY_PAGE_HTML = """
 </html>
 """ # Truncated for brevity, full HTML is very long
 
+# Setup basic logging
+logger = logging.getLogger(__name__)
+
 class RoyalRoadFetcher(BaseFetcher):
     def _fetch_html_content(self, url: str) -> BeautifulSoup:
-        # In a real application, this would use 'requests' to get the HTML
-        # For now, it uses the example HTML if the URL matches, otherwise raises an error
-        # This is a simplified approach for the current phase.
-        # The provided URL in the issue is https://www.royalroad.com/fiction/117255/rend
-        if "royalroad.com/fiction/117255/rend" in url:
+        # Use example HTML for the specific story page URL to avoid excessive requests during metadata/chapter list parsing tests
+        if url == "https://www.royalroad.com/fiction/117255/rend":
+            logger.info(f"Using example HTML for URL: {url}")
             return BeautifulSoup(EXAMPLE_STORY_PAGE_HTML, 'html.parser')
-        elif "chapter" in url: # Simulate fetching chapter content
-             # For now, we don't have example chapter HTML, so we'll return a mock soup
-             # or the main page soup. This part will need actual chapter HTML for parsing.
-            return BeautifulSoup(f"<html><body><h1>Chapter Content for {url}</h1><div class='chapter-content'>This is placeholder chapter content.</div></body></html>", 'html.parser')
-        else:
-            # This will be replaced by actual HTTP requests and error handling
-            raise NotImplementedError(f"Fetching for URL '{url}' is not implemented with example HTML. "
-                                      "Actual HTTP requests are needed for dynamic content.")
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        timeout_seconds = 15 # Reasonable timeout
+
+        logger.info(f"Fetching HTML content from URL: {url}")
+        try:
+            response = requests.get(url, headers=headers, timeout=timeout_seconds)
+            response.raise_for_status()  # Raises HTTPError for bad responses (4XX or 5XX)
+            return BeautifulSoup(response.text, 'html.parser')
+        except HTTPError as http_err:
+            logger.error(f"HTTP error occurred while fetching {url}: {http_err} - Status code: {response.status_code}")
+            raise # Re-raise the caught HTTPError
+        except RequestException as req_err:
+            logger.error(f"Request exception occurred while fetching {url}: {req_err}")
+            # Wrap generic RequestException in an HTTPError or a custom exception if preferred
+            # For now, re-raising a more generic error or a new HTTPError
+            raise HTTPError(f"Request failed for {url}: {req_err}") # Consider a custom exception here
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while fetching {url}: {e}")
+            # Catching other unexpected errors
+            raise HTTPError(f"An unexpected error occurred for {url}: {e}")
+
 
     def get_story_metadata(self, url: str) -> StoryMetadata:
-        # For now, we will use the example HTML content for parsing.
-        # In a real scenario, the content would be fetched using self._fetch_html_content(url)
-        # or a dedicated request if EXAMPLE_STORY_PAGE_HTML is not suitable.
-
-        # soup = self._fetch_html_content(url) # This would be the ideal call
-
-        # Using the global example HTML for now, as per plan
-        soup = BeautifulSoup(EXAMPLE_STORY_PAGE_HTML, 'html.parser')
+        # Fetch live content or use example based on URL.
+        # _fetch_html_content will handle if it's the specific example URL.
+        soup = self._fetch_html_content(url)
 
         metadata = StoryMetadata()
         metadata.story_url = url
@@ -420,9 +435,8 @@ class RoyalRoadFetcher(BaseFetcher):
         return metadata
 
     def get_chapter_urls(self, story_url: str) -> List[ChapterInfo]:
-        # For now, we will use the example HTML content for parsing.
-        # soup = self._fetch_html_content(story_url) # Ideal call
-        soup = BeautifulSoup(EXAMPLE_STORY_PAGE_HTML, 'html.parser') # Using global example for now
+        # Fetch live content or use example based on URL.
+        soup = self._fetch_html_content(story_url)
 
         chapters: List[ChapterInfo] = []
         chapter_table = soup.find('table', id='chapters')
@@ -453,44 +467,100 @@ class RoyalRoadFetcher(BaseFetcher):
         return chapters
 
     def download_chapter_content(self, chapter_url: str) -> str:
-        # This is a placeholder for Phase 1.
-        # In a real scenario, this would fetch the HTML content of the chapter_url.
-        # soup = self._fetch_html_content(chapter_url)
-        # chapter_div = soup.find('div', class_='chapter-content') # Or similar selector
-        # return str(chapter_div) if chapter_div else "Chapter content not found."
+        logger.info(f"Attempting to download chapter content from: {chapter_url}")
+        try:
+            soup = self._fetch_html_content(chapter_url) # This will make a live request
+            chapter_div = soup.find('div', class_='chapter-content')
 
-        print(f"Simulating download of chapter: {chapter_url}") # For now, just print
-        return f"<html><body><h1>Placeholder Content for {chapter_url}</h1><div class='chapter-content'><p>This is simulated raw HTML content for the chapter.</p><script>alert('test');</script><style>.useless{color:red;}</style></div></body></html>"
+            if chapter_div:
+                # Return the HTML content of the chapter_div as a string
+                return str(chapter_div)
+            else:
+                logger.warning(f"Chapter content div (class 'chapter-content') not found for URL: {chapter_url}")
+                return "Chapter content not found."
+        except HTTPError as http_err:
+            # Logged in _fetch_html_content, but can add more context here if needed
+            logger.error(f"Failed to download chapter {chapter_url} due to HTTP error: {http_err}")
+            raise # Re-raise to signal failure to the caller
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while downloading chapter {chapter_url}: {e}")
+            # Optionally raise a custom exception or return an error message
+            return f"Error downloading chapter: {e}"
+
 
 if __name__ == '__main__':
+    # Setup basic logging for the __main__ block
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+
     # Example usage for testing (will be part of actual test files later)
     fetcher = RoyalRoadFetcher()
-    story_url_example = "https://www.royalroad.com/fiction/117255/rend" # Matches example HTML
+    story_url_example = "https://www.royalroad.com/fiction/117255/rend" # Uses example HTML via _fetch_html_content logic
 
-    print("--- Story Metadata ---")
-    metadata = fetcher.get_story_metadata(story_url_example)
-    print(f"Title: {metadata.original_title}")
-    print(f"Author: {metadata.original_author}")
-    print(f"Cover URL: {metadata.cover_image_url}")
-    print(f"Synopsis: {metadata.synopsis[:200]}...") # Print first 200 chars
-    print(f"Est. Chapters: {metadata.estimated_total_chapters_source}")
-    print(f"Story URL: {metadata.story_url}")
+    logger.info("--- Story Metadata ---")
+    try:
+        metadata = fetcher.get_story_metadata(story_url_example)
+        logger.info(f"Title: {metadata.original_title}")
+        logger.info(f"Author: {metadata.original_author}")
+        logger.info(f"Cover URL: {metadata.cover_image_url}")
+        logger.info(f"Synopsis: {metadata.synopsis[:200]}...")
+        logger.info(f"Est. Chapters: {metadata.estimated_total_chapters_source}")
+        logger.info(f"Story URL: {metadata.story_url}")
+    except Exception as e:
+        logger.error(f"Error fetching story metadata: {e}")
 
 
-    print("\n--- Chapter List ---")
-    chapters = fetcher.get_chapter_urls(story_url_example)
+    logger.info("\n--- Chapter List ---")
+    try:
+        chapters = fetcher.get_chapter_urls(story_url_example)
+        if chapters:
+            for i, chap in enumerate(chapters[:2]): # Print first 2 chapters for brevity
+                logger.info(f"Order: {chap.download_order}, Source ID: {chap.source_chapter_id}, Title: {chap.chapter_title}, URL: {chap.chapter_url}")
+            if len(chapters) > 2:
+                logger.info(f"... and {len(chapters) - 2} more chapters.")
+        else:
+            logger.warning("No chapters found.")
+    except Exception as e:
+        logger.error(f"Error fetching chapter list: {e}")
+
+
+    logger.info("\n--- Download Chapter Content (Live Request) ---")
     if chapters:
-        for i, chap in enumerate(chapters[:5]): # Print first 5 chapters
-            print(f"Order: {chap.download_order}, Source ID: {chap.source_chapter_id}, Title: {chap.chapter_title}, URL: {chap.chapter_url}")
-        if len(chapters) > 5:
-            print(f"... and {len(chapters) - 5} more chapters.")
-    else:
-        print("No chapters found.")
+        # Attempt to download the first chapter's content - THIS WILL BE A LIVE REQUEST
+        # Ensure the URL is a valid chapter URL that can be fetched.
+        # For testing, you might want to use a known public chapter URL.
+        # Example: chapters[0].chapter_url from the example story
+        # Note: Continuous live requests might be rate-limited or blocked.
+        # This is for demonstration; actual usage should be respectful of site terms.
+        first_chapter_to_download = chapters[0]
+        logger.info(f"Attempting to download content for chapter: {first_chapter_to_download.chapter_title} from {first_chapter_to_download.chapter_url}")
+        try:
+            # This part will make a live request to RoyalRoad
+            # If running in an environment without internet or if RoyalRoad blocks, this will fail.
+            # For CI/testing, consider mocking requests.
+            first_chapter_content = fetcher.download_chapter_content(first_chapter_to_download.chapter_url)
+            if "Chapter content not found." in first_chapter_content :
+                logger.warning(f"Content for '{first_chapter_to_download.chapter_title}': {first_chapter_content}")
+            else:
+                logger.info(f"Content for '{first_chapter_to_download.chapter_title}':\n{first_chapter_content[:300]}...")
+        except HTTPError as http_err:
+            logger.error(f"HTTPError downloading '{first_chapter_to_download.chapter_title}': {http_err}")
+        except Exception as e:
+            logger.error(f"Unexpected error downloading '{first_chapter_to_download.chapter_title}': {e}")
 
-    print("\n--- Download Chapter Content (Simulation) ---")
-    if chapters:
-        # Simulate downloading the first chapter's content
-        first_chapter_content = fetcher.download_chapter_content(chapters[0].chapter_url)
-        print(f"Content for '{chapters[0].chapter_title}':\n{first_chapter_content[:300]}...") # Print first 300 chars
     else:
-        print("No chapters to simulate download for.")
+        logger.warning("No chapters found, cannot simulate download.")
+
+    # Example of fetching a non-example story URL (will make live requests)
+    # Use with caution to avoid rate limiting or IP bans. Best to mock for tests.
+    # story_url_live_test = "https://www.royalroad.com/fiction/76753/the-perfect-run" # A different popular story
+    # logger.info(f"\n--- Testing live fetch for a different story: {story_url_live_test} ---")
+    # try:
+    #     live_metadata = fetcher.get_story_metadata(story_url_live_test)
+    #     logger.info(f"Live Title: {live_metadata.original_title}")
+    #     live_chapters = fetcher.get_chapter_urls(story_url_live_test)
+    #     if live_chapters:
+    #         logger.info(f"First live chapter: {live_chapters[0].chapter_title}")
+    # except HTTPError as e:
+    #     logger.error(f"Failed to fetch live story '{story_url_live_test}': {e}")
+    # except Exception as e:
+    #     logger.error(f"An unexpected error occurred with live story '{story_url_live_test}': {e}")

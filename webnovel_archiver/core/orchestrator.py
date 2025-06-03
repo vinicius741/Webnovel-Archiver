@@ -16,6 +16,7 @@ from .storage.progress_manager import (
     ARCHIVAL_STATUS_DIR
 )
 from .parsers.html_cleaner import HTMLCleaner
+from .modifiers.sentence_remover import SentenceRemover
 
 # Define directories for simulated content saving (relative to workspace_root)
 RAW_CONTENT_DIR = "raw_content"
@@ -24,12 +25,24 @@ PROCESSED_CONTENT_DIR = "processed_content"
 # Initialize logger for this module
 logger = get_logger(__name__)
 
-def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT, chapters_per_volume: Optional[int] = None) -> None:
+def archive_story(
+    story_url: str,
+    workspace_root: str = DEFAULT_WORKSPACE_ROOT,
+    chapters_per_volume: Optional[int] = None,
+    ebook_title_override: Optional[str] = None,
+    keep_temp_files: bool = False,
+    force_reprocessing: bool = False,
+    sentence_removal_file: Optional[str] = None, # Will be used fully later
+    no_sentence_removal: bool = False  # Will be used fully later
+) -> None:
     """
     Orchestrates the archiving process for a given story URL.
     Handles fetching, cleaning, saving, and progress management.
     """
     logger.info(f"Starting archiving process for: {story_url}")
+    logger.info(f"Parameter 'keep_temp_files' is set to: {keep_temp_files}")
+    # No explicit deletion logic to modify for now, this is for future reference
+    # and to acknowledge the parameter.
 
     # 1. Fetcher Initialization
     fetcher = RoyalRoadFetcher() # Later, select based on URL or config.
@@ -76,6 +89,7 @@ def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT, 
     progress_data["cover_image_url"] = metadata.cover_image_url
     progress_data["synopsis"] = metadata.synopsis
     progress_data["estimated_total_chapters_source"] = metadata.estimated_total_chapters_source
+    progress_data["sentence_removal_config_used"] = None # Default if not used
 
     # 4. Chapter Iteration: Download, Save (Simulated), Update Progress
     html_cleaner = HTMLCleaner()
@@ -94,11 +108,62 @@ def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT, 
 
     # We will build a new list of chapter details for this run.
     # If a chapter fails, it won't be added to this list for this run.
-    current_run_processed_chapters = []
+    processed_chapters_for_this_run = [] # Initialize list for chapters processed in this execution.
+    existing_chapters_map = {}
+
+    if force_reprocessing:
+        logger.info("Force reprocessing is ON. All chapters will be fetched and processed anew.")
+        progress_data["downloaded_chapters"] = [] # Clear previous chapter progress
+    else:
+        logger.info("Force reprocessing is OFF. Will attempt to skip already processed chapters if files are valid.")
+        if "downloaded_chapters" in progress_data:
+            for chap_entry in progress_data.get("downloaded_chapters", []):
+                # Index by chapter_url for quick lookup. Ensure chap_entry is a dict and has 'chapter_url'.
+                if isinstance(chap_entry, dict) and "chapter_url" in chap_entry:
+                    existing_chapters_map[chap_entry["chapter_url"]] = chap_entry
+                else:
+                    logger.warning(f"Found malformed chapter entry in progress data: {chap_entry}")
+        else:
+            # If "downloaded_chapters" isn't in progress_data, it's like a first run or cleared progress.
+            progress_data["downloaded_chapters"] = []
 
 
     for chapter_info in chapters_info_list:
         logger.info(f"Processing chapter: {chapter_info.chapter_title} (URL: {chapter_info.chapter_url})")
+
+        if not force_reprocessing and chapter_info.chapter_url in existing_chapters_map:
+            existing_chapter_details = existing_chapters_map[chapter_info.chapter_url]
+            # Check if local_raw_filename and local_processed_filename exist and are not None or empty
+            raw_filename = existing_chapter_details.get("local_raw_filename")
+            processed_filename = existing_chapter_details.get("local_processed_filename")
+
+            if raw_filename and processed_filename:
+                raw_file_expected_path = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id, raw_filename)
+                processed_file_expected_path = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id, processed_filename)
+
+                if os.path.exists(raw_file_expected_path) and os.path.exists(processed_file_expected_path):
+                    logger.info(f"Skipping chapter (already processed, files exist): {chapter_info.chapter_title} (URL: {chapter_info.chapter_url})")
+                    processed_chapters_for_this_run.append(existing_chapter_details) # Add existing valid entry
+
+                    # Update progress for last/next chapter based on this skipped chapter
+                    progress_data["last_downloaded_chapter_url"] = chapter_info.chapter_url
+                    # Ensure chapters_info_list is the source list
+                    # Need to find the index of chapter_info in chapters_info_list
+                    current_idx_in_list = -1
+                    for idx, chap_in_list in enumerate(chapters_info_list):
+                        if chap_in_list.chapter_url == chapter_info.chapter_url:
+                            current_idx_in_list = idx
+                            break
+
+                    if current_idx_in_list != -1 and current_idx_in_list < len(chapters_info_list) - 1:
+                        progress_data["next_chapter_to_download_url"] = chapters_info_list[current_idx_in_list + 1].chapter_url
+                    else:
+                        progress_data["next_chapter_to_download_url"] = None
+                    continue # Move to the next chapter in chapters_info_list
+                else:
+                    logger.info(f"Chapter {chapter_info.chapter_title} found in progress, but local files are missing. Reprocessing.")
+            else:
+                logger.info(f"Chapter {chapter_info.chapter_title} found in progress, but file records are incomplete. Reprocessing.")
 
         raw_html_content = None
         try:
@@ -131,7 +196,49 @@ def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT, 
 
         # Clean HTML
         logger.info(f"Cleaning HTML for: {chapter_info.chapter_title}")
-        cleaned_html_content = html_cleaner.clean_html(raw_html_content, source_site="royalroad") # Assuming RoyalRoad for now
+        # Assuming RoyalRoad for now
+        cleaned_html_content = html_cleaner.clean_html(raw_html_content, source_site="royalroad") # Or other source_site
+
+        if sentence_removal_file and not no_sentence_removal:
+            try:
+                logger.info(f"Attempting to apply sentence removal for chapter '{chapter_info.chapter_title}' using config: {sentence_removal_file}")
+                # Instantiate SentenceRemover for each chapter if config could change per story,
+                # or instantiate once outside the loop if config is global for the run.
+                # For now, let's assume it's safe to instantiate here or it's lightweight.
+                # If SentenceRemover's init is expensive and config is fixed per run, optimize later.
+                remover = SentenceRemover(sentence_removal_file)
+
+                if remover.remove_sentences or remover.remove_patterns: # Check if remover has rules
+                    temp_cleaned_html_content = remover.remove_sentences_from_html(cleaned_html_content)
+                    if temp_cleaned_html_content != cleaned_html_content:
+                        logger.info(f"Sentence removal applied to chapter: {chapter_info.chapter_title}")
+                        cleaned_html_content = temp_cleaned_html_content
+                    else:
+                        logger.info(f"No sentences matched for removal in chapter: {chapter_info.chapter_title}")
+                    # Record config used only if remover was successfully initialized and had rules.
+                    # This assumes progress_data is for the whole story, so this might overwrite.
+                    # Consider if this status should be per-chapter or per-story.
+                    # For now, per-story: last used config.
+                    progress_data["sentence_removal_config_used"] = sentence_removal_file
+                else:
+                    logger.info(f"Sentence remover for '{sentence_removal_file}' loaded no rules. Skipping removal for chapter: {chapter_info.chapter_title}")
+                    # If it's set to a file path but that file had no rules, we might want to reflect that.
+                    # progress_data["sentence_removal_config_used"] = f"{sentence_removal_file} (no rules loaded)"
+                    # For now, if no rules, it's like no removal happened, so None or previous value is fine.
+                    # Let's set it to the file if provided, and rely on logs for "no rules loaded"
+                    progress_data["sentence_removal_config_used"] = sentence_removal_file
+
+            except Exception as e:
+                logger.error(f"Failed to apply sentence removal for chapter '{chapter_info.chapter_title}': {e}", exc_info=True)
+                # Record error in using the config.
+                progress_data["sentence_removal_config_used"] = f"Error with {sentence_removal_file}: {e}"
+        elif no_sentence_removal:
+            logger.info("Sentence removal explicitly disabled via --no-sentence-removal.")
+            progress_data["sentence_removal_config_used"] = "Disabled via --no-sentence-removal"
+        else:
+            # sentence_removal_file is None, so no removal requested.
+            # progress_data["sentence_removal_config_used"] remains None (its default).
+            pass
 
         processed_filename = f"chapter_{str(chapter_info.download_order).zfill(5)}_{chapter_info.source_chapter_id}_clean.html"
         processed_file_directory = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id)
@@ -160,27 +267,42 @@ def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT, 
             "local_processed_filename": processed_filename,
             "download_timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         }
-        current_run_processed_chapters.append(chapter_detail_entry)
+        processed_chapters_for_this_run.append(chapter_detail_entry)
 
         # Update last downloaded and next to download (simplified for linear processing)
         # These are updated per successfully processed chapter in this run.
-        if current_run_processed_chapters: # If list is not empty
-            progress_data["last_downloaded_chapter_url"] = current_run_processed_chapters[-1]["chapter_url"]
+        if processed_chapters_for_this_run: # If list is not empty
+            progress_data["last_downloaded_chapter_url"] = processed_chapters_for_this_run[-1]["chapter_url"]
 
         # Determine next chapter URL based on the original full list
-        current_chapter_index_in_full_list = chapters_info_list.index(chapter_info)
-        if current_chapter_index_in_full_list < len(chapters_info_list) - 1:
+        # Need to find the index of chapter_info in chapters_info_list
+        current_chapter_index_in_full_list = -1
+        for idx, chap_in_list in enumerate(chapters_info_list):
+            if chap_in_list.chapter_url == chapter_info.chapter_url:
+                current_chapter_index_in_full_list = idx
+                break
+
+        if current_chapter_index_in_full_list != -1 and current_chapter_index_in_full_list < len(chapters_info_list) - 1:
             progress_data["next_chapter_to_download_url"] = chapters_info_list[current_chapter_index_in_full_list + 1].chapter_url
         else:
             progress_data["next_chapter_to_download_url"] = None
 
     # Update the main downloaded_chapters list in progress_data.
-    # This simple replacement means if a chapter was downloaded previously but fails in this run,
-    # it will be removed from the list. More sophisticated merging would be needed for true incrementals
-    # where you only add new or update existing.
-    progress_data["downloaded_chapters"] = current_run_processed_chapters
+    progress_data["downloaded_chapters"] = processed_chapters_for_this_run
 
     # 5. EPUB Generation
+    if ebook_title_override:
+        logger.info(f"Overriding ebook title with: '{ebook_title_override}'")
+        progress_data["effective_title"] = ebook_title_override
+    else:
+        # Use original_title if override is not provided, ensure it exists or use a default
+        progress_data["effective_title"] = progress_data.get("original_title", "Untitled Story")
+
+    # The EPUBGenerator will need to be aware of "effective_title".
+    # For now, this subtask focuses on adding it to progress_data.
+    # A later step or a note for EPUBGenerator modification might be needed if it
+    # strictly uses "original_title" and cannot be configured.
+
     logger.info(f"Starting EPUB generation for story ID: {s_id}")
     epub_generator = EPUBGenerator(workspace_root)
     generated_epub_files = epub_generator.generate_epub(s_id, progress_data, chapters_per_volume)

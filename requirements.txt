@@ -1,3 +1,4 @@
 click
 requests
 beautifulsoup4
+EbookLib>=0.18

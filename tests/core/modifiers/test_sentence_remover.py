@@ -3,10 +3,9 @@ import json
 import os
 import re
 from webnovel_archiver.core.modifiers.sentence_remover import SentenceRemover
-from webnovel_archiver.utils.logger import get_logger, setup_basic_logging
+from webnovel_archiver.utils.logger import get_logger
 
 # If tests need to see logs:
-# setup_basic_logging(level="DEBUG")
 
 @pytest.fixture
 def temp_config_file(tmp_path):

@@ -364,8 +364,6 @@ if __name__ == '__main__':
     import shutil
     # Setup basic logging for the __main__ block if you want to see Orchestrator logs
     # This is separate from the logger used within the Orchestrator module itself if it's configured.
-    # from webnovel_archiver.utils.logger import setup_basic_logging
-    # setup_basic_logging() # Call this if you want to see logs from the example run below
 
     test_story_url = "https://www.royalroad.com/fiction/117255/rend"
     test_workspace = "temp_workspace_orchestrator_tests"

@@ -4,10 +4,9 @@ import click # For feedback and potentially type hinting
 # Import necessary core components
 from webnovel_archiver.core.orchestrator import archive_story as call_orchestrator_archive_story
 from webnovel_archiver.core.config_manager import ConfigManager, DEFAULT_WORKSPACE_PATH
-from webnovel_archiver.utils.logger import get_logger, setup_basic_logging
+from webnovel_archiver.utils.logger import get_logger
 
 # It's good practice to set up logging if the CLI is the entry point
-# setup_basic_logging() # You might want to control this more finely
 logger = get_logger(__name__)
 
 def archive_story_handler(

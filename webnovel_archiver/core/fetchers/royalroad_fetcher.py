@@ -361,12 +361,16 @@ class RoyalRoadFetcher(BaseFetcher):
             metadata.original_title = title_tag.text.strip()
         else: # Fallback to meta property
             og_title_tag = soup.find('meta', property='og:title')
-            if og_title_tag and og_title_tag.get('content'):
-                 metadata.original_title = og_title_tag['content']
-            else: # Fallback to document title if specific tags are missing
+            if isinstance(og_title_tag, Tag): # Check if it's a Tag
+                content = og_title_tag.get('content')
+                if isinstance(content, str):
+                    metadata.original_title = content
+                elif isinstance(content, list): # Should not happen for 'content' but good practice
+                    metadata.original_title = content[0] if content else None
+            if not metadata.original_title: # Fallback to document title if specific tags are missing
                 doc_title_tag = soup.find('title')
-                if doc_title_tag:
-                    title_text = doc_title_tag.text.strip()
+                if isinstance(doc_title_tag, Tag) and doc_title_tag.string is not None:
+                    title_text = str(doc_title_tag.string).strip() # Ensure it's a string
                     # Remove " | Royal Road" suffix
                     metadata.original_title = title_text.replace(" | Royal Road", "").strip()
 
@@ -377,29 +381,41 @@ class RoyalRoadFetcher(BaseFetcher):
             metadata.original_author = author_link.text.strip()
         else: # Fallback to meta property
             meta_author_tag = soup.find('meta', property='books:author')
-            if meta_author_tag and meta_author_tag.get('content'):
-                metadata.original_author = meta_author_tag['content']
-
+            if isinstance(meta_author_tag, Tag): # Check if it's a Tag
+                content = meta_author_tag.get('content')
+                if isinstance(content, str):
+                    metadata.original_author = content
+                elif isinstance(content, list):
+                    metadata.original_author = content[0] if content else None
 
         # Cover Image URL
         cover_img_tag = soup.select_one('div.cover-art-container img.thumbnail')
-        if cover_img_tag and cover_img_tag.get('src'):
-            metadata.cover_image_url = cover_img_tag['src']
-        else: # Fallback to meta property
+        if cover_img_tag:
+            src_content = cover_img_tag.get('src')
+            if isinstance(src_content, str):
+                metadata.cover_image_url = src_content
+            elif isinstance(src_content, list):
+                metadata.cover_image_url = src_content[0] if src_content else None
+        if not metadata.cover_image_url: # Fallback to meta property
             og_image_tag = soup.find('meta', property='og:image')
-            if og_image_tag and og_image_tag.get('content'):
-                metadata.cover_image_url = og_image_tag['content']
+            if isinstance(og_image_tag, Tag): # Check if it's a Tag
+                content = og_image_tag.get('content')
+                if isinstance(content, str):
+                    metadata.cover_image_url = content
+                elif isinstance(content, list):
+                    metadata.cover_image_url = content[0] if content else None
 
         # Synopsis
         # Try the schema.org description first as it's often cleaner
         schema_script = soup.find('script', type='application/ld+json')
-        if schema_script:
+        if schema_script and isinstance(schema_script, Tag) and schema_script.string:
             import json
             try:
-                schema_data = json.loads(schema_script.string)
-                if schema_data.get('@type') == 'Book' and schema_data.get('description'):
+                schema_data = json.loads(schema_script.string) # schema_script.string should be str
+                description = schema_data.get('description')
+                if schema_data.get('@type') == 'Book' and isinstance(description, str):
                     # Basic cleaning for synopsis from schema: remove <p>, <br>, <hr>
-                    synopsis_html = schema_data['description']
+                    synopsis_html = description
                     synopsis_soup = BeautifulSoup(synopsis_html, 'html.parser')
                     # Replace <br> and <hr> with newlines, then get text
                     for br in synopsis_soup.find_all("br"):
@@ -426,11 +442,18 @@ class RoyalRoadFetcher(BaseFetcher):
 
         # Estimated total chapters from source (from the table#chapters data-chapters attribute)
         chapters_table = soup.find('table', id='chapters')
-        if chapters_table and chapters_table.has_attr('data-chapters'):
-            try:
-                metadata.estimated_total_chapters_source = int(chapters_table['data-chapters'])
-            except ValueError:
-                metadata.estimated_total_chapters_source = None # Or some other default/logging
+        if isinstance(chapters_table, Tag) and chapters_table.has_attr('data-chapters'):
+            data_chapters = chapters_table['data-chapters']
+            if isinstance(data_chapters, str):
+                try:
+                    metadata.estimated_total_chapters_source = int(data_chapters)
+                except ValueError:
+                    metadata.estimated_total_chapters_source = None # Or some other default/logging
+            elif isinstance(data_chapters, list) and data_chapters: # Should not happen for data-chapters
+                 try:
+                    metadata.estimated_total_chapters_source = int(data_chapters[0])
+                 except ValueError:
+                    metadata.estimated_total_chapters_source = None
 
         return metadata
 
@@ -439,18 +462,30 @@ class RoyalRoadFetcher(BaseFetcher):
         soup = self._fetch_html_content(story_url)
 
         chapters: List[ChapterInfo] = []
-        chapter_table = soup.find('table', id='chapters')
-        if not chapter_table:
+        chapter_table_tag = soup.find('table', id='chapters')
+        if not isinstance(chapter_table_tag, Tag):
+            return chapters
+
+        tbody = chapter_table_tag.find('tbody')
+        if not isinstance(tbody, Tag):
             return chapters
 
         base_url = "https://www.royalroad.com" # Needed to construct full URLs
 
-        for order, row in enumerate(chapter_table.find('tbody').find_all('tr', class_='chapter-row')):
+        for order, row in enumerate(tbody.find_all('tr', class_='chapter-row')):
+            if not isinstance(row, Tag):
+                continue
             link_tag = row.find('a')
-            if link_tag and link_tag.has_attr('href'):
-                chapter_relative_url = link_tag['href']
-                full_chapter_url = base_url + chapter_relative_url if chapter_relative_url.startswith('/') else chapter_relative_url
+            if isinstance(link_tag, Tag) and link_tag.has_attr('href'):
+                href_attr = link_tag['href']
+                if isinstance(href_attr, str):
+                    chapter_relative_url = href_attr
+                elif isinstance(href_attr, list) and href_attr: # handle case if href is a list
+                    chapter_relative_url = href_attr[0]
+                else:
+                    continue # skip if href is not a string or a list of strings
 
+                full_chapter_url = base_url + chapter_relative_url if chapter_relative_url.startswith('/') else chapter_relative_url
                 chapter_title_text = link_tag.text.strip()
 
                 # Try to extract a source_chapter_id from the URL, e.g., the numeric part
@@ -502,7 +537,8 @@ if __name__ == '__main__':
         logger.info(f"Title: {metadata.original_title}")
         logger.info(f"Author: {metadata.original_author}")
         logger.info(f"Cover URL: {metadata.cover_image_url}")
-        logger.info(f"Synopsis: {metadata.synopsis[:200]}...")
+        synopsis_preview = (metadata.synopsis[:200] + "...") if metadata.synopsis else "N/A"
+        logger.info(f"Synopsis: {synopsis_preview}")
         logger.info(f"Est. Chapters: {metadata.estimated_total_chapters_source}")
         logger.info(f"Story URL: {metadata.story_url}")
     except Exception as e:
@@ -537,11 +573,14 @@ if __name__ == '__main__':
             # This part will make a live request to RoyalRoad
             # If running in an environment without internet or if RoyalRoad blocks, this will fail.
             # For CI/testing, consider mocking requests.
-            first_chapter_content = fetcher.download_chapter_content(first_chapter_to_download.chapter_url)
-            if "Chapter content not found." in first_chapter_content :
-                logger.warning(f"Content for '{first_chapter_to_download.chapter_title}': {first_chapter_content}")
+            if first_chapter_to_download.chapter_url is not None:
+                first_chapter_content = fetcher.download_chapter_content(first_chapter_to_download.chapter_url)
+                if "Chapter content not found." in first_chapter_content :
+                    logger.warning(f"Content for '{first_chapter_to_download.chapter_title}': {first_chapter_content}")
+                else:
+                    logger.info(f"Content for '{first_chapter_to_download.chapter_title}':\n{first_chapter_content[:300]}...")
             else:
-                logger.info(f"Content for '{first_chapter_to_download.chapter_title}':\n{first_chapter_content[:300]}...")
+                logger.warning(f"Chapter '{first_chapter_to_download.chapter_title}' has no URL, skipping download.")
         except HTTPError as http_err:
             logger.error(f"HTTPError downloading '{first_chapter_to_download.chapter_title}': {http_err}")
         except Exception as e:

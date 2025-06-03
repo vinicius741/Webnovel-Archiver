@@ -1,10 +1,11 @@
 import os
 import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import requests # For specific exception types like requests.exceptions.RequestException
 
 from webnovel_archiver.utils.logger import get_logger # Import logger
 from .fetchers.royalroad_fetcher import RoyalRoadFetcher
+from .builders.epub_generator import EPUBGenerator # Added EPUBGenerator import
 # Assuming StoryMetadata and ChapterInfo will be used from base_fetcher if needed directly
 # from .fetchers.base_fetcher import StoryMetadata, ChapterInfo
 from .storage.progress_manager import (
@@ -23,7 +24,7 @@ PROCESSED_CONTENT_DIR = "processed_content"
 # Initialize logger for this module
 logger = get_logger(__name__)
 
-def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> None:
+def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT, chapters_per_volume: Optional[int] = None) -> None:
     """
     Orchestrates the archiving process for a given story URL.
     Handles fetching, cleaning, saving, and progress management.
@@ -178,6 +179,27 @@ def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) 
     # it will be removed from the list. More sophisticated merging would be needed for true incrementals
     # where you only add new or update existing.
     progress_data["downloaded_chapters"] = current_run_processed_chapters
+
+    # 5. EPUB Generation
+    logger.info(f"Starting EPUB generation for story ID: {s_id}")
+    epub_generator = EPUBGenerator(workspace_root)
+    generated_epub_files = epub_generator.generate_epub(s_id, progress_data, chapters_per_volume)
+
+    # Initialize progress_data["last_epub_processing"] if it's not a dict
+    if not isinstance(progress_data.get("last_epub_processing"), dict):
+        progress_data["last_epub_processing"] = {}
+
+    progress_data["last_epub_processing"]["timestamp"] = datetime.datetime.utcnow().isoformat() + "Z"
+    progress_data["last_epub_processing"]["generated_epub_files"] = generated_epub_files
+    progress_data["last_epub_processing"]["chapters_included_in_last_volume"] = None # Per schema guidance
+
+    if generated_epub_files:
+        logger.info(f"Successfully generated {len(generated_epub_files)} EPUB file(s) for story ID {s_id}: {generated_epub_files}")
+    else:
+        logger.warning(f"No EPUB files were generated for story ID {s_id}.")
+        # Ensure generated_epub_files is an empty list in progress_data if none were made
+        progress_data["last_epub_processing"]["generated_epub_files"] = []
+
 
     # 6. Save Final Progress
     logger.info("Saving final progress status...")

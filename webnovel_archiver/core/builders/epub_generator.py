@@ -14,7 +14,7 @@ class EPUBGenerator:
         self.processed_content_dir_name = "processed_content"
 
     def generate_epub(self, story_id: str, progress_data: Dict[Any, Any], chapters_per_volume: Optional[int] = None) -> List[str]:
-        story_title = progress_data.get("title", "Unknown Title")
+        story_title = progress_data.get("effective_title", "Unknown Title")
         author_name = progress_data.get("author", "Unknown Author")
         # Additional metadata like cover image can be handled here
 

@@ -1,5 +1,6 @@
 import configparser
 import os
+from typing import Optional
 
 # Determine the absolute path to the directory where this script is located
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,7 +49,7 @@ class ConfigManager:
             return os.path.join(PROJECT_ROOT, path)
         return path
 
-    def get_setting(self, section: str, option: str, fallback=None) -> str | None:
+    def get_setting(self, section: str, option: str, fallback=None) -> Optional[str]:
         """Gets a specific setting from the configuration."""
         try:
             return self.config.get(section, option, fallback=fallback)

@@ -5,9 +5,15 @@ import datetime
 from typing import Dict, Optional, List, Any
 from urllib.parse import urlparse
 
-# Define the root for workspace storage. This might be moved to a config manager later.
+from webnovel_archiver.utils.logger import get_logger # Added logger
+
+logger = get_logger(__name__) # Added logger
+
+# Define constants for directory names
 DEFAULT_WORKSPACE_ROOT = "workspace"
 ARCHIVAL_STATUS_DIR = "archival_status"
+EBOOKS_DIR = "ebooks" # Added for constructing epub paths
+PROGRESS_FILE_VERSION = "1.1" # Version for the progress file structure
 
 def get_progress_filepath(story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> str:
     return os.path.join(workspace_root, ARCHIVAL_STATUS_DIR, story_id, "progress_status.json")
@@ -15,210 +21,318 @@ def get_progress_filepath(story_id: str, workspace_root: str = DEFAULT_WORKSPACE
 def _get_new_progress_structure(story_id: str, story_url: Optional[str] = None) -> Dict[str, Any]:
     """Returns a new, empty structure for progress_status.json."""
     return {
+        "version": PROGRESS_FILE_VERSION, # Added version
         "story_id": story_id,
         "story_url": story_url,
         "original_title": None,
         "original_author": None,
         "cover_image_url": None,
         "synopsis": None,
+        "tags": [], # Added tags
+        "story_id_from_source": None, # Added story_id_from_source
         "estimated_total_chapters_source": None,
         "last_downloaded_chapter_url": None,
         "next_chapter_to_download_url": None,
-        "downloaded_chapters": [], # List of chapter detail dicts
-        "last_epub_processing": { # Details about the last EPUB generation
+        "downloaded_chapters": [],
+        "last_epub_processing": {
             "timestamp": None,
-            "chapters_included_in_last_volume": None, # Count
-            "generated_epub_files": [] # List of filenames
+            "chapters_included_in_last_volume": None,
+            "generated_epub_files": [] # List of dicts: {'name': 'filename.epub', 'path': 'absolute_path_on_disk_when_created'}
+                                      # This structure is now aligned with what ProgressManager class had for epub_files
         },
-        "sentence_removal_config_used": None, # Path to the config file used
-        "cloud_backup_status": { # Details about the last cloud backup
-            "last_successful_sync_timestamp": None,
-            "service_name": None, # e.g., "gdrive"
-            "uploaded_epubs": [], # List of dicts: {"filename": "str", "upload_timestamp": "str", "cloud_file_id": "str"}
-            "progress_file_uploaded_timestamp": None,
-            "cloud_progress_file_id": None
-        }
+        "sentence_removal_config_used": None,
+        "cloud_backup_status": { # Updated structure for cloud_backup_status
+            "last_backup_attempt_timestamp": None,
+            "last_successful_backup_timestamp": None,
+            "service": None,
+            "base_cloud_folder_name": None,
+            "story_cloud_folder_name": None,
+            "cloud_base_folder_id": None,
+            "story_cloud_folder_id": None,
+            "backed_up_files": []
+            # List of dicts:
+            # {
+            #   'local_path': "abs/path/to/file",
+            #   'cloud_file_name': "filename_in_cloud",
+            #   'cloud_file_id': "...",
+            #   'last_backed_up_timestamp': "ISO_TIMESTAMP",
+            #   'status': "uploaded/skipped_up_to_date/failed",
+            #   'error': "error message if failed"
+            # }
+        },
+        "last_updated_timestamp": None # Added last_updated_timestamp
     }
 
 def load_progress(story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> Dict[str, Any]:
     """
     Loads progress_status.json for a story_id.
-    If it doesn't exist, returns a new structure.
+    If it doesn't exist or is corrupted, returns a new structure.
     """
     filepath = get_progress_filepath(story_id, workspace_root)
+    new_structure = _get_new_progress_structure(story_id) # For default values and key checks
+
     if os.path.exists(filepath):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                if data.get("version") != PROGRESS_FILE_VERSION:
+                    logger.warning(f"Progress file version mismatch for story {story_id}. "
+                                   f"Expected {PROGRESS_FILE_VERSION}, found {data.get('version')}. "
+                                   "Data might be read/written unexpectedly. Consider migration.")
+                # Ensure all top-level keys from new structure exist
+                for key in new_structure.keys():
+                    if key not in data:
+                        data[key] = new_structure[key]
+                # Specifically ensure cloud_backup_status and its sub-keys are present
+                if "cloud_backup_status" not in data or not isinstance(data["cloud_backup_status"], dict):
+                     data["cloud_backup_status"] = new_structure["cloud_backup_status"]
+                else:
+                    for sub_key in new_structure["cloud_backup_status"].keys():
+                        if sub_key not in data["cloud_backup_status"]:
+                            data["cloud_backup_status"][sub_key] = new_structure["cloud_backup_status"][sub_key]
+
+                return data
         except json.JSONDecodeError:
-            # Handle corrupted JSON file, perhaps by returning a new structure or raising error
-            # For now, let's return a new one and overwrite later.
-            print(f"Warning: Progress file for {story_id} is corrupted. Starting fresh.")
-            return _get_new_progress_structure(story_id)
+            logger.error(f"Progress file for {story_id} at {filepath} is corrupted. Initializing new one.")
+            return new_structure
+        except Exception as e:
+            logger.error(f"Unexpected error loading progress for story {story_id} from {filepath}: {e}", exc_info=True)
+            return new_structure
     else:
-        return _get_new_progress_structure(story_id)
+        logger.info(f"Progress file not found for story {story_id} at {filepath}. Initializing new one.")
+        return new_structure
+
 
 def save_progress(story_id: str, progress_data: Dict[str, Any], workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> None:
     """Saves the progress_data to progress_status.json for a story_id."""
     filepath = get_progress_filepath(story_id, workspace_root)
-    # Ensure the directory exists
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(progress_data, f, indent=2, ensure_ascii=False)
+    progress_data["last_updated_timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    progress_data["version"] = PROGRESS_FILE_VERSION # Ensure version is current
+
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(progress_data, f, indent=2, ensure_ascii=False)
+        logger.debug(f"Progress saved for story {story_id} to {filepath}")
+    except IOError as e:
+        logger.error(f"Could not write progress file {filepath}: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"Unexpected error saving progress for story {story_id} to {filepath}: {e}", exc_info=True)
+
 
 def generate_story_id(url: Optional[str] = None, title: Optional[str] = None) -> str:
     """
     Generates a URL-safe/filename-safe ID from the story URL or title.
     Prefers URL for uniqueness if available.
-    Example RoyalRoad URL: https://www.royalroad.com/fiction/12345/some-story-title
-    We can try to extract '12345-some-story-title' or just '12345'.
-    Using the fiction ID is often a good choice for sites that have it.
     """
     if url:
         parsed_url = urlparse(url)
         path_parts = [part for part in parsed_url.path.split('/') if part]
 
-        # RoyalRoad specific: /fiction/<id>/<slug_name>
         if "royalroad.com" in parsed_url.netloc and len(path_parts) >= 2 and path_parts[0] == "fiction":
-            story_identifier = path_parts[1] # This is the fiction ID, e.g., "117255"
-            if len(path_parts) > 2: # If there's a slug name
-                 story_identifier += "-" + path_parts[2] # e.g., "117255-rend"
-            # Sanitize it further, just in case
+            story_identifier = path_parts[1]
+            if len(path_parts) > 2:
+                 story_identifier += "-" + path_parts[2]
             story_identifier = re.sub(r'[^a-zA-Z0-9_-]+', '', story_identifier)
             if story_identifier:
                 return story_identifier
 
-        # Generic fallback for URLs: use the last significant part of the path
         if path_parts:
             base_id = path_parts[-1]
-        else: # Or use the domain if path is empty
+        else:
             base_id = parsed_url.netloc
-            base_id = base_id.replace("www.", "") # Remove www
+            base_id = base_id.replace("www.", "")
     elif title:
         base_id = title
     else:
-        # Fallback to a timestamp-based ID if neither is provided, though this is not ideal for user-facing IDs
         return f"story_{datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')}"
 
-    # Sanitize the base_id
-    # Convert to lowercase
     s_id = base_id.lower()
-    # Remove special characters, replace spaces with hyphens
     s_id = re.sub(r'\s+', '-', s_id)
     s_id = re.sub(r'[^a-z0-9_-]', '', s_id)
-    # Truncate if too long (e.g., > 50 chars)
     s_id = s_id[:50]
-    # Ensure it's not empty
     if not s_id:
         return f"story_{datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-
     return s_id.strip('-_')
 
+# --- Methods for EPUB files ---
+def add_epub_file_to_progress(progress_data: Dict[str, Any], file_name: str, file_path: str, story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> None:
+    """Adds an EPUB file to the progress data. Ensures path is absolute."""
+    if not os.path.isabs(file_path):
+        ebook_dir = os.path.join(workspace_root, EBOOKS_DIR, story_id)
+        logger.warning(f"EPUB file path '{file_path}' for '{file_name}' was not absolute. Converting based on ebook_dir: {ebook_dir}")
+        file_path = os.path.join(ebook_dir, file_path)
 
-# Example of how chapter details might be added (orchestrator would handle this)
-# def add_downloaded_chapter_info(progress_data: Dict[str, Any],
-#                                 source_chapter_id: str,
-#                                 download_order: int,
-#                                 chapter_url: str,
-#                                 chapter_title: str,
-#                                 local_raw_filename: str,
-#                                 next_chapter_url_on_page: Optional[str] = None) -> None:
-#     chapter_entry = {
-#         "source_chapter_id": source_chapter_id,
-#         "download_order": download_order,
-#         "chapter_url": chapter_url,
-#         "chapter_title": chapter_title,
-#         "local_raw_filename": local_raw_filename,
-#         "local_processed_filename": None, # To be filled later
-#         "download_timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-#         "next_chapter_url_from_page": next_chapter_url_on_page
-#     }
-#     progress_data["downloaded_chapters"].append(chapter_entry)
-#     progress_data["last_downloaded_chapter_url"] = chapter_url
-#     # Logic to determine next_chapter_to_download_url would be more complex,
-#     # often from the chapter list or next_chapter_url_on_page
+    epub_files_list = progress_data["last_epub_processing"].get("generated_epub_files", [])
+    if not any(ep_file['path'] == file_path for ep_file in epub_files_list):
+        epub_files_list.append({"name": file_name, "path": file_path})
+        progress_data["last_epub_processing"]["generated_epub_files"] = epub_files_list
+        logger.debug(f"EPUB file '{file_name}' added for story {story_id}")
+
+def get_epub_file_details(progress_data: Dict[str, Any], story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> List[Dict[str, str]]:
+    """
+    Retrieves a list of EPUB file details (name, absolute path) from progress data.
+    """
+    epub_file_entries = progress_data.get("last_epub_processing", {}).get("generated_epub_files", [])
+    resolved_epub_files = []
+    ebook_dir = os.path.join(workspace_root, EBOOKS_DIR, story_id)
+
+    for entry in epub_file_entries:
+        path = entry.get("path")
+        name = entry.get("name")
+        if not path or not name:
+            logger.warning(f"Skipping malformed EPUB entry in {story_id}: {entry}")
+            continue
+
+        if not os.path.isabs(path):
+            logger.warning(f"Found relative EPUB path '{path}' for story {story_id}. Resolving against {ebook_dir}.")
+            # Use os.path.basename if path might contain subdirectories relative to ebook_dir
+            path = os.path.join(ebook_dir, os.path.basename(path))
+
+        resolved_epub_files.append({"name": name, "path": path})
+    return resolved_epub_files
+
+# --- Methods for cloud backup status ---
+def get_cloud_backup_status(progress_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Retrieves the cloud backup status data from progress_data.
+    Initializes with default structure if not present or incomplete.
+    """
+    default_backup_status = _get_new_progress_structure("dummy")["cloud_backup_status"]
+
+    current_backup_status = progress_data.get("cloud_backup_status")
+    if not isinstance(current_backup_status, dict):
+        progress_data["cloud_backup_status"] = default_backup_status
+        return default_backup_status
+
+    # Ensure all keys from default structure are present
+    updated = False
+    for key, default_value in default_backup_status.items():
+        if key not in current_backup_status:
+            current_backup_status[key] = default_value
+            updated = True
+
+    # if updated: # No, this function should not modify progress_data directly unless it's the one loading it.
+    #    logger.info("Initialized missing keys in cloud_backup_status.")
+
+    return current_backup_status
+
+def update_cloud_backup_status(progress_data: Dict[str, Any], backup_info: Dict[str, Any]) -> None:
+    """
+    Updates the cloud backup status in progress_data.
+    `backup_info` should be a dictionary matching the structure defined
+    for `cloud_backup_status`.
+    """
+    # Ensure the cloud_backup_status key exists and is a dict.
+    if "cloud_backup_status" not in progress_data or not isinstance(progress_data["cloud_backup_status"], dict):
+        progress_data["cloud_backup_status"] = _get_new_progress_structure("dummy")["cloud_backup_status"]
+
+    progress_data["cloud_backup_status"].update(backup_info)
+    logger.debug(f"Cloud backup status updated for story {progress_data.get('story_id', 'N/A')}")
+
 
 if __name__ == '__main__':
-    # Test generate_story_id
-    print("--- Testing generate_story_id ---")
+    logger.info("--- Testing ProgressManager functions ---") # Use logger
+
     rr_url = "https://www.royalroad.com/fiction/117255/rend-a-tale-of-something"
-    print(f"URL: {rr_url} -> ID: {generate_story_id(url=rr_url)}")
+    test_story_id = generate_story_id(url=rr_url)
+    test_workspace = "_test_pm_workspace"
 
-    generic_url = "https://www.somesite.com/stories/my-awesome-story-123/"
-    print(f"URL: {generic_url} -> ID: {generate_story_id(url=generic_url)}")
-
-    title_only = "My Super Awesome Story Title! With Punctuation?"
-    print(f"Title: '{title_only}' -> ID: {generate_story_id(title=title_only)}")
-
-    no_info_id = generate_story_id()
-    print(f"No info -> ID: {no_info_id}")
-
-    # Test load and save progress
-    print("\n--- Testing load and save progress ---")
-    test_story_id = generate_story_id(url=rr_url) # Use a generated ID for testing
+    logger.info(f"Test Story ID: {test_story_id}, Workspace: {test_workspace}")
 
     # Clean up any previous test file for this ID
-    test_filepath = get_progress_filepath(test_story_id)
+    test_filepath = get_progress_filepath(test_story_id, test_workspace)
     if os.path.exists(test_filepath):
         os.remove(test_filepath)
-    if os.path.exists(os.path.dirname(test_filepath)): # remove directory if empty
-        if not os.listdir(os.path.dirname(test_filepath)):
-            os.rmdir(os.path.dirname(test_filepath))
+
+    story_status_dir = os.path.dirname(test_filepath)
+    if os.path.exists(story_status_dir):
+        if not os.listdir(story_status_dir):
+            os.rmdir(story_status_dir)
+
+    # Create ebook dir for test
+    ebook_dir_for_test = os.path.join(test_workspace, EBOOKS_DIR, test_story_id)
+    os.makedirs(ebook_dir_for_test, exist_ok=True)
+
 
     # Load (should create new)
-    progress = load_progress(test_story_id)
-    print(f"Loaded initial progress for {test_story_id}:")
-    # print(json.dumps(progress, indent=2))
+    progress = load_progress(test_story_id, workspace_root=test_workspace)
+    progress["story_url"] = rr_url # Set story_url for new progress
+    logger.info(f"Initial progress for {test_story_id}: {json.dumps(progress, indent=2)}")
 
     # Modify progress
     progress["original_title"] = "REND"
     progress["original_author"] = "Temple"
-    progress["story_url"] = rr_url
-    # Simulate adding a chapter (simplified)
-    # In real use, use a helper or Orchestrator would populate this more carefully
-    if not progress["downloaded_chapters"]: # Add a chapter only if none exists
-        progress["downloaded_chapters"].append({
-            "source_chapter_id": "2291798",
-            "download_order": 1,
-            "chapter_url": "https://www.royalroad.com/fiction/117255/rend/chapter/2291798/11-crappy-monday",
-            "chapter_title": "1.1 Crappy Monday",
-            "local_raw_filename": "chapter_001.html",
-            "local_processed_filename": None,
-            "download_timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-            "next_chapter_url_from_page": "https://www.royalroad.com/fiction/117255/rend/chapter/2292710/12-crappy-monday"
-        })
-        progress["last_downloaded_chapter_url"] = "https://www.royalroad.com/fiction/117255/rend/chapter/2291798/11-crappy-monday"
-        progress["next_chapter_to_download_url"] = "https://www.royalroad.com/fiction/117255/rend/chapter/2292710/12-crappy-monday"
+
+    # Add dummy epub files (paths should be absolute for storage after this point)
+    epub1_name = "REND_Vol_1.epub"
+    epub1_abs_path = os.path.abspath(os.path.join(ebook_dir_for_test, epub1_name))
+    with open(epub1_abs_path, 'w') as f: f.write("dummy epub1") # Simulate file creation
+
+    add_epub_file_to_progress(progress, epub1_name, epub1_abs_path, test_story_id, workspace_root=test_workspace)
+    save_progress(test_story_id, progress, workspace_root=test_workspace)
+
+    # Load again
+    loaded_progress = load_progress(test_story_id, workspace_root=test_workspace)
+    logger.info(f"Loaded progress after adding EPUB: {json.dumps(loaded_progress, indent=2)}")
+    retrieved_epubs = get_epub_file_details(loaded_progress, test_story_id, workspace_root=test_workspace)
+    logger.info(f"Retrieved EPUBs: {retrieved_epubs}")
+    assert len(retrieved_epubs) == 1
+    assert retrieved_epubs[0]['path'] == epub1_abs_path
 
 
-    # Save
-    save_progress(test_story_id, progress)
-    print(f"Saved progress for {test_story_id} to {test_filepath}")
+    # Simulate a cloud backup operation
+    backup_status_update = {
+        'last_backup_attempt_timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'last_successful_backup_timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'service': 'gdrive',
+        'base_cloud_folder_name': 'Webnovel Archiver Backups Test',
+        'story_cloud_folder_name': test_story_id,
+        'cloud_base_folder_id': 'gdrive_base_folder_id_test123',
+        'story_cloud_folder_id': 'gdrive_story_folder_id_test456',
+        'backed_up_files': [
+            {
+                'local_path': epub1_abs_path,
+                'cloud_file_name': epub1_name,
+                'cloud_file_id': 'gdrive_file_id_vol1_test',
+                'last_backed_up_timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'status': 'uploaded'
+            },
+            {
+                'local_path': get_progress_filepath(test_story_id, test_workspace), # Path to progress file itself
+                'cloud_file_name': "progress_status.json",
+                'cloud_file_id': 'gdrive_file_id_progress_test',
+                'last_backed_up_timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'status': 'uploaded'
+            }
+        ]
+    }
+    update_cloud_backup_status(loaded_progress, backup_status_update)
+    save_progress(test_story_id, loaded_progress, workspace_root=test_workspace)
 
-    # Load again (should reflect changes)
-    loaded_again = load_progress(test_story_id)
-    print(f"Loaded progress again for {test_story_id}:")
-    # print(json.dumps(loaded_again, indent=2))
+    # Verify cloud backup status
+    final_progress = load_progress(test_story_id, workspace_root=test_workspace)
+    cloud_status = get_cloud_backup_status(final_progress) # Use the getter
+    logger.info(f"Final Cloud Backup Status: {json.dumps(cloud_status, indent=2)}")
+    assert cloud_status['service'] == 'gdrive'
+    assert len(cloud_status['backed_up_files']) == 2
+    assert cloud_status['backed_up_files'][0]['cloud_file_id'] == 'gdrive_file_id_vol1_test'
 
-    assert loaded_again["original_title"] == "REND"
-    if loaded_again["downloaded_chapters"]:
-        assert loaded_again["downloaded_chapters"][0]["chapter_title"] == "1.1 Crappy Monday"
-    print("Load/Save tests passed (basic assertions).")
+    logger.info("All tests passed (basic assertions).")
 
-    # Clean up the created test file and directory
-    if os.path.exists(test_filepath):
-        os.remove(test_filepath)
-    if os.path.exists(os.path.dirname(test_filepath)):
-         if not os.listdir(os.path.dirname(test_filepath)):
-            os.rmdir(os.path.dirname(test_filepath))
-    # Also remove parent 'archival_status' and 'workspace' if they became empty and were created by this test
-    # This cleanup is basic, for more robust testing, a test framework would handle setup/teardown
-    try:
-        if os.path.exists(os.path.join(DEFAULT_WORKSPACE_ROOT, ARCHIVAL_STATUS_DIR)) and \
-           not os.listdir(os.path.join(DEFAULT_WORKSPACE_ROOT, ARCHIVAL_STATUS_DIR)):
-            os.rmdir(os.path.join(DEFAULT_WORKSPACE_ROOT, ARCHIVAL_STATUS_DIR))
-        if os.path.exists(DEFAULT_WORKSPACE_ROOT) and not os.listdir(DEFAULT_WORKSPACE_ROOT):
-            os.rmdir(DEFAULT_WORKSPACE_ROOT)
-    except OSError as e:
-        print(f"Note: Could not clean up all test directories (this is okay for simple test): {e}")
+    # Clean up
+    if os.path.exists(epub1_abs_path): os.remove(epub1_abs_path)
+    if os.path.exists(test_filepath): os.remove(test_filepath)
+    if os.path.exists(ebook_dir_for_test) and not os.listdir(ebook_dir_for_test): os.rmdir(ebook_dir_for_test)
+    story_archival_dir = os.path.join(test_workspace, ARCHIVAL_STATUS_DIR, test_story_id)
+    if os.path.exists(story_archival_dir) and not os.listdir(story_archival_dir): os.rmdir(story_archival_dir)
+
+    # Clean up parent directories if they are empty and created by this test
+    for parent_dir_name in [EBOOKS_DIR, ARCHIVAL_STATUS_DIR]:
+        parent_path = os.path.join(test_workspace, parent_dir_name)
+        if os.path.exists(parent_path) and not os.listdir(parent_path):
+            os.rmdir(parent_path)
+    if os.path.exists(test_workspace) and not os.listdir(test_workspace):
+        os.rmdir(test_workspace)
+    logger.info(f"Test workspace {test_workspace} cleaned up.")

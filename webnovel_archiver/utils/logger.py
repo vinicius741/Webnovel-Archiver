@@ -20,7 +20,7 @@ except ImportError:
     WORKSPACE_PATH = os.path.join(PROJECT_ROOT_FALLBACK, 'workspace')
 
 
-DEFAULT_LOG_FILE_NAME = 'app.log'
+DEFAULT_LOG_FILE_NAME = 'archiver.log'
 DEFAULT_LOGS_DIR_NAME = 'logs'
 LOG_FILE_PATH = os.path.join(WORKSPACE_PATH, DEFAULT_LOGS_DIR_NAME, DEFAULT_LOG_FILE_NAME)
 

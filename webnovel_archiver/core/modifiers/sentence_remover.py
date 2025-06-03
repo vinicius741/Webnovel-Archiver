@@ -4,7 +4,6 @@ from typing import List, Dict, Any, Pattern
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 from webnovel_archiver.utils.logger import get_logger
-# Need to import setup_basic_logging for the __main__ block
 
 
 logger = get_logger(__name__)

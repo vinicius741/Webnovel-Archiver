@@ -132,6 +132,10 @@ def archive_story(
     for chapter_info in chapters_info_list:
         logger.info(f"Processing chapter: {chapter_info.chapter_title} (URL: {chapter_info.chapter_url})")
 
+        if chapter_info.chapter_url is None:
+            logger.warning(f"Chapter {chapter_info.chapter_title} (Order: {chapter_info.download_order}) has no URL. Skipping.")
+            continue
+
         if not force_reprocessing and chapter_info.chapter_url in existing_chapters_map:
             existing_chapter_details = existing_chapters_map[chapter_info.chapter_url]
             # Check if local_raw_filename and local_processed_filename exist and are not None or empty

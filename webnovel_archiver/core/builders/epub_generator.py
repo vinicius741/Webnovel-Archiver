@@ -1,4 +1,4 @@
-import ebooklib
+import ebooklib # type: ignore
 from ebooklib import epub
 import os
 import datetime

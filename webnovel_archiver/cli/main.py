@@ -1,4 +1,5 @@
 import click
+from typing import Optional
 from webnovel_archiver.cli.handlers import archive_story_handler
 
 @click.group()
@@ -15,7 +16,7 @@ def archiver():
 @click.option('--sentence-removal-file', default=None, type=click.Path(exists=True), help='Path to a JSON file for sentence removal rules.')
 @click.option('--no-sentence-removal', is_flag=True, default=False, help='Disable sentence removal even if a file is provided.')
 @click.option('--chapters-per-volume', default=None, type=int, help='Number of chapters per EPUB volume. Default is all in one volume.')
-def archive_story(story_url: str, output_dir: str | None, ebook_title_override: str | None, keep_temp_files: bool, force_reprocessing: bool, sentence_removal_file: str | None, no_sentence_removal: bool, chapters_per_volume: int | None):
+def archive_story(story_url: str, output_dir: Optional[str], ebook_title_override: Optional[str], keep_temp_files: bool, force_reprocessing: bool, sentence_removal_file: Optional[str], no_sentence_removal: bool, chapters_per_volume: Optional[int]):
     """Archives a webnovel from a given URL with specified options."""
     archive_story_handler(
         story_url=story_url,

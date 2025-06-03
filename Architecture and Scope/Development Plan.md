@@ -36,41 +36,59 @@ This plan focuses on an incremental approach, building the system module by modu
 
 ---
 
-## **Phase 1: Core Download and Processing Functionality (Focus on RoyalRoad)**
+## **Phase 1: Core Download and Processing Functionality (Focus on RoyalRoad) - COMPLETED**
 
-The goal of this phase is to be able to download and process content from a RoyalRoad story.
+The goal of this phase was to be able to download and process content from a RoyalRoad story.
 
 1.  **Fetcher Abstraction:**
-    * **`core/fetchers/base_fetcher.py`**: Define the abstract class `BaseFetcher` with methods `get_story_metadata()`, `get_chapter_urls()`, and `download_chapter_content()`. Define dataclasses for `StoryMetadata` and `ChapterInfo`.
+    * **`core/fetchers/base_fetcher.py`**: Defined the abstract class `BaseFetcher` with methods `get_story_metadata()`, `get_chapter_urls()`, and `download_chapter_content()`. Defined dataclasses for `StoryMetadata` and `ChapterInfo`.
 2.  **Fetcher Implementation (RoyalRoad):**
-    * **`core/fetchers/royalroad_fetcher.py`**: Implement `RoyalRoadFetcher` inheriting from `BaseFetcher`.
-        * Focus on getting story metadata.
-        * Implement fetching the list of chapter URLs.
-        * Implement downloading the raw HTML content of a chapter.
+    * **`core/fetchers/royalroad_fetcher.py`**: Implemented `RoyalRoadFetcher` inheriting from `BaseFetcher`.
+        * Focused on getting story metadata.
+        * Implemented fetching the list of chapter URLs.
+        * Implemented downloading the raw HTML content of a chapter (initially simulated using placeholder content).
 3.  **Progress Management:**
     * **`core/storage/progress_manager.py`**:
-        * Define the complete structure of `progress_status.json` as specified in the document.
-        * Implement functions to:
+        * Defined the complete structure of `progress_status.json`.
+        * Implemented functions to:
             * Load an existing `progress_status.json` for a `story_id`.
             * Create a new `progress_status.json` if it doesn't exist.
             * Save/update `progress_status.json`.
             * Generate `story_id` from the URL or title.
 4.  **HTML Cleaning:**
-    * **`core/parsers/html_cleaner.py`**: Implement `HTMLCleaner` to remove unnecessary tags, scripts, and styles from raw HTML, focusing on the main story content. Making it configurable can be a later refinement.
+    * **`core/parsers/html_cleaner.py`**: Implemented `HTMLCleaner` to remove unnecessary tags, scripts, and styles from raw HTML, focusing on the main story content.
 5.  **Initial Orchestration:**
     * **`core/orchestrator.py`**:
-        * Implement an initial function for the `archive-story` workflow.
-        * It should:
-            * Select the `RoyalRoadFetcher` (can be hardcoded initially).
-            * Use the fetcher to get metadata and chapter list.
-            * Consult/create `progress_status.json` using `ProgressManager`.
-            * Iterate over chapters:
-                * Download raw content using the fetcher.
-                * Save raw content to `workspace/raw_content/<story_id>/<local_raw_filename>`.
-                * Update `progress_status.json` with downloaded chapter details (including `local_raw_filename`).
-            * Process downloaded chapters with `HTMLCleaner`.
-            * Save processed content to `workspace/processed_content/<story_id>/<local_processed_filename>`.
-            * Update `progress_status.json` with `local_processed_filename`.
+        * Implemented an initial function for the `archive-story` workflow.
+        * It:
+            * Selected the `RoyalRoadFetcher` (hardcoded).
+            * Used the fetcher to get metadata and chapter list.
+            * Consulted/created `progress_status.json` using `ProgressManager`.
+            * Iterated over chapters:
+                * Downloaded raw content using the fetcher (simulated).
+                * Saved raw content to `workspace/raw_content/<story_id>/<local_raw_filename>`.
+                * Updated `progress_status.json` with downloaded chapter details.
+            * Processed downloaded chapters with `HTMLCleaner`.
+            * Saved processed content to `workspace/processed_content/<story_id>/<local_processed_filename>`.
+            * Updated `progress_status.json`.
+
+---
+
+## **Phase 1.5: Initial Refinements and Preparation for Expansion**
+
+This phase addresses immediate refinements based on Phase 1 and prepares for more complex functionalities.
+
+1.  **Transition to Real HTTP Requests (Fetcher):**
+    * Modify `core/fetchers/royalroad_fetcher.py`'s `download_chapter_content` method (and potentially `_fetch_html_content` or a new method for actual chapter page fetching) to perform actual HTTP requests using the `requests` library.
+    * Implement basic error handling for network requests (e.g., connection errors, timeouts, non-200 status codes).
+    * The `_fetch_html_content` in `RoyalRoadFetcher` which currently serves example story page HTML should also be updated or complemented to fetch live story pages.
+2.  **Initial Unit Tests:**
+    * Write basic unit tests for key functions implemented in `ProgressManager`, `HTMLCleaner`, and parsing logic within `RoyalRoadFetcher` (for metadata and chapter list from example HTML initially, then adaptable for live content).
+3.  **Configuration Alignment (Logging):**
+    * Align log file name: Change `app.log` in `utils/logger.py` to `archiver.log` for consistency with the `Architecture and Scope/Webnovel Archiver Architecture.md` document.
+4.  **Refine Orchestrator for Real Content:**
+    * Ensure `core/orchestrator.py` correctly handles the potentially larger and varied content from real HTTP requests.
+    * Review error propagation from the fetcher to the orchestrator.
 
 ---
 
@@ -80,7 +98,7 @@ The goal of this phase is to be able to download and process content from a Roya
     * **`core/builders/epub_generator.py`**: Implement `EPUBGenerator`.
         * Use a Python library for EPUB creation (e.g., `EbookLib`).
         * Read metadata from `progress_status.json`.
-        * Read processed HTML files from `workspace/processed_content/`.
+        * Read processed HTML files (now potentially from live fetched content) from `workspace/processed_content/`.
         * Generate a simple EPUB file initially, without volume division.
         * Save the EPUB to `workspace/ebooks/<story_id>/`.
 2.  **Orchestrator Update:**
@@ -90,6 +108,8 @@ The goal of this phase is to be able to download and process content from a Roya
 3.  **Volume Logic (Refinement):**
     * Add volume division logic (`--chapters-per-volume`) to `EPUBGenerator` and `Orchestrator`.
     * Consider how to update existing volumes or create new ones when adding more chapters to a story.
+4.  **Unit Tests:**
+    * Write unit tests for `EPUBGenerator` logic.
 
 ---
 
@@ -114,6 +134,9 @@ The goal of this phase is to be able to download and process content from a Roya
     * Integrate into `core/orchestrator.py`, conditional on `--sentence-removal-file` and `--no-sentence-removal` options.
     * Update `progress_status.json` with `sentence_removal_config_used`.
     * Add `--sentence-removal-file` and `--no-sentence-removal` options to the `archive-story` handler in the CLI.
+4.  **Unit and Integration Tests:**
+    * Write unit tests for CLI handlers and `SentenceRemover`.
+    * Begin developing integration tests for the `archive-story` command (now using live fetching).
 
 ---
 
@@ -137,35 +160,41 @@ The goal of this phase is to be able to download and process content from a Roya
             * Upload `progress_status.json` from `workspace/archival_status/<story_id>/`.
             * Update the local `progress_status.json` with `cloud_backup_status` (timestamps, cloud file IDs, etc.).
         * Process options: `--cloud-service`, `--force-full-upload`.
+4.  **Unit and Integration Tests:**
+    * Write unit tests for `GDriveSync` (may require mocking).
+    * Develop integration tests for the `cloud-backup` command.
 
 ---
 
 ## **Phase 5: Testing, Refinement, and Documentation**
 
-This phase occurs in parallel with the others but intensifies here.
+This phase occurs in parallel with the others but intensifies here, focusing on areas not covered by phase-specific testing.
 
-1.  **Unit Tests:**
-    * Write unit tests for each module in `core/`, `cli/`, and `utils/`. Focus on testing the logic of each component in isolation.
-    * Examples: test parsing logic of `RoyalRoadFetcher`, cleaning by `HTMLCleaner`, EPUB generation with different scenarios.
-2.  **Integration Tests:**
-    * Test complete workflows:
-        * `archive-story` command end-to-end for a test story (can be a set of local HTML files to avoid constant network dependency in tests).
-        * `cloud-backup` command (may require mocking the cloud service or a dedicated test environment).
-3.  **Error Handling:**
-    * Review and improve error handling in all modules, ensuring errors are caught, logged, and clearly communicated to the user via the CLI.
+1.  **Comprehensive Integration Tests:**
+    * Test complete workflows end-to-end with various scenarios (e.g., new story, updating story, different CLI options).
+    * Test interaction between all core modules.
+2.  **Error Handling and Robustness Review:**
+    * Review and improve error handling across all modules, ensuring errors are caught, logged, and clearly communicated to the user via the CLI, especially for network operations and file I/O.
+    * Implement the more systematic error handling strategy (see "General Considerations").
+3.  **Performance Testing (Basic):**
+    * Identify any major performance bottlenecks for very large stories (many chapters).
 4.  **CLI Refinement:**
-    * Improve usability, help messages, progress feedback.
+    * Improve usability, help messages, progress feedback based on testing.
 5.  **Documentation:**
-    * Create/update `README.md` with installation instructions, usage, command examples.
-    * Document the architecture (the provided file is already a great start).
+    * Create/update `README.md` with installation instructions, detailed usage for all commands and options, examples.
+    * Finalize documentation for the architecture.
     * Consider generating code documentation (e.g., Sphinx).
 6.  **Packaging and Distribution (Optional):**
     * Set up `setup.py` or `pyproject.toml` to allow package installation via `pip`.
 
 ---
 
-## **Additional Considerations (Throughout the project)**
+## **General Considerations (Throughout the project)**
 
+* **Error Handling Strategy:**
+    * As the project evolves (especially with network requests and more complex file operations from Phase 1.5 onwards), develop a more systematic error handling strategy. This could include defining custom exceptions (e.g., in a new `utils/exceptions.py` file) for common issues such as fetching errors, parsing errors, or configuration problems. This will aid in providing clearer feedback to the user and simplify debugging.
+* **Configuration:**
+    * **HTMLCleaner Configuration:** Revisit making `HTMLCleaner` more configurable (e.g., via a JSON file specifying rules per site) as a later refinement if needed, possibly after supporting more than one source.
 * **Iteration:** Build each functionality incrementally. Start simple and add complexity.
 * **Code Review:** If possible, have someone else review the code.
 * **Feedback:** If this is a project for others to use, get feedback early and often.

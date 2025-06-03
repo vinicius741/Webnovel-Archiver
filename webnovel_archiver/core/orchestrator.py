@@ -92,8 +92,20 @@ def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) 
         # Define simulated filenames/paths
         # Filenames could be chapter_info.source_chapter_id or zero-padded download_order
         raw_filename = f"chapter_{str(chapter_info.download_order).zfill(5)}_{chapter_info.source_chapter_id}.html"
-        # raw_filepath = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id, raw_filename)
-        # print(f"Simulating save of raw content to: {raw_filepath}") # Actual file write deferred
+
+        raw_file_directory = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id)
+        os.makedirs(raw_file_directory, exist_ok=True)
+        raw_filepath = os.path.join(raw_file_directory, raw_filename)
+
+        try:
+            with open(raw_filepath, 'w', encoding='utf-8') as f:
+                f.write(raw_html_content)
+            print(f"Successfully saved raw content to: {raw_filepath}")
+        except IOError as e:
+            print(f"Error saving raw content to {raw_filepath}: {e}")
+            # Decide if you want to continue to the next chapter or abort
+            # For now, let's print error and continue
+            continue
 
         processed_filename = f"chapter_{str(chapter_info.download_order).zfill(5)}_{chapter_info.source_chapter_id}_clean.html"
         # processed_filepath = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id, processed_filename)
@@ -101,7 +113,23 @@ def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) 
         # Clean HTML
         print(f"Cleaning HTML for: {chapter_info.chapter_title}")
         cleaned_html_content = html_cleaner.clean_html(raw_html_content, source_site="royalroad")
-        # print(f"Simulating save of processed content to: {processed_filepath}") # Actual file write deferred
+
+        processed_file_directory = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id)
+        os.makedirs(processed_file_directory, exist_ok=True)
+        processed_filepath = os.path.join(processed_file_directory, processed_filename)
+
+        try:
+            with open(processed_filepath, 'w', encoding='utf-8') as f:
+                f.write(cleaned_html_content)
+            print(f"Successfully saved processed content to: {processed_filepath}")
+        except IOError as e:
+            print(f"Error saving processed content to {processed_filepath}: {e}")
+            # Decide if you want to update progress_data with this chapter if processed saving fails
+            # For now, let's assume if raw is saved, we still record the chapter,
+            # but processed_filename might be None or error noted.
+            # The current structure adds chapter_detail_entry later, so it will include processed_filename
+            # regardless. This might need refinement based on desired error handling.
+            # For now, just print and continue.
 
         # Update progress_status.json with downloaded chapter details
         chapter_detail_entry = {
@@ -137,45 +165,78 @@ def archive_story(story_url: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) 
     print("Archiving process completed.")
 
 if __name__ == '__main__':
-    # Example usage:
-    # This URL should match the one for which RoyalRoadFetcher has example HTML.
+    import shutil
+
     test_story_url = "https://www.royalroad.com/fiction/117255/rend"
+    test_workspace = "temp_workspace_orchestrator_tests" # Changed name slightly for clarity
 
-    # Define a test workspace directory (it will be created if it doesn't exist by save_progress)
-    test_workspace = "temp_workspace_orchestrator"
+    story_id_for_run = generate_story_id(url=test_story_url)
 
-    print(f"--- Running Orchestrator for: {test_story_url} ---")
-    print(f"--- Output will be in (simulated): {test_workspace} ---")
+    # --- Setup: Clean workspace before run ---
+    print(f"--- Preparing Test Environment: Cleaning workspace '{test_workspace}' ---")
+    if os.path.exists(test_workspace):
+        shutil.rmtree(test_workspace)
+    os.makedirs(test_workspace, exist_ok=True) # Create the base test workspace
 
-    # Clean up old test workspace if it exists to ensure a fresh run for the example
-    # More robust cleanup would be `shutil.rmtree(test_workspace, ignore_errors=True)`
-    # but let's stick to os for now if shutil is not assumed.
-    # For simplicity in this subtask, we'll let save_progress create it.
-    # If you run this multiple times, the progress file will be overwritten.
-
-    # Check if progress file exists from a previous run and remove it for a clean test
-    # This is simplified; proper test setup/teardown is better.
-    story_id_for_cleanup = generate_story_id(url=test_story_url) # Use the same title as in the test to get the same ID
-    progress_file_path_for_cleanup = os.path.join(test_workspace, ARCHIVAL_STATUS_DIR, story_id_for_cleanup, "progress_status.json")
-    if os.path.exists(progress_file_path_for_cleanup):
-        print(f"Removing existing test progress file: {progress_file_path_for_cleanup}")
-        os.remove(progress_file_path_for_cleanup)
-        # Try to remove the story_id directory if it's empty
-        try:
-            os.rmdir(os.path.dirname(progress_file_path_for_cleanup))
-        except OSError:
-            pass # Fine if it's not empty or fails
+    print(f"--- Running Orchestrator Test for: {test_story_url} ---")
+    print(f"--- Workspace: {test_workspace} ---")
 
     archive_story(test_story_url, workspace_root=test_workspace)
 
     print(f"--- Orchestrator Test Run Finished ---")
-    print(f"Verify the content of '{progress_file_path_for_cleanup}' (if desired).")
-    # You would typically add assertions here in a real test suite.
-    # e.g., assert os.path.exists(progress_file_path_for_cleanup)
-    # loaded_p_data = load_progress(story_id_for_cleanup, workspace_root=test_workspace)
-    # assert loaded_p_data["original_title"] == "REND"
-    # assert len(loaded_p_data["downloaded_chapters"]) > 0
 
-    # Consider adding a prompt to manually clean up 'temp_workspace_orchestrator' or do it if empty.
-    # For now, it will persist. If this were a unit test, teardown would handle it.
-    print(f"Note: The directory '{test_workspace}' was used. You may want to inspect or remove it manually.")
+    # --- Verification ---
+    print("--- Verifying Created Files (Basic Checks) ---")
+    progress_file_path = os.path.join(test_workspace, ARCHIVAL_STATUS_DIR, story_id_for_run, "progress_status.json")
+    raw_dir_path = os.path.join(test_workspace, RAW_CONTENT_DIR, story_id_for_run)
+    processed_dir_path = os.path.join(test_workspace, PROCESSED_CONTENT_DIR, story_id_for_run)
+
+    if os.path.exists(progress_file_path):
+        print(f"SUCCESS: Progress file found at {progress_file_path}")
+        # Further check: load progress and see if it has chapters
+        loaded_p_data = load_progress(story_id_for_run, workspace_root=test_workspace)
+        if loaded_p_data.get("downloaded_chapters"):
+            print(f"SUCCESS: Progress data contains {len(loaded_p_data['downloaded_chapters'])} chapter entries.")
+
+            # Check for first chapter's raw and processed files (example)
+            first_chapter_entry = loaded_p_data['downloaded_chapters'][0]
+            raw_file_expected = os.path.join(raw_dir_path, first_chapter_entry['local_raw_filename'])
+            processed_file_expected = os.path.join(processed_dir_path, first_chapter_entry['local_processed_filename'])
+
+            if os.path.exists(raw_file_expected):
+                print(f"SUCCESS: Raw file for first chapter found: {raw_file_expected}")
+            else:
+                print(f"FAILURE: Raw file for first chapter NOT found: {raw_file_expected}")
+
+            if os.path.exists(processed_file_expected):
+                print(f"SUCCESS: Processed file for first chapter found: {processed_file_expected}")
+            else:
+                print(f"FAILURE: Processed file for first chapter NOT found: {processed_file_expected}")
+        else:
+            print("WARNING: Progress data does not contain any downloaded chapters.")
+
+    else:
+        print(f"FAILURE: Progress file NOT found at {progress_file_path}")
+
+    if os.path.exists(raw_dir_path) and os.listdir(raw_dir_path):
+        print(f"SUCCESS: Raw content directory found and is not empty: {raw_dir_path}")
+    else:
+        print(f"FAILURE: Raw content directory NOT found or is empty: {raw_dir_path}")
+
+    if os.path.exists(processed_dir_path) and os.listdir(processed_dir_path):
+        print(f"SUCCESS: Processed content directory found and is not empty: {processed_dir_path}")
+    else:
+        print(f"FAILURE: Processed content directory NOT found or is empty: {processed_dir_path}")
+
+    # --- Cleanup: Remove test workspace after run ---
+    print(f"--- Cleaning up Test Environment: Removing workspace '{test_workspace}' ---")
+    if os.path.exists(test_workspace):
+        try:
+            shutil.rmtree(test_workspace)
+            print(f"Successfully removed test workspace: {test_workspace}")
+        except Exception as e:
+            print(f"Error removing test workspace {test_workspace}: {e}")
+    else:
+        print(f"Test workspace {test_workspace} not found, no cleanup needed or it failed to create.")
+
+    print("--- Test Script Complete ---")

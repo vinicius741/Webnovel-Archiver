@@ -113,30 +113,36 @@ This phase addresses immediate refinements based on Phase 1 and prepares for mor
 
 ---
 
-## **Phase 3: Command Line Interface (CLI) - `archive-story`**
 
-1.  **CLI Setup:**
-    * **`cli/main.py`**: Set up the CLI entry point using `argparse` or `click`. Define the main `archiver` command.
-2.  **Handler for `archive-story`:**
-    * **`cli/handlers.py`**: Create the handler function for the `archive-story <story_url> [OPTIONS]` subcommand.
-    * This function should:
-        * Receive `story_url` and other options.
-        * Instantiate and call `core.Orchestrator` to execute the archiving workflow.
-        * Process CLI options:
-            * `--chapters-per-volume`
-            * `--ebook-title`
-            * `--keep-temporary-files`
-            * `--force-reprocessing`
-            * `--output-dir` (pass to `ConfigManager` or directly to relevant modules)
-        * Provide user feedback on progress and any errors.
-3.  **Sentence Removal (Optional):**
-    * **`core/modifiers/sentence_remover.py`**: Implement `SentenceRemover` to remove sentences from HTML files based on a JSON config.
-    * Integrate into `core/orchestrator.py`, conditional on `--sentence-removal-file` and `--no-sentence-removal` options.
-    * Update `progress_status.json` with `sentence_removal_config_used`.
-    * Add `--sentence-removal-file` and `--no-sentence-removal` options to the `archive-story` handler in the CLI.
-4.  **Unit and Integration Tests:**
-    * Write unit tests for CLI handlers and `SentenceRemover`.
-    * Begin developing integration tests for the `archive-story` command (now using live fetching).
+
+ ## **Phase 3: Command Line Interface (CLI) - archive-story (Revised)**
+
+This phase focuses on implementing the primary CLI command for story archiving, ensuring it can pass user-defined options to the core Orchestrator.
+
+
+
+1. **CLI Setup:**
+    * **cli/main.py**: Set up the CLI entry point (e.g., using click). Define the main archiver command group and the archive-story subcommand.
+2. **Handler for archive-story:**
+    * **cli/handlers.py**: Create the handler function for archive-story &lt;story_url> [OPTIONS].
+        * This function will:
+            * Receive story_url and parse all CLI options.
+            * Determine the workspace_root (from --output-dir or ConfigManager).
+            * Instantiate core.Orchestrator.
+            * Call core.Orchestrator.archive_story(), passing arguments derived from CLI options.
+            * Provide user feedback on progress and errors.
+    * **core/orchestrator.py Modification**:
+        * The archive_story method within core.Orchestrator **must be updated** to accept new parameters corresponding to the CLI options (e.g., ebook_title_override, keep_temp_files, force_reprocessing, sentence_removal_file, no_sentence_removal).
+        * The Orchestrator will then use these parameters to modify its workflow (e.g., use the override title, skip deleting temp files, force reprocessing steps, conditionally call sentence removal).
+3. **Sentence Removal (Optional):**
+    * **core/modifiers/sentence_remover.py**: Implement SentenceRemover to remove sentences from HTML files based on a JSON config.
+    * **Integration in core.Orchestrator**:
+        * Conditionally invoke SentenceRemover based on the parameters passed from the CLI handler (sentence_removal_file, no_sentence_removal).
+        * Update progress_status.json with sentence_removal_config_used.
+    * **CLI Options**: Add --sentence-removal-file and --no-sentence-removal to the archive-story command.
+4. **Unit and Integration Tests:**
+    * Write unit tests for CLI handlers (mocking Orchestrator calls to verify correct parameter passing) and for SentenceRemover.
+    * Develop integration tests for the archive-story command, covering various CLI option combinations and their effect on the Orchestrator's behavior and output.
 
 ---
 

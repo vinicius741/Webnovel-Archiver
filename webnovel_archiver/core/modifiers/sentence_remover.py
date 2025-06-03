@@ -221,5 +221,3 @@ if __name__ == '__main__':
     # if not os.path.exists(dummy_config_path):
     #    with open(dummy_config_path, 'w', encoding='utf-8') as f:
     #        json.dump(dummy_config_content, f)
-
-```

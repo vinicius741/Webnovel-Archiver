@@ -5,7 +5,6 @@ from bs4 import BeautifulSoup, NavigableString, Tag
 
 from webnovel_archiver.utils.logger import get_logger
 # Need to import setup_basic_logging for the __main__ block
-from webnovel_archiver.utils.logger import setup_basic_logging
 
 
 logger = get_logger(__name__)
@@ -125,7 +124,6 @@ class SentenceRemover:
 if __name__ == '__main__':
     # Basic Test
     logger_main = get_logger('sentence_remover_main')
-    setup_basic_logging() # Ensure logs are visible for testing
 
     # Create a dummy config file
     dummy_config_content = {

@@ -1,5 +1,6 @@
 import os
 import click # For feedback and potentially type hinting
+from typing import Optional
 
 # Import necessary core components
 from webnovel_archiver.core.orchestrator import archive_story as call_orchestrator_archive_story
@@ -11,13 +12,13 @@ logger = get_logger(__name__)
 
 def archive_story_handler(
     story_url: str,
-    output_dir: str | None,
-    ebook_title_override: str | None,
+    output_dir: Optional[str],
+    ebook_title_override: Optional[str],
     keep_temp_files: bool,
     force_reprocessing: bool,
-    sentence_removal_file: str | None,
+    sentence_removal_file: Optional[str],
     no_sentence_removal: bool,
-    chapters_per_volume: int | None
+    chapters_per_volume: Optional[int]
 ):
     """
     Handles the logic for the 'archive-story' CLI command.

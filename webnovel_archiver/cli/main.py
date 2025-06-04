@@ -29,5 +29,63 @@ def archive_story(story_url: str, output_dir: Optional[str], ebook_title_overrid
         chapters_per_volume=chapters_per_volume
     )
 
+# New cloud-backup command
+@archiver.command(name='cloud-backup') # Explicitly naming command
+@click.argument('story_id', required=False, default=None)
+@click.option(
+    '--cloud-service',
+    default='gdrive',
+    type=click.Choice(['gdrive'], case_sensitive=False), # Initially only gdrive, extensible later
+    help='The cloud service to use for backup. Default: gdrive'
+)
+@click.option(
+    '--force-full-upload',
+    is_flag=True,
+    default=False,
+    help='Force upload of all files, even if they appear up-to-date.'
+)
+# Placeholder for credentials file path for GDrive, can be expanded or moved to config
+@click.option(
+    '--credentials-file',
+    default='credentials.json',
+    type=click.Path(), # Not exists=True, as it might be created or user prompted
+    help='Path to the Google Drive API credentials file (credentials.json).'
+)
+@click.option(
+    '--token-file',
+    default='token.json',
+    type=click.Path(),
+    help='Path to the Google Drive API token file (token.json).'
+)
+def cloud_backup(
+    story_id: Optional[str],
+    cloud_service: str,
+    force_full_upload: bool,
+    credentials_file: str,
+    token_file: str
+):
+    """
+    Backs up archived webnovels to a cloud storage service.
+
+    If STORY_ID is provided, only that story will be backed up.
+    Otherwise, all stories with existing progress status will be processed.
+    """
+    # click.echo(f"Cloud backup initiated for story ID: {story_id if story_id else 'All stories'}")
+    # click.echo(f"Cloud service: {cloud_service}")
+    # click.echo(f"Force full upload: {force_full_upload}")
+    # click.echo(f"Credentials file: {credentials_file}")
+    # click.echo(f"Token file: {token_file}")
+
+    # Dynamically import the handler to avoid circular imports if handlers grow complex
+    from webnovel_archiver.cli.handlers import cloud_backup_handler
+
+    cloud_backup_handler(
+        story_id=story_id,
+        cloud_service_name=cloud_service,
+        force_full_upload=force_full_upload,
+        gdrive_credentials_path=credentials_file,
+        gdrive_token_path=token_file
+    )
+
 if __name__ == '__main__':
     archiver()

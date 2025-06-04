@@ -173,24 +173,60 @@ def add_epub_file_to_progress(progress_data: Dict[str, Any], file_name: str, fil
 def get_epub_file_details(progress_data: Dict[str, Any], story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> List[Dict[str, str]]:
     """
     Retrieves a list of EPUB file details (name, absolute path) from progress data.
+    Handles both old (string list) and new (list of dicts) formats for generated_epub_files.
     """
     epub_file_entries = progress_data.get("last_epub_processing", {}).get("generated_epub_files", [])
     resolved_epub_files = []
-    ebook_dir = os.path.join(workspace_root, EBOOKS_DIR, story_id)
+    ebook_dir = os.path.join(workspace_root, EBOOKS_DIR, story_id) # EBOOKS_DIR is 'ebooks'
+
+    if not os.path.isdir(ebook_dir):
+        logger.warning(f"Ebook directory {ebook_dir} for story {story_id} not found. Cannot resolve relative EPUB paths.")
+        # Depending on desired strictness, could return empty list or raise error.
+        # For now, will try to process absolute paths if any, but relative ones will fail.
 
     for entry in epub_file_entries:
-        path = entry.get("path")
-        name = entry.get("name")
-        if not path or not name:
-            logger.warning(f"Skipping malformed EPUB entry in {story_id}: {entry}")
+        path = None
+        name = None
+
+        if isinstance(entry, dict):
+            path = entry.get("path")
+            name = entry.get("name")
+        elif isinstance(entry, str):
+            # Old format: entry is a filename or relative path string
+            name = os.path.basename(entry)
+            if os.path.isabs(entry):
+                path = entry
+            else:
+                # Only try to join if ebook_dir exists, otherwise path remains None or relative
+                if os.path.isdir(ebook_dir):
+                    path = os.path.join(ebook_dir, entry)
+                else:
+                    path = entry # Keep it as is, likely will fail os.path.exists check later if relative
+            logger.info(f"Processing old format EPUB entry for story {story_id}: '{entry}'. Derived name: '{name}', path: '{path}'")
+        else:
+            logger.warning(f"Skipping unknown EPUB entry type in {story_id}: {type(entry)} - {entry}")
             continue
 
-        if not os.path.isabs(path):
-            logger.warning(f"Found relative EPUB path '{path}' for story {story_id}. Resolving against {ebook_dir}.")
-            # Use os.path.basename if path might contain subdirectories relative to ebook_dir
-            path = os.path.join(ebook_dir, os.path.basename(path))
+        if not path or not name:
+            logger.warning(f"Skipping malformed or unresolvable EPUB entry in {story_id}: {entry}")
+            continue
 
-        resolved_epub_files.append({"name": name, "path": path})
+        # Ensure path is absolute if it was derived from a relative string entry
+        # or if a dict entry somehow had a relative path.
+        if not os.path.isabs(path):
+            if os.path.isdir(ebook_dir):
+                 # This re-confirms abs path for string entries if they were relative,
+                 # and attempts to fix dict entries that might have stored relative paths.
+                logger.warning(f"EPUB path '{path}' for story {story_id} was not absolute. Resolving against {ebook_dir}.")
+                path = os.path.join(ebook_dir, os.path.basename(path)) # Use basename to be safe
+            else:
+                # If ebook_dir doesn't exist and path is not absolute, we can't make it absolute.
+                logger.error(f"Cannot resolve non-absolute EPUB path '{path}' for story {story_id} because ebook directory {ebook_dir} does not exist.")
+                # Depending on strictness, could skip this entry. For now, it will pass through
+                # and likely fail later checks like os.path.exists in the handler.
+                # To be safer, we could 'continue' here.
+
+        resolved_epub_files.append({"name": name, "path": os.path.normpath(path)}) # Normalize path
     return resolved_epub_files
 
 # --- Methods for cloud backup status ---
@@ -336,3 +372,81 @@ if __name__ == '__main__':
     if os.path.exists(test_workspace) and not os.listdir(test_workspace):
         os.rmdir(test_workspace)
     logger.info(f"Test workspace {test_workspace} cleaned up.")
+
+    logger.info("--- Testing get_epub_file_details backward compatibility ---")
+
+    # 1. Setup progress_data with old format epub entries
+    old_format_story_id = "story_with_old_epubs"
+    old_format_workspace = "_test_pm_old_format_workspace"
+
+    # Ensure workspace and ebook directory exist for this test
+    old_format_ebook_dir = os.path.join(old_format_workspace, EBOOKS_DIR, old_format_story_id)
+    os.makedirs(old_format_ebook_dir, exist_ok=True)
+
+    # Simulate creation of one of the files for path resolution testing
+    relative_epub_name = "old_relative_book.epub"
+    abs_path_for_relative_epub = os.path.abspath(os.path.join(old_format_ebook_dir, relative_epub_name))
+    with open(abs_path_for_relative_epub, 'w') as f: f.write("dummy old relative epub")
+
+    # Absolute path for another dummy file (no actual file creation needed for this one in test)
+    abs_path_epub_name = "old_absolute_book.epub" # Name if derived from path
+    abs_path_epub_string = os.path.abspath(os.path.join(old_format_ebook_dir, abs_path_epub_name))
+
+
+    progress_old_format = _get_new_progress_structure(old_format_story_id) # Start with a base structure
+    progress_old_format['last_epub_processing']['generated_epub_files'] = [
+        relative_epub_name, # A relative path / filename
+        abs_path_epub_string  # An absolute path string
+    ]
+    # Optionally save and reload to ensure it's processed by load_progress if desired,
+    # but for direct testing of get_epub_file_details, this is fine.
+    # save_progress(old_format_story_id, progress_old_format, workspace_root=old_format_workspace)
+    # loaded_progress_old_format = load_progress(old_format_story_id, workspace_root=old_format_workspace)
+
+
+    # 2. Call get_epub_file_details
+    retrieved_old_format_epubs = get_epub_file_details(progress_old_format, old_format_story_id, workspace_root=old_format_workspace)
+    logger.info(f"Retrieved EPUBs from old format data: {retrieved_old_format_epubs}")
+
+    # 3. Assertions
+    assert len(retrieved_old_format_epubs) == 2
+
+    found_relative_as_dict = False
+    found_absolute_as_dict = False
+
+    for item in retrieved_old_format_epubs:
+        assert isinstance(item, dict)
+        assert "name" in item
+        assert "path" in item
+        assert os.path.isabs(item["path"]) # Ensure all paths are absolute
+
+        if item["name"] == relative_epub_name:
+            # Path comparison needs to be careful about normalization (e.g. slashes)
+            # os.path.normpath was used in get_epub_file_details
+            assert os.path.normpath(item["path"]) == os.path.normpath(abs_path_for_relative_epub)
+            found_relative_as_dict = True
+        elif item["name"] == abs_path_epub_name: # Name is derived from basename of the path string
+            assert os.path.normpath(item["path"]) == os.path.normpath(abs_path_epub_string)
+            found_absolute_as_dict = True
+
+    assert found_relative_as_dict, f"Did not find processed entry for '{relative_epub_name}'"
+    assert found_absolute_as_dict, f"Did not find processed entry for '{abs_path_epub_string}'"
+
+    logger.info("get_epub_file_details backward compatibility test passed.")
+
+    # Clean up test files and directories for this specific test
+    if os.path.exists(abs_path_for_relative_epub): os.remove(abs_path_for_relative_epub)
+    # No progress file was saved for old_format_story_id in this direct test of get_epub_file_details
+    # so no progress file to remove for old_format_story_id
+    if os.path.exists(old_format_ebook_dir) and not os.listdir(old_format_ebook_dir): os.rmdir(old_format_ebook_dir)
+
+    old_format_story_archival_dir = os.path.join(old_format_workspace, ARCHIVAL_STATUS_DIR, old_format_story_id)
+    if os.path.exists(old_format_story_archival_dir) and not os.listdir(old_format_story_archival_dir): os.rmdir(old_format_story_archival_dir)
+
+    for parent_dir_name in [EBOOKS_DIR, ARCHIVAL_STATUS_DIR]:
+        parent_path = os.path.join(old_format_workspace, parent_dir_name)
+        if os.path.exists(parent_path) and not os.listdir(parent_path):
+            os.rmdir(parent_path)
+    if os.path.exists(old_format_workspace) and not os.listdir(old_format_workspace):
+        os.rmdir(old_format_workspace)
+    logger.info(f"Old format test workspace {old_format_workspace} cleaned up.")

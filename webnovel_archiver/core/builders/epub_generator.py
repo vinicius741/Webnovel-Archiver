@@ -92,6 +92,7 @@ class EPUBGenerator:
                     file_name=f"chap_{chapter_info.get('download_order', 'unknown')}.xhtml",
                     lang='en'
                 )
+                html_content = f"<h1>{chapter_title}</h1>{html_content}"
                 epub_chapter.content = html_content
                 book.add_item(epub_chapter)
                 epub_chapters_for_book.append(epub_chapter)

@@ -2,36 +2,45 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
-# Attempt to use ConfigManager to get workspace_path
-# This creates a soft dependency; if ConfigManager is not yet available or fails,
-# it falls back to a default log path.
-try:
-    from webnovel_archiver.core.config_manager import ConfigManager
-    config_manager = ConfigManager()
-    WORKSPACE_PATH = config_manager.get_workspace_path()
-except ImportError:
-    # Fallback if ConfigManager is not found (e.g., during early init or testing)
-    # This assumes the script is run from the project root or WORKSPACE_PATH needs to be defined differently.
-    # For robustness, especially if this logger is used by ConfigManager itself,
-    # we might need a more independent way to determine WORKSPACE_PATH or use a relative path from this script.
-    # For now, let's assume a 'workspace' directory in the current working directory or project root.
-    # This path will be used if ConfigManager cannot be imported or used.
-    PROJECT_ROOT_FALLBACK = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    WORKSPACE_PATH = os.path.join(PROJECT_ROOT_FALLBACK, 'workspace')
+# Default log level - can be overridden by environment variable or config
+LOG_LEVEL_STR = os.environ.get('LOG_LEVEL', 'INFO').upper()
+LOG_LEVEL = getattr(logging, LOG_LEVEL_STR, logging.INFO)
 
+# Create a specific logger
+logger = logging.getLogger('WebnovelArchiver')
+logger.setLevel(LOG_LEVEL) # Set the threshold for this logger
+
+# Initial minimal console handler for early messages
+_early_console_handler = logging.StreamHandler()
+# Using a simpler format for early logs, full format applied later
+_early_console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+_early_console_handler.setFormatter(_early_console_formatter)
+logger.addHandler(_early_console_handler)
+
+# Determine project root based on the location of logger.py
+# Assumes logger.py is in webnovel_archiver/utils/logger.py
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+WORKSPACE_PATH = os.path.join(PROJECT_ROOT, 'workspace')
 
 DEFAULT_LOG_FILE_NAME = 'archiver.log'
 DEFAULT_LOGS_DIR_NAME = 'logs'
 LOG_FILE_PATH = os.path.join(WORKSPACE_PATH, DEFAULT_LOGS_DIR_NAME, DEFAULT_LOG_FILE_NAME)
 
+logger.info(f"Log file path set to: {LOG_FILE_PATH}")
+
 # Ensure the log directory exists
-os.makedirs(os.path.dirname(LOG_FILE_PATH), exist_ok=True)
+# The directory for the log file is created using the path derived from WORKSPACE_PATH.
+log_dir = os.path.dirname(LOG_FILE_PATH)
+logger.info(f"Ensuring log directory exists at: {log_dir}")
+try:
+    os.makedirs(log_dir, exist_ok=True)
+    logger.info(f"Log directory '{log_dir}' ensured successfully.")
+except OSError as e:
+    logger.error(f"Failed to create log directory '{log_dir}': {e}", exc_info=True)
+    # Depending on the application's needs, one might re-raise the exception or exit here
+    # For now, we log the error and continue, the file handler might fail later if dir doesn't exist
 
-# Default log level - can be overridden by environment variable or config
-LOG_LEVEL_STR = os.environ.get('LOG_LEVEL', 'INFO').upper()
-LOG_LEVEL = getattr(logging, LOG_LEVEL_STR, logging.INFO)
-
-# Basic log format
+# Basic log format - will be used by handlers added later
 LOG_FORMAT = '%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s'
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
@@ -39,20 +48,27 @@ DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 # However, creating a specific logger is often better for libraries or larger applications.
 # logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT, datefmt=DATE_FORMAT)
 
-# Create a specific logger
-logger = logging.getLogger('WebnovelArchiver')
-logger.setLevel(LOG_LEVEL) # Set the threshold for this logger
-
 # Prevent propagation to the root logger if it has default handlers, to avoid duplicate messages.
 # This is important if other parts of the application or libraries also configure the root logger.
 logger.propagate = False
 
 # Create handlers if not already present (to avoid duplicate handlers on re-import)
-if not logger.handlers:
-    # Console Handler
+# Note: _early_console_handler was already added. The check `if not logger.handlers:`
+# might be too simple if this module can be reloaded in a way that handlers persist.
+# However, standard import behavior usually creates a new logger object or re-initializes.
+# For robustness, one might check handler types if adding identically configured handlers is an issue.
+if len(logger.handlers) <= 1: # Check if only early_console_handler or no handlers exist
+    # Remove early console handler if we are about to add the proper one
+    # or if it's the only one and we want to replace it with a more configured one.
+    # This logic depends on whether the early handler should persist alongside the new one.
+    # For now, let's assume the new console handler is more complete and replace the early one.
+    if _early_console_handler in logger.handlers:
+        logger.removeHandler(_early_console_handler)
+
+    # Console Handler (more sophisticated)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(LOG_LEVEL)
-    console_formatter = logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT)
+    console_formatter = logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT) # Use detailed format
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 

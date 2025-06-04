@@ -2,6 +2,8 @@ import configparser
 import os
 from typing import Optional
 
+from webnovel_archiver.utils.logger import get_logger
+
 # Determine the absolute path to the directory where this script is located
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Construct the path to settings.ini relative to the project root (assuming script is in webnovel_archiver/core)
@@ -10,6 +12,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR)) # This goes up two l
 DEFAULT_CONFIG_PATH = os.path.join(PROJECT_ROOT, 'workspace', 'config', 'settings.ini')
 DEFAULT_WORKSPACE_PATH = os.path.join(PROJECT_ROOT, 'workspace/')
 
+logger = get_logger(__name__)
 
 class ConfigManager:
     def __init__(self, config_file_path=None):
@@ -21,7 +24,7 @@ class ConfigManager:
         """Loads the configuration from the INI file."""
         if not os.path.exists(self.config_file_path):
             # Fallback to default if config file doesn't exist
-            print(f"Warning: Config file not found at {self.config_file_path}. Attempting to create a default config or using hardcoded defaults.")
+            logger.warning(f"Config file not found at {self.config_file_path}. Attempting to create a default config or using hardcoded defaults.")
             # Ensure the directory for the config file exists
             os.makedirs(os.path.dirname(self.config_file_path), exist_ok=True)
             # Create a default config
@@ -30,10 +33,10 @@ class ConfigManager:
             try:
                 with open(self.config_file_path, 'w') as configfile:
                     default_config.write(configfile)
-                print(f"Created a default config file at: {self.config_file_path}")
+                logger.info(f"Created a default config file at: {self.config_file_path}")
                 self.config = default_config
             except IOError as e:
-                print(f"Error creating default config file: {e}. Using hardcoded defaults.")
+                logger.error(f"Error creating default config file: {e}. Using hardcoded defaults.", exc_info=True)
                 # Use hardcoded defaults if file creation fails
                 self.config['General'] = {'workspace_path': DEFAULT_WORKSPACE_PATH}
             return
@@ -60,15 +63,15 @@ if __name__ == '__main__':
     # Example usage:
     config_manager = ConfigManager()
     workspace_path = config_manager.get_workspace_path()
-    print(f"Workspace Path: {workspace_path}")
+    logger.info(f"Workspace Path: {workspace_path}")
 
     # Example of getting another setting, or a default if not found
     log_level = config_manager.get_setting('Logging', 'level', fallback='INFO')
-    print(f"Log Level: {log_level}")
+    logger.info(f"Log Level: {log_level}")
 
     # To test with a non-existent config file to see the fallback mechanism:
     # test_config_manager = ConfigManager(config_file_path=os.path.join(PROJECT_ROOT, 'workspace', 'config', 'non_existent_settings.ini'))
     # test_workspace_path = test_config_manager.get_workspace_path()
-    # print(f"Test Workspace Path (with non_existent_settings.ini): {test_workspace_path}")
+    # logger.info(f"Test Workspace Path (with non_existent_settings.ini): {test_workspace_path}")
     # log_level_test = test_config_manager.get_setting('Logging', 'level', fallback='DEBUG')
-    # print(f"Test Log Level (with non_existent_settings.ini): {log_level_test}")
+    # logger.info(f"Test Log Level (with non_existent_settings.ini): {log_level_test}")

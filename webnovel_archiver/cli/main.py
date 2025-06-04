@@ -24,7 +24,7 @@ def archive_story(story_url: str, output_dir: Optional[str], ebook_title_overrid
         ebook_title_override=ebook_title_override,
         keep_temp_files=keep_temp_files,
         force_reprocessing=force_reprocessing,
-        sentence_removal_file=sentence_removal_file,
+        cli_sentence_removal_file=sentence_removal_file, # Changed to cli_sentence_removal_file
         no_sentence_removal=no_sentence_removal,
         chapters_per_volume=chapters_per_volume
     )

@@ -1,7 +1,7 @@
 import os
 import shutil
 import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable, Union # Added Callable and Union
 import requests # For specific exception types like requests.exceptions.RequestException
 
 from webnovel_archiver.utils.logger import get_logger # Import logger
@@ -23,6 +23,9 @@ from .modifiers.sentence_remover import SentenceRemover
 RAW_CONTENT_DIR = "raw_content"
 PROCESSED_CONTENT_DIR = "processed_content"
 
+# Define ProgressCallback type
+ProgressCallback = Callable[[Union[str, Dict[str, Any]]], None]
+
 # Initialize logger for this module
 logger = get_logger(__name__)
 
@@ -34,12 +37,21 @@ def archive_story(
     keep_temp_files: bool = False,
     force_reprocessing: bool = False,
     sentence_removal_file: Optional[str] = None, # Will be used fully later
-    no_sentence_removal: bool = False  # Will be used fully later
-) -> None:
+    no_sentence_removal: bool = False,  # Will be used fully later
+    progress_callback: Optional[ProgressCallback] = None
+) -> Optional[Dict[str, Any]]:
     """
     Orchestrates the archiving process for a given story URL.
     Handles fetching, cleaning, saving, and progress management.
     """
+    def _call_progress_callback(message: Union[str, Dict[str, Any]]) -> None:
+        if progress_callback:
+            try:
+                progress_callback(message)
+            except Exception as e:
+                logger.error(f"Progress callback failed: {e}", exc_info=True)
+
+    _call_progress_callback({"status": "info", "message": "Starting archival process..."})
     logger.info(f"Starting archiving process for: {story_url}")
     logger.info(f"Parameter 'keep_temp_files' is set to: {keep_temp_files}")
     # No explicit deletion logic to modify for now, this is for future reference
@@ -49,31 +61,40 @@ def archive_story(
     fetcher = RoyalRoadFetcher() # Later, select based on URL or config.
 
     # 2. Metadata Fetching
+    _call_progress_callback({"status": "info", "message": "Fetching story metadata..."})
     logger.info(f"Fetching story metadata for URL: {story_url}")
     try:
         metadata = fetcher.get_story_metadata(story_url)
         logger.info(f"Successfully fetched metadata. Title: {metadata.original_title}")
+        _call_progress_callback({"status": "info", "message": f"Successfully fetched metadata: {metadata.original_title}"})
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to fetch story metadata for URL: {story_url}. Network error: {e}")
-        return
+        _call_progress_callback({"status": "error", "message": f"Failed to fetch story metadata. Network error: {e}"})
+        return None
     except Exception as e: # Catch other potential errors from fetcher
         logger.error(f"An unexpected error occurred while fetching story metadata for URL: {story_url}. Error: {e}")
-        return
+        _call_progress_callback({"status": "error", "message": f"An unexpected error occurred while fetching story metadata: {e}"})
+        return None
 
     # 3. Chapter List Fetching
+    _call_progress_callback({"status": "info", "message": "Fetching chapter list..."})
     logger.info(f"Fetching chapter list for: {metadata.original_title}")
     try:
         chapters_info_list = fetcher.get_chapter_urls(story_url)
         logger.info(f"Found {len(chapters_info_list)} chapters.")
+        _call_progress_callback({"status": "info", "message": f"Found {len(chapters_info_list)} chapters."})
         if not chapters_info_list:
             logger.warning("No chapters found. Aborting archival for this story.")
-            return
+            _call_progress_callback({"status": "warning", "message": "No chapters found. Aborting archival."})
+            return None
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to fetch chapter list for: {metadata.original_title}. Network error: {e}")
-        return
+        _call_progress_callback({"status": "error", "message": f"Failed to fetch chapter list. Network error: {e}"})
+        return None
     except Exception as e: # Catch other potential errors
         logger.error(f"An unexpected error occurred while fetching chapter list for: {metadata.original_title}. Error: {e}")
-        return
+        _call_progress_callback({"status": "error", "message": f"An unexpected error occurred while fetching chapter list: {e}"})
+        return None
 
     # 4. Progress Management (Initial Setup)
     s_id = generate_story_id(url=story_url, title=metadata.original_title)
@@ -128,12 +149,24 @@ def archive_story(
             # If "downloaded_chapters" isn't in progress_data, it's like a first run or cleared progress.
             progress_data["downloaded_chapters"] = []
 
-
-    for chapter_info in chapters_info_list:
+    total_chapters = len(chapters_info_list)
+    for i, chapter_info in enumerate(chapters_info_list):
+        _call_progress_callback({
+            "status": "info",
+            "message": f"Processing chapter: {chapter_info.chapter_title} ({i+1}/{total_chapters})",
+            "current_chapter_num": i + 1,
+            "total_chapters": total_chapters,
+            "chapter_title": chapter_info.chapter_title
+        })
         logger.info(f"Processing chapter: {chapter_info.chapter_title} (URL: {chapter_info.chapter_url})")
 
         if chapter_info.chapter_url is None:
             logger.warning(f"Chapter {chapter_info.chapter_title} (Order: {chapter_info.download_order}) has no URL. Skipping.")
+            _call_progress_callback({
+                "status": "warning",
+                "message": f"Chapter {chapter_info.chapter_title} has no URL. Skipping.",
+                "chapter_title": chapter_info.chapter_title
+            })
             continue
 
         if not force_reprocessing and chapter_info.chapter_url in existing_chapters_map:
@@ -177,12 +210,27 @@ def archive_story(
             # or returns "Chapter content not found." if the div is missing.
             if raw_html_content == "Chapter content not found.":
                 logger.warning(f"Content div not found for chapter: {chapter_info.chapter_title}. Skipping.")
+                _call_progress_callback({
+                    "status": "warning",
+                    "message": f"Content not found for chapter: {chapter_info.chapter_title}. Skipping.",
+                    "chapter_title": chapter_info.chapter_title
+                })
                 continue # Skip this chapter, don't add to progress for this run
         except requests.exceptions.HTTPError as e: # Catch HTTP errors from _fetch_html_content via download_chapter_content
             logger.error(f"Failed to download chapter: {chapter_info.chapter_title}. HTTP Error: {e}")
+            _call_progress_callback({
+                "status": "error",
+                "message": f"Failed to download chapter: {chapter_info.chapter_title}. HTTP Error: {e}",
+                "chapter_title": chapter_info.chapter_title
+            })
             continue # Skip to the next chapter
         except Exception as e: # Catch any other unexpected errors during download
             logger.error(f"An unexpected error occurred while downloading chapter: {chapter_info.chapter_title}. Error: {e}")
+            _call_progress_callback({
+                "status": "error",
+                "message": f"An unexpected error occurred while downloading chapter: {chapter_info.chapter_title}. Error: {e}",
+                "chapter_title": chapter_info.chapter_title
+            })
             continue # Skip to the next chapter
 
         # At this point, raw_html_content should be valid HTML string if no exception/skip
@@ -195,8 +243,18 @@ def archive_story(
             with open(raw_filepath, 'w', encoding='utf-8') as f:
                 f.write(raw_html_content)
             logger.info(f"Successfully saved raw content to: {raw_filepath}")
+            _call_progress_callback({
+                "status": "info",
+                "message": f"Successfully saved raw content for chapter: {chapter_info.chapter_title}",
+                "chapter_title": chapter_info.chapter_title
+            })
         except IOError as e:
             logger.error(f"Error saving raw content for {chapter_info.chapter_title} to {raw_filepath}: {e}")
+            _call_progress_callback({
+                "status": "error",
+                "message": f"Error saving raw content for chapter: {chapter_info.chapter_title}. Error: {e}",
+                "chapter_title": chapter_info.chapter_title
+            })
             continue # If saving raw content fails, skip this chapter for progress
 
         # Clean HTML
@@ -217,6 +275,11 @@ def archive_story(
                     temp_cleaned_html_content = remover.remove_sentences_from_html(cleaned_html_content)
                     if temp_cleaned_html_content != cleaned_html_content:
                         logger.info(f"Sentence removal applied to chapter: {chapter_info.chapter_title}")
+                        _call_progress_callback({
+                            "status": "info",
+                            "message": f"Applied sentence removal for chapter: {chapter_info.chapter_title}",
+                            "chapter_title": chapter_info.chapter_title
+                        })
                         cleaned_html_content = temp_cleaned_html_content
                     else:
                         logger.info(f"No sentences matched for removal in chapter: {chapter_info.chapter_title}")
@@ -254,8 +317,18 @@ def archive_story(
             with open(processed_filepath, 'w', encoding='utf-8') as f:
                 f.write(cleaned_html_content)
             logger.info(f"Successfully saved processed content to: {processed_filepath}")
+            _call_progress_callback({
+                "status": "info",
+                "message": f"Successfully saved processed content for chapter: {chapter_info.chapter_title}",
+                "chapter_title": chapter_info.chapter_title
+            })
         except IOError as e:
             logger.error(f"Error saving processed content for {chapter_info.chapter_title} to {processed_filepath}: {e}")
+            _call_progress_callback({
+                "status": "error",
+                "message": f"Error saving processed content for chapter: {chapter_info.chapter_title}. Error: {e}",
+                "chapter_title": chapter_info.chapter_title
+            })
             # If processed saving fails, we might still want to record the raw download.
             # For this iteration, let's make processed_filename None if saving it failed.
             processed_filename = None
@@ -308,6 +381,7 @@ def archive_story(
     # A later step or a note for EPUBGenerator modification might be needed if it
     # strictly uses "original_title" and cannot be configured.
 
+    _call_progress_callback({"status": "info", "message": "Starting EPUB generation..."})
     logger.info(f"Starting EPUB generation for story ID: {s_id}")
     epub_generator = EPUBGenerator(workspace_root)
     generated_epub_files = epub_generator.generate_epub(s_id, progress_data, chapters_per_volume)
@@ -322,8 +396,10 @@ def archive_story(
 
     if generated_epub_files:
         logger.info(f"Successfully generated {len(generated_epub_files)} EPUB file(s) for story ID {s_id}: {generated_epub_files}")
+        _call_progress_callback({"status": "info", "message": f"Successfully generated EPUB file(s): {generated_epub_files}", "file_paths": generated_epub_files})
     else:
         logger.warning(f"No EPUB files were generated for story ID {s_id}.")
+        _call_progress_callback({"status": "warning", "message": "No EPUB files were generated."})
         # Ensure generated_epub_files is an empty list in progress_data if none were made
         progress_data["last_epub_processing"]["generated_epub_files"] = []
 
@@ -338,6 +414,7 @@ def archive_story(
 
     # 7. Clean up temporary files if not requested to keep them
     if not keep_temp_files:
+        _call_progress_callback({"status": "info", "message": "Cleaning up temporary files..."})
         logger.info(f"Attempting to remove temporary content directories for story ID: {s_id}")
         raw_story_dir = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id)
         processed_story_dir = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id)
@@ -354,15 +431,27 @@ def archive_story(
                 logger.info(f"Successfully removed processed content directory: {processed_story_dir}")
             else:
                 logger.info(f"Processed content directory not found, no need to remove: {processed_story_dir}")
-
+            _call_progress_callback({"status": "info", "message": "Successfully cleaned up temporary files."})
         except OSError as e: # shutil.rmtree can raise OSError
             logger.error(f"Error removing temporary content directories for story ID {s_id}: {e}", exc_info=True)
+            _call_progress_callback({"status": "error", "message": f"Error cleaning up temporary files: {e}"})
         except Exception as e: # Catch any other unexpected errors during cleanup
             logger.error(f"An unexpected error occurred during temporary file cleanup for story ID {s_id}: {e}", exc_info=True)
+            _call_progress_callback({"status": "error", "message": f"An unexpected error occurred during temporary file cleanup: {e}"})
     else:
         logger.info(f"Keeping temporary content directories for story ID: {s_id} as per 'keep_temp_files' flag.")
 
+    _call_progress_callback({"status": "info", "message": "Archival process completed."})
     logger.info(f"Archiving process completed for story ID: {s_id}")
+
+    summary = {
+        "story_id": s_id,
+        "title": progress_data.get("effective_title", metadata.original_title), # effective_title is set before EPUB gen
+        "chapters_processed": len(processed_chapters_for_this_run),
+        "epub_files": [os.path.abspath(f) for f in generated_epub_files if f], # Ensure absolute paths and filter None
+        "workspace_root": os.path.abspath(workspace_root)
+    }
+    return summary
 
 if __name__ == '__main__':
     import shutil

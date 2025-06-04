@@ -3,6 +3,7 @@ import os
 import shutil
 import json
 import datetime
+import ebooklib # Ensure ebooklib itself is imported
 from ebooklib import epub
 from webnovel_archiver.core.builders.epub_generator import EPUBGenerator
 from webnovel_archiver.utils.logger import get_logger # For potential direct use or if generator uses it
@@ -28,7 +29,7 @@ class TestEPUBGenerator(unittest.TestCase):
         self.epub_generator = EPUBGenerator(workspace_root=self.test_workspace)
 
         self.sample_progress_data = {
-            "title": "My Awesome Story",
+            "effective_title": "My Awesome Story", # Changed "title" to "effective_title"
             "author": "Test Author",
             "story_id": self.story_id,
             "downloaded_chapters": []
@@ -73,32 +74,33 @@ class TestEPUBGenerator(unittest.TestCase):
 
         # 4. Use epub.read_epub() and assert metadata
         book = epub.read_epub(epub_filepath)
-        self.assertEqual(book.get_metadata('DC', 'title')[0][0], self.sample_progress_data["title"])
+        self.assertEqual(book.get_metadata('DC', 'title')[0][0], self.sample_progress_data["effective_title"])
         self.assertEqual(book.get_metadata('DC', 'creator')[0][0], self.sample_progress_data["author"])
         self.assertEqual(book.get_metadata('DC', 'language')[0][0], 'en')
         self.assertEqual(book.get_metadata('DC', 'identifier')[0][0], self.story_id)
 
         # 5. Assert number of chapters
-        items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
-        self.assertEqual(len(items), 2, "EPUB should contain two chapters.")
+        all_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        content_chapters = [item for item in all_items if item.get_name() != 'nav.xhtml']
+        self.assertEqual(len(content_chapters), 2, "EPUB should contain two content chapters.")
 
         # 6. Assert chapter titles and content (simplified check)
         # Note: Order in items might not be guaranteed, but usually is by add_item.
         # For robust check, map by file_name or title if possible.
 
         # Check chapter 1
-        epub_chap1_content = items[0].get_content().decode('utf-8')
+        # Assuming content_chapters are now correctly ordered as per addition
+        epub_chap1_content = content_chapters[0].get_content().decode('utf-8')
+        # Check for essential parts due to ebooklib HTML formatting
+        self.assertIn("<h1>Chapter 1: The Beginning</h1>", epub_chap1_content)
         self.assertIn("<h1>Chapter 1</h1>", epub_chap1_content)
-        self.assertIn("Once upon a time...", epub_chap1_content)
-        # The title in EPUB items is often the filename, not the nav title.
-        # We check TOC for titles if needed, or ensure filename convention is testable.
-        # For now, let's assume the `file_name` in EpubHtml is somewhat predictable if we need to check it.
-        # Or, rely on the spine order for content checking.
+        self.assertIn("<p>Once upon a time...</p>", epub_chap1_content)
 
         # Check chapter 2
-        epub_chap2_content = items[1].get_content().decode('utf-8')
+        epub_chap2_content = content_chapters[1].get_content().decode('utf-8')
+        self.assertIn("<h1>Chapter 2: The Adventure</h1>", epub_chap2_content)
         self.assertIn("<h1>Chapter 2</h1>", epub_chap2_content)
-        self.assertIn("The journey continues.", epub_chap2_content)
+        self.assertIn("<p>The journey continues.</p>", epub_chap2_content)
 
         # Check TOC for titles (more reliable for chapter titles)
         toc_titles = [toc_item.title for toc_item in book.toc]
@@ -129,12 +131,17 @@ class TestEPUBGenerator(unittest.TestCase):
         # Verify Volume 1
         vol1_path = next(f for f in generated_files if expected_vol1_filename in f)
         book1 = epub.read_epub(vol1_path)
-        self.assertEqual(book1.get_metadata('DC', 'title')[0][0], f"{self.sample_progress_data['title']} Vol. 1")
+        self.assertEqual(book1.get_metadata('DC', 'title')[0][0], f"{self.sample_progress_data['effective_title']} Vol. 1")
         self.assertEqual(book1.get_metadata('DC', 'identifier')[0][0], f"{self.story_id}_vol_1")
-        vol1_items = list(book1.get_items_of_type(ebooklib.ITEM_DOCUMENT))
-        self.assertEqual(len(vol1_items), 2, "Volume 1 should have 2 chapters.")
-        vol1_content_chap1 = vol1_items[0].get_content().decode('utf-8')
+        all_vol1_items = list(book1.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        vol1_content_chapters = [item for item in all_vol1_items if item.get_name() != 'nav.xhtml']
+        self.assertEqual(len(vol1_content_chapters), 2, "Volume 1 should have 2 content chapters.")
+        vol1_content_chap1 = vol1_content_chapters[0].get_content().decode('utf-8')
+        self.assertIn("<h1>Ch 1</h1>", vol1_content_chap1)
         self.assertIn("<p>Vol 1 Chap 1</p>", vol1_content_chap1)
+        vol1_content_chap2 = vol1_content_chapters[1].get_content().decode('utf-8')
+        self.assertIn("<h1>Ch 2</h1>", vol1_content_chap2)
+        self.assertIn("<p>Vol 1 Chap 2</p>", vol1_content_chap2)
         vol1_toc_titles = [toc_item.title for toc_item in book1.toc]
         self.assertIn("Ch 1", vol1_toc_titles)
         self.assertIn("Ch 2", vol1_toc_titles)
@@ -143,12 +150,17 @@ class TestEPUBGenerator(unittest.TestCase):
         # Verify Volume 2
         vol2_path = next(f for f in generated_files if expected_vol2_filename in f)
         book2 = epub.read_epub(vol2_path)
-        self.assertEqual(book2.get_metadata('DC', 'title')[0][0], f"{self.sample_progress_data['title']} Vol. 2")
+        self.assertEqual(book2.get_metadata('DC', 'title')[0][0], f"{self.sample_progress_data['effective_title']} Vol. 2")
         self.assertEqual(book2.get_metadata('DC', 'identifier')[0][0], f"{self.story_id}_vol_2")
-        vol2_items = list(book2.get_items_of_type(ebooklib.ITEM_DOCUMENT))
-        self.assertEqual(len(vol2_items), 2, "Volume 2 should have 2 chapters.")
-        vol2_content_chap1 = vol2_items[0].get_content().decode('utf-8') # First chapter of this volume
+        all_vol2_items = list(book2.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        vol2_content_chapters = [item for item in all_vol2_items if item.get_name() != 'nav.xhtml']
+        self.assertEqual(len(vol2_content_chapters), 2, "Volume 2 should have 2 content chapters.")
+        vol2_content_chap1 = vol2_content_chapters[0].get_content().decode('utf-8') # First chapter of this volume
+        self.assertIn("<h1>Ch 3</h1>", vol2_content_chap1)
         self.assertIn("<p>Vol 2 Chap 1</p>", vol2_content_chap1)
+        vol2_content_chap2 = vol2_content_chapters[1].get_content().decode('utf-8')
+        self.assertIn("<h1>Ch 4</h1>", vol2_content_chap2)
+        self.assertIn("<p>Vol 2 Chap 2</p>", vol2_content_chap2)
         vol2_toc_titles = [toc_item.title for toc_item in book2.toc]
         self.assertIn("Ch 3", vol2_toc_titles)
         self.assertIn("Ch 4", vol2_toc_titles)
@@ -161,6 +173,8 @@ class TestEPUBGenerator(unittest.TestCase):
         self.assertEqual(len(os.listdir(self.ebooks_dir)), 0, "No EPUB file should be created in ebooks_dir.")
 
     def test_generate_epub_missing_html_file(self):
+        # Ensure this test also uses effective_title if it sets progress_data directly
+        # For now, it relies on self.sample_progress_data, which will be fixed by the change above.
         chap1_info = self._create_dummy_html_file(
             "chap", 1, "Chapter 1", "<p>Content 1</p>"
         )
@@ -183,9 +197,10 @@ class TestEPUBGenerator(unittest.TestCase):
         self.assertTrue(os.path.exists(epub_filepath))
 
         book = epub.read_epub(epub_filepath)
-        items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        all_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        content_chapters = [item for item in all_items if item.get_name() != 'nav.xhtml']
         # Should contain chapter 1 and chapter 3, skipping chapter 2
-        self.assertEqual(len(items), 2, "EPUB should contain 2 chapters, skipping the missing one.")
+        self.assertEqual(len(content_chapters), 2, "EPUB should contain 2 content chapters, skipping the missing one.")
 
         toc_titles = [toc_item.title for toc_item in book.toc]
         self.assertIn("Chapter 1", toc_titles)
@@ -193,14 +208,17 @@ class TestEPUBGenerator(unittest.TestCase):
         self.assertIn("Chapter 3", toc_titles)
 
         # Verify content of included chapters
-        epub_chap1_content = items[0].get_content().decode('utf-8')
+        # Assuming content_chapters are now correctly ordered as per addition
+        epub_chap1_content = content_chapters[0].get_content().decode('utf-8')
+        self.assertIn("<h1>Chapter 1</h1>", epub_chap1_content)
         self.assertIn("<p>Content 1</p>", epub_chap1_content)
-        epub_chap3_content = items[1].get_content().decode('utf-8') # Now it's the second item
+        epub_chap3_content = content_chapters[1].get_content().decode('utf-8') # Now it's the second item
+        self.assertIn("<h1>Chapter 3</h1>", epub_chap3_content)
         self.assertIn("<p>Content 3</p>", epub_chap3_content)
 
 
     def test_filename_sanitization(self):
-        self.sample_progress_data["title"] = "Story: The \"Best\" Title Ever!?"
+        self.sample_progress_data["effective_title"] = "Story: The \"Best\" Title Ever!?" # Changed "title" to "effective_title"
         chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>Content</p>")
         self.sample_progress_data["downloaded_chapters"] = [chap1_info]
 
@@ -226,11 +244,12 @@ class TestEPUBGenerator(unittest.TestCase):
         epub_filepath = generated_files[0]
         book = epub.read_epub(epub_filepath)
         # Title should not have "Vol. X"
-        self.assertEqual(book.get_metadata('DC', 'title')[0][0], self.sample_progress_data["title"])
+        self.assertEqual(book.get_metadata('DC', 'title')[0][0], self.sample_progress_data["effective_title"])
         # Identifier should not have "_vol_X"
         self.assertEqual(book.get_metadata('DC', 'identifier')[0][0], self.story_id)
-        items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
-        self.assertEqual(len(items), 2, "EPUB should contain two chapters.")
+        all_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        content_chapters = [item for item in all_items if item.get_name() != 'nav.xhtml']
+        self.assertEqual(len(content_chapters), 2, "EPUB should contain two content chapters.")
 
     def test_generate_epub_chapters_per_volume_zero_or_none(self):
         """Test that chapters_per_volume=0 or None creates a single volume."""
@@ -242,14 +261,14 @@ class TestEPUBGenerator(unittest.TestCase):
         generated_files_zero = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data, chapters_per_volume=0)
         self.assertEqual(len(generated_files_zero), 1)
         book_zero = epub.read_epub(generated_files_zero[0])
-        self.assertEqual(book_zero.get_metadata('DC', 'title')[0][0], self.sample_progress_data["title"])
+        self.assertEqual(book_zero.get_metadata('DC', 'title')[0][0], self.sample_progress_data["effective_title"])
         self.assertEqual(book_zero.get_metadata('DC', 'identifier')[0][0], self.story_id)
 
         # Test with chapters_per_volume = None (already tested in test_generate_single_epub_success, but good for direct comparison)
         generated_files_none = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data, chapters_per_volume=None)
         self.assertEqual(len(generated_files_none), 1)
         book_none = epub.read_epub(generated_files_none[0])
-        self.assertEqual(book_none.get_metadata('DC', 'title')[0][0], self.sample_progress_data["title"])
+        self.assertEqual(book_none.get_metadata('DC', 'title')[0][0], self.sample_progress_data["effective_title"])
         self.assertEqual(book_none.get_metadata('DC', 'identifier')[0][0], self.story_id)
 
 

@@ -30,6 +30,8 @@ class ConfigManager:
             # Create a default config
             default_config = configparser.ConfigParser()
             default_config['General'] = {'workspace_path': DEFAULT_WORKSPACE_PATH}
+            default_sentence_removal_file_path = os.path.join(DEFAULT_WORKSPACE_PATH, 'config', 'default_sentence_removal.json')
+            default_config['SentenceRemoval'] = {'default_sentence_removal_file': default_sentence_removal_file_path}
             try:
                 with open(self.config_file_path, 'w') as configfile:
                     default_config.write(configfile)
@@ -39,9 +41,28 @@ class ConfigManager:
                 logger.error(f"Error creating default config file: {e}. Using hardcoded defaults.", exc_info=True)
                 # Use hardcoded defaults if file creation fails
                 self.config['General'] = {'workspace_path': DEFAULT_WORKSPACE_PATH}
+                self.config['SentenceRemoval'] = {'default_sentence_removal_file': default_sentence_removal_file_path}
             return
 
         self.config.read(self.config_file_path)
+
+        # Ensure SentenceRemoval section and option exist if config file was present but incomplete
+        if not self.config.has_section('SentenceRemoval'):
+            self.config.add_section('SentenceRemoval')
+            logger.info("Added missing [SentenceRemoval] section to the config.")
+
+        if not self.config.has_option('SentenceRemoval', 'default_sentence_removal_file'):
+            default_sentence_removal_file_path = os.path.join(DEFAULT_WORKSPACE_PATH, 'config', 'default_sentence_removal.json')
+            self.config.set('SentenceRemoval', 'default_sentence_removal_file', default_sentence_removal_file_path)
+            logger.info("Added missing 'default_sentence_removal_file' option to [SentenceRemoval] section.")
+            # Save the changes back to the config file
+            try:
+                with open(self.config_file_path, 'w') as configfile:
+                    self.config.write(configfile)
+                logger.info(f"Updated config file at: {self.config_file_path} with missing SentenceRemoval settings.")
+            except IOError as e:
+                logger.error(f"Error updating config file with SentenceRemoval settings: {e}", exc_info=True)
+
 
     def get_workspace_path(self) -> str:
         """Returns the workspace path from the config or a default value."""
@@ -58,6 +79,30 @@ class ConfigManager:
             return self.config.get(section, option, fallback=fallback)
         except (configparser.NoSectionError, configparser.NoOptionError):
             return fallback
+
+    def get_default_sentence_removal_file(self) -> Optional[str]:
+        """Returns the default sentence removal file path from the config."""
+        try:
+            path = self.config.get('SentenceRemoval', 'default_sentence_removal_file', fallback='')
+            if not path: # Fallback if empty or None
+                logger.warning("Default sentence removal file path is not configured.")
+                return None
+
+            # Check if the path is valid (e.g., not just whitespace)
+            if not path.strip():
+                logger.warning("Default sentence removal file path is empty or whitespace.")
+                return None
+
+            # Optionally, resolve if it's a relative path, similar to workspace_path
+            # For now, assuming it could be absolute or relative to where it's used.
+            # If it needs to be relative to project root or workspace, adjust here.
+            # Example: if not os.path.isabs(path):
+            # return os.path.join(self.get_workspace_path(), 'config', os.path.basename(path))
+
+            return path
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            logger.warning("SentenceRemoval section or default_sentence_removal_file option not found in config.", exc_info=True)
+            return None
 
 if __name__ == '__main__':
     # Example usage:

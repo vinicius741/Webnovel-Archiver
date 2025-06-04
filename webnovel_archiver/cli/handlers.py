@@ -28,7 +28,7 @@ def archive_story_handler(
     ebook_title_override: Optional[str],
     keep_temp_files: bool,
     force_reprocessing: bool,
-    sentence_removal_file: Optional[str],
+    cli_sentence_removal_file: Optional[str], # Renamed from sentence_removal_file
     no_sentence_removal: bool,
     chapters_per_volume: Optional[int]
 ):
@@ -78,6 +78,33 @@ def archive_story_handler(
     # click.echo("Starting archival process...") # Removed, orchestrator callback will handle this
     logger.info(f"CLI handler initiated archival for {story_url} to workspace {workspace_root}")
 
+    # Determine the final sentence removal file
+    final_sentence_removal_file: Optional[str] = None
+    config_manager_for_sr = ConfigManager() # Initialize once if needed for defaults
+
+    if no_sentence_removal:
+        logger.info("Sentence removal explicitly disabled via --no-sentence-removal flag.")
+        final_sentence_removal_file = None
+    elif cli_sentence_removal_file:
+        if os.path.exists(cli_sentence_removal_file):
+            logger.info(f"Using sentence removal file provided via CLI: {cli_sentence_removal_file}")
+            final_sentence_removal_file = cli_sentence_removal_file
+        else:
+            logger.warning(f"Sentence removal file provided via CLI not found: {cli_sentence_removal_file}. Proceeding without sentence removal.")
+            final_sentence_removal_file = None
+    else:
+        default_sr_file_path = config_manager_for_sr.get_default_sentence_removal_file()
+        if default_sr_file_path:
+            if os.path.exists(default_sr_file_path):
+                logger.info(f"Using default sentence removal file from config: {default_sr_file_path}")
+                final_sentence_removal_file = default_sr_file_path
+            else:
+                logger.warning(f"Default sentence removal file configured at '{default_sr_file_path}' not found. Proceeding without sentence removal.")
+                final_sentence_removal_file = None
+        else:
+            logger.info("No sentence removal file provided via CLI and no default configured. Proceeding without sentence removal.")
+            final_sentence_removal_file = None
+
     try:
         summary = call_orchestrator_archive_story(
             story_url=story_url,
@@ -85,8 +112,8 @@ def archive_story_handler(
             ebook_title_override=ebook_title_override,
             keep_temp_files=keep_temp_files,
             force_reprocessing=force_reprocessing,
-            sentence_removal_file=sentence_removal_file,
-            no_sentence_removal=no_sentence_removal,
+            sentence_removal_file=final_sentence_removal_file, # Pass the determined file
+            no_sentence_removal=no_sentence_removal, # Pass through the direct flag
             chapters_per_volume=chapters_per_volume,
             progress_callback=display_progress
         )

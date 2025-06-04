@@ -226,6 +226,56 @@ class TestGDriveSync(unittest.TestCase):
         )
         self.assertEqual(result, mock_updated_file_meta)
 
+    @patch('os.path.exists', return_value=True)
+    def test_upload_file_update_existing_removes_parents_from_metadata(self, mock_os_path_exists):
+        gdrive_sync = GDriveSync(token_path=self.token_path, credentials_path=self.credentials_path)
+
+        # Simulate _get_file_id finding an existing file
+        # This mock ensures that the 'existing_file_id' path is taken in upload_file
+        self.mock_service.files().list().execute.return_value = {'files': [{'id': 'existing_file_id', 'name': 'test_file.txt'}]}
+
+        mock_updated_file_meta = {'id': 'existing_file_id', 'name': 'test_file.txt', 'modifiedTime': 'new_iso_time'}
+        self.mock_service.files().update().execute.return_value = mock_updated_file_meta
+
+        mock_media_instance = MagicMock()
+        MediaFileUpload.return_value = mock_media_instance
+
+        local_path = 'local/test_file.txt'
+        remote_folder_id = 'remote_folder_id_123'
+
+        result = gdrive_sync.upload_file(local_path, remote_folder_id)
+
+        # Check that MediaFileUpload was called correctly
+        MediaFileUpload.assert_called_once_with(local_path, resumable=True)
+
+        # Assert that update was called
+        self.mock_service.files().update.assert_called_once()
+
+        # Get the arguments passed to update
+        # call_args is a tuple (args, kwargs) or None if not called
+        _, update_kwargs = self.mock_service.files().update.call_args
+
+        # Check fileId
+        self.assertEqual(update_kwargs.get('fileId'), 'existing_file_id')
+
+        # Check media_body
+        self.assertEqual(update_kwargs.get('media_body'), mock_media_instance)
+
+        # Crucially, check the 'body' (file_metadata) for the absence of 'parents'
+        metadata_body = update_kwargs.get('body')
+        self.assertIsNotNone(metadata_body)
+        self.assertNotIn('parents', metadata_body, "The 'parents' key should have been removed from metadata for an update.")
+        self.assertEqual(metadata_body.get('name'), 'test_file.txt') # Ensure other metadata like name is still there
+
+        # Check fields
+        self.assertEqual(update_kwargs.get('fields'), 'id, name, webViewLink, modifiedTime')
+
+        # Check the result of the upload_file call
+        self.assertEqual(result, mock_updated_file_meta)
+
+        # Ensure create() was not called
+        self.mock_service.files().create.assert_not_called()
+
     @patch('os.path.exists', return_value=False)
     def test_upload_file_local_file_not_found_raises_error(self, mock_os_path_exists):
         gdrive_sync = GDriveSync(token_path=self.token_path, credentials_path=self.credentials_path)

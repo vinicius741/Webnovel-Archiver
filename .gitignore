@@ -195,4 +195,3 @@ cython_debug/
 
 # Workspace directory for generated content
 workspace/
-credentials.json

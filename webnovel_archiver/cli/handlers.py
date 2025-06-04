@@ -6,7 +6,9 @@ from typing import Optional, List, Dict, Any
 
 # Import existing components
 from webnovel_archiver.core.orchestrator import archive_story as call_orchestrator_archive_story
-from webnovel_archiver.core.config_manager import ConfigManager, DEFAULT_WORKSPACE_PATH, WORKSPACE_EBOOKS_DIR, WORKSPACE_ARCHIVAL_STATUS_DIR
+from webnovel_archiver.core.config_manager import ConfigManager, DEFAULT_WORKSPACE_PATH
+from webnovel_archiver.core.storage.progress_manager import EBOOKS_DIR as WORKSPACE_EBOOKS_DIR, ARCHIVAL_STATUS_DIR as WORKSPACE_ARCHIVAL_STATUS_DIR
+# Using 'as' to keep the constant names the same as they were used throughout the handler code.
 from webnovel_archiver.utils.logger import get_logger
 
 # Import new cloud sync components

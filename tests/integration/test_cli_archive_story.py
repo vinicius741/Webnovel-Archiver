@@ -375,6 +375,238 @@ def test_archive_story_deletion_with_other_options(runner, mock_successful_orche
     assert "[INFO] Cleaning up temporary files..." in result.output
     assert "[INFO] Successfully cleaned up temporary files." in result.output
 
+# --- New tests for default sentence removal feature ---
+import configparser # Added for new tests
+from pathlib import Path # Added for new tests
+
+@pytest.fixture
+def setup_config_manager_for_temp_workspace(monkeypatch, temp_workspace):
+    """
+    Mocks ConfigManager to use a settings.ini within the temp_workspace.
+    Returns the path to the config dir for easy access.
+    """
+    mock_cm_instance = mock.Mock(spec=ConfigManager)
+
+    temp_config_dir = Path(temp_workspace) / "config"
+    temp_config_dir.mkdir(parents=True, exist_ok=True)
+    temp_settings_ini_path = temp_config_dir / "settings.ini"
+
+    # Actual ConfigManager will be created, but its _load_config will read from our temp file
+    # We need to ensure that when ConfigManager() is called in the handler,
+    # it uses this specific path.
+
+    original_init = ConfigManager.__init__
+    original_load_config = ConfigManager._load_config
+
+    def mock_init(self_cm, config_file_path=None):
+        # If no path is given (handler's case), force it to our temp settings.ini
+        # This is a bit more direct than trying to mock DEFAULT_CONFIG_PATH
+        if config_file_path is None:
+            self_cm.config_file_path = str(temp_settings_ini_path)
+        else: # pragma: no cover (should not happen in these tests)
+            self_cm.config_file_path = config_file_path
+
+        self_cm.config = configparser.ConfigParser()
+        # We need to call the original _load_config logic so it actually reads our temp file
+        # but it needs to be bound to the instance.
+        # Directly calling self_cm._load_config() might not work if it was also patched.
+        # So, we use a trick: setattr to instance, then call.
+        # setattr(self_cm, '_load_config_original', original_load_config.__get__(self_cm, ConfigManager))
+        # self_cm._load_config_original()
+        # This got complicated. Simpler: let _load_config be called naturally after init.
+        # The key is that self.config_file_path is set correctly before _load_config is called by constructor.
+        ConfigManager._load_config(self_cm) # Call original _load_config with the instance
+
+    # We are patching the __init__ to set the config_file_path correctly.
+    # The _load_config method will then use this path.
+    # The get_workspace_path and get_default_sentence_removal_file will work on the loaded config.
+
+    # Patch __init__ to control config_file_path, then let the original _load_config work.
+    # This means ConfigManager will actually parse the temp_settings_ini_path.
+    def patched_init(self, config_file_path=None):
+        # If the handler calls ConfigManager() without args, force our path
+        effective_path = config_file_path if config_file_path is not None else str(temp_settings_ini_path)
+        # Call the original __init__ but ensure it uses our path for loading.
+        # This is tricky because __init__ itself calls _load_config.
+        # Best to control the path it uses for _load_config.
+
+        # Simplified approach: just ensure the instance uses temp_workspace for get_workspace_path
+        # and that it can load the temp_settings_ini_path for get_default_sentence_removal_file.
+
+        # Let's make the mock ConfigManager behave as if it loaded our temp settings.ini
+        # We will write to temp_settings_ini_path, then have the mock methods use it.
+
+        # This fixture will return a function to create settings.ini and the path to it.
+        # The test will then mock specific ConfigManager methods as needed.
+        # This is simpler than deeply patching ConfigManager's loading behavior.
+        pass # No, this fixture should do the patching of ConfigManager
+
+    # Patch ConfigManager constructor to return a pre-configured mock instance
+    # that "reads" from our temp_settings_ini_path.
+    # This avoids complex patching of file loading logic.
+
+    # Create a real ConfigParser object that reads the temp file
+    # This will be the 'self.config' of the ConfigManager instance used by the handler
+    config_parser_that_reads_temp_ini = configparser.ConfigParser()
+    if temp_settings_ini_path.exists(): # pragma: no cover (should exist by the time this is called by ConfigManager)
+        config_parser_that_reads_temp_ini.read(str(temp_settings_ini_path))
+
+    # Mock the instance methods
+    mock_cm_instance.config = config_parser_that_reads_temp_ini
+    mock_cm_instance.config_file_path = str(temp_settings_ini_path)
+
+    # Define how get_workspace_path and get_default_sentence_removal_file behave
+    # These will now correctly use the 'config_parser_that_reads_temp_ini'
+    def get_workspace_path_impl():
+        return mock_cm_instance.config.get('General', 'workspace_path', fallback=temp_workspace)
+
+    def get_default_sentence_removal_file_impl():
+        return mock_cm_instance.config.get('SentenceRemoval', 'default_sentence_removal_file', fallback=None)
+
+    mock_cm_instance.get_workspace_path = mock.Mock(side_effect=get_workspace_path_impl)
+    mock_cm_instance.get_default_sentence_removal_file = mock.Mock(side_effect=get_default_sentence_removal_file_impl)
+
+    # This is needed if the actual _load_config is to be tested with a temp file
+    # For now, mocking get_default_sentence_removal_file directly based on a parsed temp file is safer.
+
+    # The mock constructor for ConfigManager
+    mock_cm_constructor = mock.Mock(return_value=mock_cm_instance)
+    monkeypatch.setattr("webnovel_archiver.cli.handlers.ConfigManager", mock_cm_constructor)
+
+    return temp_config_dir, temp_settings_ini_path, mock_cm_instance, config_parser_that_reads_temp_ini
+
+
+def test_scenario_1_use_default_sentence_removal(
+    runner, mock_successful_orchestrator, temp_workspace,
+    setup_config_manager_for_temp_workspace, caplog
+):
+    story_url = "http://example.com/story-default-sr"
+    config_dir, settings_ini_path, _, live_config_parser = setup_config_manager_for_temp_workspace
+
+    # Create default_rules.json
+    default_rules_content = {"remove_sentences": ["Default rule."]}
+    default_rules_path = config_dir / "default_rules.json"
+    with open(default_rules_path, 'w') as f:
+        json.dump(default_rules_content, f)
+
+    # Create settings.ini specifying the default sentence removal file
+    config = configparser.ConfigParser()
+    config['General'] = {'workspace_path': temp_workspace} # Needs to resolve workspace
+    config['SentenceRemoval'] = {'default_sentence_removal_file': str(default_rules_path)}
+    with open(settings_ini_path, 'w') as f:
+        config.write(f)
+
+    # Update the live_config_parser that the mock ConfigManager instance uses
+    live_config_parser.read(str(settings_ini_path))
+
+    result = runner.invoke(archiver, ['archive-story', story_url]) # No --output-dir, should use from mocked ConfigManager
+
+    assert result.exit_code == 0, f"CLI errored: {result.output}"
+    mock_successful_orchestrator.assert_called_once()
+    args, kwargs = mock_successful_orchestrator.call_args
+    assert kwargs['sentence_removal_file'] == str(default_rules_path)
+    assert not kwargs['no_sentence_removal']
+    assert f"Using default sentence removal file from config: {str(default_rules_path)}" in result.output # Check log in CLI output
+
+def test_scenario_2_cli_overrides_default(
+    runner, mock_successful_orchestrator, temp_workspace,
+    setup_config_manager_for_temp_workspace, caplog
+):
+    story_url = "http://example.com/story-cli-overrides"
+    config_dir, settings_ini_path, _, live_config_parser = setup_config_manager_for_temp_workspace
+
+    # Create default_rules.json (configured but should be overridden)
+    default_rules_content = {"remove_sentences": ["Default rule."]}
+    default_rules_path = config_dir / "default_rules.json"
+    with open(default_rules_path, 'w') as f:
+        json.dump(default_rules_content, f)
+
+    # Create cli_rules.json (this one should be used)
+    cli_rules_content = {"remove_sentences": ["CLI rule."]}
+    cli_rules_path = Path(temp_workspace) / "cli_rules.json" # Place it in workspace root for simplicity
+    with open(cli_rules_path, 'w') as f:
+        json.dump(cli_rules_content, f)
+
+    # Create settings.ini specifying the default
+    config = configparser.ConfigParser()
+    config['General'] = {'workspace_path': temp_workspace}
+    config['SentenceRemoval'] = {'default_sentence_removal_file': str(default_rules_path)}
+    with open(settings_ini_path, 'w') as f:
+        config.write(f)
+    live_config_parser.read(str(settings_ini_path))
+
+    result = runner.invoke(archiver, [
+        'archive-story', story_url,
+        '--sentence-removal-file', str(cli_rules_path)
+    ])
+
+    assert result.exit_code == 0, f"CLI errored: {result.output}"
+    mock_successful_orchestrator.assert_called_once()
+    args, kwargs = mock_successful_orchestrator.call_args
+    assert kwargs['sentence_removal_file'] == str(cli_rules_path)
+    assert not kwargs['no_sentence_removal']
+    assert f"Using sentence removal file provided via CLI: {str(cli_rules_path)}" in result.output
+
+def test_scenario_3_no_sentence_removal_overrides_default(
+    runner, mock_successful_orchestrator, temp_workspace,
+    setup_config_manager_for_temp_workspace, caplog
+):
+    story_url = "http://example.com/story-no-sr-overrides"
+    config_dir, settings_ini_path, _, live_config_parser = setup_config_manager_for_temp_workspace
+
+    # Create default_rules.json (configured but should be overridden by --no-sentence-removal)
+    default_rules_content = {"remove_sentences": ["Default rule."]}
+    default_rules_path = config_dir / "default_rules.json"
+    with open(default_rules_path, 'w') as f:
+        json.dump(default_rules_content, f)
+
+    # Create settings.ini specifying the default
+    config = configparser.ConfigParser()
+    config['General'] = {'workspace_path': temp_workspace}
+    config['SentenceRemoval'] = {'default_sentence_removal_file': str(default_rules_path)}
+    with open(settings_ini_path, 'w') as f:
+        config.write(f)
+    live_config_parser.read(str(settings_ini_path))
+
+    result = runner.invoke(archiver, [
+        'archive-story', story_url,
+        '--no-sentence-removal'
+    ])
+
+    assert result.exit_code == 0, f"CLI errored: {result.output}"
+    mock_successful_orchestrator.assert_called_once()
+    args, kwargs = mock_successful_orchestrator.call_args
+    assert kwargs['sentence_removal_file'] is None
+    assert kwargs['no_sentence_removal'] is True
+    assert "Sentence removal explicitly disabled via --no-sentence-removal flag." in result.output
+
+def test_scenario_4_default_file_configured_but_not_found(
+    runner, mock_successful_orchestrator, temp_workspace,
+    setup_config_manager_for_temp_workspace, caplog
+):
+    story_url = "http://example.com/story-default-not-found"
+    config_dir, settings_ini_path, _, live_config_parser = setup_config_manager_for_temp_workspace
+
+    # Path to a non-existent default rules file
+    non_existent_default_rules_path = config_dir / "non_existent_rules.json"
+
+    # Create settings.ini specifying this non-existent file
+    config = configparser.ConfigParser()
+    config['General'] = {'workspace_path': temp_workspace}
+    config['SentenceRemoval'] = {'default_sentence_removal_file': str(non_existent_default_rules_path)}
+    with open(settings_ini_path, 'w') as f:
+        config.write(f)
+    live_config_parser.read(str(settings_ini_path))
+
+    result = runner.invoke(archiver, ['archive-story', story_url])
+
+    assert result.exit_code == 0, f"CLI errored: {result.output}"
+    mock_successful_orchestrator.assert_called_once()
+    args, kwargs = mock_successful_orchestrator.call_args
+    assert kwargs['sentence_removal_file'] is None
+    assert not kwargs['no_sentence_removal']
+    assert f"Default sentence removal file configured at '{str(non_existent_default_rules_path)}' not found. Proceeding without sentence removal." in result.output
+
 # Add more tests:
 # - Invalid story URL (if CLI does any pre-validation, though likely orchestrator handles this)
 # - Non-existent sentence_removal_file (click handles this with type=click.Path(exists=True))

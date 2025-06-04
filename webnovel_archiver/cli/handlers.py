@@ -2,7 +2,7 @@ import os
 import click # For feedback and potentially type hinting
 import datetime # For timestamps
 # import json # No longer needed directly for loading/saving progress in handler
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union # Added Union
 
 # Import existing components
 from webnovel_archiver.core.orchestrator import archive_story as call_orchestrator_archive_story
@@ -32,6 +32,35 @@ def archive_story_handler(
     no_sentence_removal: bool,
     chapters_per_volume: Optional[int]
 ):
+    def display_progress(message: Union[str, Dict[str, Any]]) -> None:
+        if isinstance(message, str):
+            click.echo(message)
+        elif isinstance(message, dict):
+            # Customizable formatting based on expected dictionary structure
+            status = message.get("status", "info")
+            msg = message.get("message", "No message content.")
+
+            # More detailed formatting for specific messages if needed
+            if "Processing chapter" in msg and "current_chapter_num" in message and "total_chapters" in message:
+                # Example: "Processing chapter: Chapter Title (1/10)" is already part of msg from orchestrator
+                formatted_message = f"[{status.upper()}] {msg}"
+            elif "Successfully fetched metadata" in msg:
+                formatted_message = f"[{status.upper()}] {msg}" # msg already contains title
+            elif "Found" in msg and "chapters" in msg:
+                formatted_message = f"[{status.upper()}] {msg}" # msg already contains count
+            else:
+                # Generic formatting for other dict messages
+                formatted_message = f"[{status.upper()}] {msg}"
+
+            # Add more specific formatting based on other keys if necessary
+            # For example, if there's a progress percentage or specific data points:
+            # if "progress_percent" in message:
+            #    formatted_message += f" ({message['progress_percent']}%)"
+
+            click.echo(formatted_message)
+        else:
+            click.echo(str(message))
+
     click.echo(f"Received story URL: {story_url}")
     if output_dir:
         workspace_root = output_dir
@@ -46,11 +75,11 @@ def archive_story_handler(
             workspace_root = DEFAULT_WORKSPACE_PATH
             click.echo(f"Warning: Using default workspace path due to error: {workspace_root}", err=True)
 
-    click.echo("Starting archival process...")
+    # click.echo("Starting archival process...") # Removed, orchestrator callback will handle this
     logger.info(f"CLI handler initiated archival for {story_url} to workspace {workspace_root}")
 
     try:
-        call_orchestrator_archive_story(
+        summary = call_orchestrator_archive_story(
             story_url=story_url,
             workspace_root=workspace_root,
             ebook_title_override=ebook_title_override,
@@ -58,14 +87,40 @@ def archive_story_handler(
             force_reprocessing=force_reprocessing,
             sentence_removal_file=sentence_removal_file,
             no_sentence_removal=no_sentence_removal,
-            chapters_per_volume=chapters_per_volume
+            chapters_per_volume=chapters_per_volume,
+            progress_callback=display_progress
         )
-        click.echo(f"Archival process completed for: {story_url}")
-        logger.info(f"Successfully completed archival for {story_url}")
+
+        if summary:
+            click.echo(click.style("✓ Archival process completed successfully!", fg="green"))
+            click.echo(f"  Title: {summary['title']}")
+            click.echo(f"  Story ID: {summary['story_id']}")
+            click.echo(f"  Chapters processed in this run: {summary['chapters_processed']}")
+            if summary['epub_files']:
+                click.echo("  Generated EPUB file(s):")
+                for epub_file_path in summary['epub_files']:
+                    click.echo(f"    - {epub_file_path}")
+            else:
+                click.echo("  No EPUB files were generated in this run.")
+            click.echo(f"  Workspace: {summary['workspace_root']}")
+            logger.info(
+                f"Successfully completed archival for '{summary['title']}' (ID: {summary['story_id']}). "
+                f"Processed {summary['chapters_processed']} chapters. "
+                f"EPUBs: {', '.join(summary['epub_files']) if summary['epub_files'] else 'None'}. "
+                f"Workspace: {summary['workspace_root']}"
+            )
+        else:
+            # Orchestrator returned None, indicating an issue was already handled by callback and logged.
+            # We can choose to print a more generic failure message here or rely on callbacks.
+            # For now, let's assume callbacks were sufficient.
+            logger.warning(f"Archival process for {story_url} concluded without a summary. Check logs for errors reported by callbacks.")
+            # Optionally, uncomment below if a generic CLI message is desired when orchestrator returns None
+            # click.echo(click.style("Archival process for {story_url} finished, but may not have been fully successful. Please check logs.", fg="yellow"), err=True)
+
 
     except Exception as e:
-        click.echo(f"An error occurred during the archival process: {e}", err=True)
-        logger.error(f"CLI handler caught an error during archival for {story_url}: {e}", exc_info=True)
+        click.echo(f"An unexpected error occurred in the CLI handler: {e}", err=True)
+        logger.error(f"CLI handler caught an unexpected error during archival for {story_url}: {e}", exc_info=True)
 
 
 # New cloud_backup_handler function - REFACTORED

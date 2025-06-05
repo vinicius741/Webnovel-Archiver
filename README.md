@@ -11,7 +11,13 @@ A command-line tool for archiving webnovels from various sources and managing yo
 
 ## Installation
 
-(TODO: Add installation instructions - e.g., pip install ...)
+To install the Webnovel Archiver CLI, ensure you have Python 3.7 or higher. You can then install it using pip:
+
+```bash
+pip install webnovel-archiver
+```
+
+It is recommended to install it in a virtual environment.
 
 ## Basic Usage
 
@@ -87,12 +93,49 @@ webnovel-archiver cloud-backup
 
 ## Configuration
 
-(TODO: Add details about any configuration files, e.g., for workspace path)
+The Webnovel Archiver CLI uses a configuration file named `settings.ini` to manage settings.
+
+**Default Location:**
+
+By default, the application looks for this file at `workspace/config/settings.ini` relative to the project's root directory. If the file or its directory structure does not exist upon first run (or if `ConfigManager` is initialized without a specific path), a default `settings.ini` will be created with the following structure:
+
+```ini
+[General]
+workspace_path = workspace/
+
+[SentenceRemoval]
+default_sentence_removal_file = workspace/config/default_sentence_removal.json
+```
+
+**Settings:**
+
+*   **`workspace_path`**: (Under `[General]` section)
+    *   Defines the primary directory where the application stores archived content, eBooks, and status files.
+    *   If the path in `settings.ini` is relative, it's considered relative to the project root.
+    *   Default: `workspace/` (a directory named `workspace` in the project root).
+
+*   **`default_sentence_removal_file`**: (Under `[SentenceRemoval]` section)
+    *   Specifies the path to a JSON file containing patterns for sentences to be removed during content processing.
+    *   Default: `workspace/config/default_sentence_removal.json`.
+
+**Google Drive Credentials:**
+
+The `cloud-backup` command requires Google Drive API credentials (`credentials.json` and `token.json`). As described in the "Backing up to Cloud (Google Drive)" section, these files are expected by default in the current working directory from which you run the command, or their paths can be specified using the `--credentials-file` and `--token-file` options respectively. These are not configured via `settings.ini`.
 
 ## Contributing
 
-(TODO: Add guidelines for contributing)
+We welcome contributions to the Webnovel Archiver CLI! If you'd like to contribute, please follow these general guidelines:
+
+1.  **Fork the Repository:** Start by forking the official repository to your own GitHub account.
+2.  **Create a Branch:** Create a new branch in your forked repository for your feature or bug fix. Use a descriptive name (e.g., `feature/add-new-source` or `fix/issue-123`).
+3.  **Make Your Changes:** Implement your feature or fix the bug. Ensure your code adheres to common Python coding standards (e.g., PEP 8).
+4.  **Add Tests:** If you're adding new functionality or fixing a bug, please add appropriate unit tests to verify your changes.
+5.  **Ensure Tests Pass:** Run the existing test suite to make sure your changes haven't introduced any regressions.
+6.  **Commit Your Changes:** Make clear, concise commit messages.
+7.  **Submit a Pull Request:** Push your changes to your forked repository and then open a pull request to the main branch of the official repository. Provide a clear description of the changes you've made.
+
+We appreciate your help in making this tool better!
 
 ## License
 
-(TODO: Specify License - e.g., MIT)
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.

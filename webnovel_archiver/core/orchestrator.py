@@ -113,6 +113,34 @@ def archive_story(
     progress_data["estimated_total_chapters_source"] = metadata.estimated_total_chapters_source
     progress_data["sentence_removal_config_used"] = None # Default if not used
 
+    # Check if we need to look for new chapters from the last known chapter's page
+    if progress_data.get("next_chapter_to_download_url") is None and \
+       progress_data.get("last_downloaded_chapter_url"):
+        last_known_url = progress_data["last_downloaded_chapter_url"]
+        logger.info(f"No next chapter URL in progress. Checking for new chapters from the last downloaded page: {last_known_url}")
+        try:
+            next_page_url = fetcher.get_next_chapter_url_from_page(last_known_url)
+            if next_page_url:
+                logger.info(f"New chapter detected from last known chapter's page: {next_page_url}. Re-fetching chapter list.")
+                _call_progress_callback({"status": "info", "message": "New chapter detected. Re-fetching chapter list..."})
+
+                # Re-fetch the chapter list
+                chapters_info_list = fetcher.get_chapter_urls(story_url)
+                logger.info(f"Found {len(chapters_info_list)} chapters after refresh.")
+                _call_progress_callback({"status": "info", "message": f"Found {len(chapters_info_list)} chapters after refresh."})
+
+                # Potentially update progress_data's view of total chapters if it's stored and used for UI
+                # For now, chapters_info_list is updated, which is the primary driver for the loop.
+            else:
+                logger.info("No new chapters found after checking the last downloaded chapter's page.")
+                _call_progress_callback({"status": "info", "message": "No new chapters found by checking last chapter's page."})
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error when trying to check for new chapters from {last_known_url}: {e}")
+            _call_progress_callback({"status": "warning", "message": f"Network error checking for new chapters: {e}"})
+        except Exception as e:
+            logger.error(f"Unexpected error when trying to check for new chapters from {last_known_url}: {e}", exc_info=True)
+            _call_progress_callback({"status": "warning", "message": f"Unexpected error checking for new chapters: {e}"})
+
     # 4. Chapter Iteration: Download, Save (Simulated), Update Progress
     html_cleaner = HTMLCleaner()
 

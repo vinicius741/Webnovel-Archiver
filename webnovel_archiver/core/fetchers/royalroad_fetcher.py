@@ -1,9 +1,10 @@
-from typing import List
+from typing import List, Optional
 import re
 import requests
 from requests.exceptions import HTTPError, RequestException
 from bs4 import BeautifulSoup, Tag
 import logging # Added for logging
+from urllib.parse import urljoin
 
 from .base_fetcher import BaseFetcher, StoryMetadata, ChapterInfo
 
@@ -522,6 +523,97 @@ class RoyalRoadFetcher(BaseFetcher):
             # Optionally raise a custom exception or return an error message
             return f"Error downloading chapter: {e}"
 
+    def get_next_chapter_url_from_page(self, chapter_page_url: str) -> Optional[str]:
+        """
+        Fetches a chapter page and extracts the URL for the next chapter.
+
+        Args:
+            chapter_page_url: The URL of the current chapter page.
+
+        Returns:
+            The absolute URL of the next chapter, or None if not found or an error occurs.
+        """
+        logger.info(f"Attempting to find next chapter URL from: {chapter_page_url}")
+        try:
+            soup = self._fetch_html_content(chapter_page_url)
+        except HTTPError as http_err:
+            # _fetch_html_content already logs this, but we can add context
+            logger.error(f"HTTP error when trying to fetch page for next chapter link from {chapter_page_url}: {http_err}")
+            return None
+        except Exception as e: # Catch any other unexpected errors from _fetch_html_content
+            logger.error(f"Unexpected error fetching page for next chapter link from {chapter_page_url}: {e}")
+            return None
+
+        next_chapter_href = None
+
+        # Try selectors in order
+        selectors_tried = []
+
+        # 1. `soup.find('a', rel='next')`
+        try:
+            next_link_tag = soup.find('a', rel='next')
+            if next_link_tag and next_link_tag.get('href'):
+                next_chapter_href = next_link_tag['href']
+                logger.info(f"Found next chapter link using 'a[rel=next]': {next_chapter_href}")
+            else:
+                selectors_tried.append("a[rel=next]")
+        except Exception as e:
+            logger.warning(f"Error applying selector 'a[rel=next]' on {chapter_page_url}: {e}")
+            selectors_tried.append("a[rel=next] (error)")
+
+        # 2. `soup.find('a', class_='next-chapter')`
+        if not next_chapter_href:
+            try:
+                next_link_tag = soup.find('a', class_='next-chapter')
+                if next_link_tag and next_link_tag.get('href'):
+                    next_chapter_href = next_link_tag['href']
+                    logger.info(f"Found next chapter link using 'a.next-chapter': {next_chapter_href}")
+                else:
+                    selectors_tried.append("a.next-chapter")
+            except Exception as e:
+                logger.warning(f"Error applying selector 'a.next-chapter' on {chapter_page_url}: {e}")
+                selectors_tried.append("a.next-chapter (error)")
+
+        # 3. `soup.select_one('a.btn-primary.next-chapter')`
+        if not next_chapter_href:
+            try:
+                next_link_tag = soup.select_one('a.btn-primary.next-chapter')
+                if next_link_tag and next_link_tag.get('href'):
+                    next_chapter_href = next_link_tag['href']
+                    logger.info(f"Found next chapter link using 'a.btn-primary.next-chapter': {next_chapter_href}")
+                else:
+                    selectors_tried.append("a.btn-primary.next-chapter")
+            except Exception as e:
+                logger.warning(f"Error applying selector 'a.btn-primary.next-chapter' on {chapter_page_url}: {e}")
+                selectors_tried.append("a.btn-primary.next-chapter (error)")
+
+        # 4. `soup.select_one('a[href*="/chapter/"]:contains("Next")')`
+        if not next_chapter_href:
+            try:
+                # BeautifulSoup's :contains is CSS standard, checks for text content.
+                # For more complex text matching, other methods might be needed, but this is a good attempt.
+                next_link_tag = soup.select_one('a[href*="/chapter/"]:has(> :contains("Next"))') # Checks for direct children like <span>Next</span>
+                if not next_link_tag: # Fallback for direct text
+                    next_link_tag = soup.select_one('a[href*="/chapter/"]:contains("Next")')
+
+                if next_link_tag and next_link_tag.get('href'):
+                    next_chapter_href = next_link_tag['href']
+                    logger.info(f"Found next chapter link using 'a[href*=/chapter/]:contains(Next)': {next_chapter_href}")
+                else:
+                    selectors_tried.append('a[href*="/chapter/"]:contains("Next")')
+            except Exception as e:
+                # Some parsers might not support :contains well or other issues.
+                logger.warning(f"Error applying selector 'a[href*=/chapter/]:contains(Next)' on {chapter_page_url}: {e}")
+                selectors_tried.append('a[href*="/chapter/"]:contains("Next") (error)')
+
+        if next_chapter_href:
+            # Ensure the URL is absolute
+            absolute_url = urljoin(chapter_page_url, str(next_chapter_href))
+            logger.info(f"Successfully extracted and absolutized next chapter URL: {absolute_url}")
+            return absolute_url
+        else:
+            logger.warning(f"Could not find the next chapter link on {chapter_page_url} after trying selectors: {', '.join(selectors_tried)}")
+            return None
 
 if __name__ == '__main__':
     # Setup basic logging for the __main__ block

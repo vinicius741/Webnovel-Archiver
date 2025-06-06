@@ -80,10 +80,10 @@ def generate_backup_files_html(backup_files_list, format_timestamp_func):
 
 def get_embedded_css():
     return """
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f8f9fa; color: #212529; font-size: 16px; line-height: 1.6; }
-    .container { max-width: 1200px; margin: 20px auto; padding: 20px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f9f9f9; color: #212529; font-size: 16px; line-height: 1.6; }
+    .container { max-width: 1200px; margin: 20px auto; padding: 25px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.075); }
     .report-title { text-align: center; color: #343a40; margin-bottom: 30px; font-size: 2.5em; font-weight: 300; }
-    .story-card { border: 1px solid #dee2e6; margin-bottom: 25px; padding: 20px; background-color: #fff; border-radius: 8px; display: flex; flex-wrap: nowrap; gap: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .story-card { border: 1px solid #e0e0e0; margin-bottom: 25px; padding: 25px; background-color: #fff; border-radius: 10px; display: flex; flex-wrap: nowrap; gap: 30px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
     .story-cover { flex-basis: 150px; flex-grow: 0; flex-shrink: 0; }
     .story-cover img { max-width: 100%; height: auto; border-radius: 4px; border: 1px solid #ced4da; }
     .story-details { flex-grow: 1; min-width: 0; } /* Prevents flex item from overflowing */
@@ -106,14 +106,15 @@ def get_embedded_css():
     .backup-never-backed-up { background-color: #6c757d; color: white; } /* Adjusted class name */
     .backup-partial-unknown { background-color: #ffc107; color: #212529; }
     .backup-ok-timestamp-missing { background-color: #17a2b8; color: white; }
-    .section-title { font-weight: bold; margin-top: 12px; margin-bottom: 6px; font-size: 0.95em; color: #343a40; border-bottom: 1px solid #eee; padding-bottom: 3px;}
+    .section-title { font-weight: 600; margin-top: 12px; margin-bottom: 10px; font-size: 1em; color: #222; border-bottom: 1px solid #eaeaea; padding-bottom: 5px;}
     .file-list { list-style: none; padding-left: 0; margin-bottom: 10px; }
-    .file-list li { font-size: 0.9em; margin-bottom: 4px; color: #495057; word-break: break-all; }
-    .file-list li a { text-decoration: none; color: #007bff; }
+    .file-list li { font-size: 0.9em; margin-bottom: 6px; color: #495057; word-break: break-all; padding: 8px 12px; background-color: #f0f0f0; border: 1px solid #dcdcdc; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .file-list li a { text-decoration: none; color: #0056b3; }
     .file-list li a:hover { text-decoration: underline; }
     .no-items { color: #6c757d; font-style: italic; font-size: 0.9em; }
-    .search-sort-filter { margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
-    .search-sort-filter input, .search-sort-filter select { padding: 10px; border-radius: 4px; border: 1px solid #ced4da; font-size: 0.95em; }
+    .search-sort-filter { margin-bottom: 20px; padding: 20px; background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 10px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
+    .search-sort-filter input, .search-sort-filter select { padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 0.95em; }
+    .search-sort-filter input:focus, .search-sort-filter select:focus { border-color: #007bff; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); outline: none; }
     .search-sort-filter input[type="text"] { flex-grow: 1; min-width: 200px; }
 
     /* Pagination Styles */
@@ -133,18 +134,20 @@ def get_embedded_css():
 
     /* Toggle Epubs Button Style */
     .toggle-epubs-btn {
-        background: none;
+        background-color: #007bff;
+        color: white !important;
+        padding: 8px 15px;
         border: none;
-        color: #007bff;
-        text-decoration: underline;
+        border-radius: 5px;
+        text-decoration: none;
         cursor: pointer;
-        padding: 5px 0;
-        font-size: 0.85em;
-        display: block; /* Or inline-block as needed */
-        margin-top: 5px;
+        display: inline-block;
+        margin-top: 10px;
+        font-size: 0.9em;
     }
     .toggle-epubs-btn:hover {
-        color: #0056b3;
+        background-color: #0056b3;
+        text-decoration: none;
     }
     """
 

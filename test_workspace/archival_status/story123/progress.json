@@ -1,0 +1,25 @@
+{
+    "story_id": "story123",
+    "original_title": "Test Story with Many Epubs",
+    "effective_title": "Test Story with Many Epubs",
+    "original_author": "Test Author",
+    "story_url": "http://example.com/story123",
+    "cover_image_url": "http://via.placeholder.com/150",
+    "synopsis": "A test story with many EPUB files to test the toggle feature.",
+    "downloaded_chapters": ["ch1.html", "ch2.html", "ch3.html", "ch4.html", "ch5.html"],
+    "estimated_total_chapters_source": 5,
+    "next_chapter_to_download_url": null,
+    "last_epub_processing": {
+        "timestamp": "2023-10-26T10:00:00Z"
+    },
+    "cloud_backup_status": {
+        "service": "TestDrive",
+        "last_successful_backup_timestamp": "2023-10-26T11:00:00Z",
+        "story_cloud_folder_id": "folder123",
+        "backed_up_files": [
+            {"local_path": "ebooks/story123/story123_vol1.epub", "cloud_file_name": "story123_vol1.epub", "status": "uploaded", "last_backed_up_timestamp": "2023-10-26T11:00:00Z"},
+            {"local_path": "ebooks/story123/story123_vol2.epub", "cloud_file_name": "story123_vol2.epub", "status": "uploaded", "last_backed_up_timestamp": "2023-10-26T11:00:00Z"}
+        ]
+    },
+    "last_updated_timestamp": "2023-10-26T09:00:00Z"
+}

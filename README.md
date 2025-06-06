@@ -91,6 +91,26 @@ To back up all stories:
 webnovel-archiver cloud-backup
 ```
 
+
+### Generating an Archive Report
+
+The `generate-report` command scans your archived stories and creates a comprehensive HTML file summarizing your webnovel collection. This report provides a visual dashboard of all archived webnovels, their download progress, completion status, EPUB file links, and cloud backup status.
+
+```bash
+webnovel-archiver generate-report
+```
+
+**Details:**
+
+*   **Arguments/Options:** This command currently does not take any arguments or options.
+*   **Output:**
+    *   The script will process all stories found in your workspace's `archival_status` directory.
+    *   The generated HTML report, named `archive_report.html`, will be saved in the `reports` subdirectory of your workspace (e.g., `your_workspace_root/reports/archive_report.html`).
+    *   The path to the generated report will also be printed to the console upon successful completion.
+*   **Functionality:**
+    *   The report includes features like searching by title/author, sorting, and filtering by status directly within the HTML page using JavaScript.
+
+
 ## Configuration
 
 The Webnovel Archiver CLI uses a configuration file named `settings.ini` to manage settings.

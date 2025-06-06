@@ -83,14 +83,89 @@ def get_embedded_css():
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f9f9f9; color: #212529; font-size: 16px; line-height: 1.6; }
     .container { max-width: 1200px; margin: 20px auto; padding: 25px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.075); }
     .report-title { text-align: center; color: #343a40; margin-bottom: 30px; font-size: 2.5em; font-weight: 300; }
-    .story-card { border: 1px solid #e0e0e0; margin-bottom: 25px; padding: 25px; background-color: #fff; border-radius: 10px; display: flex; flex-wrap: nowrap; gap: 30px; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
-    .story-cover { flex-basis: 150px; flex-grow: 0; flex-shrink: 0; }
-    .story-cover img { max-width: 100%; height: auto; border-radius: 4px; border: 1px solid #ced4da; }
-    .story-details { flex-grow: 1; min-width: 0; } /* Prevents flex item from overflowing */
-    .story-card h2 { margin-top: 0; font-size: 1.75em; font-weight: 500; color: #007bff; }
-    .story-card h2 a { text-decoration: none; color: inherit; }
-    .story-card h2 a:hover { text-decoration: underline; }
-    .story-card p { margin-top: 0; margin-bottom: 0.75em; color: #495057; }
+
+    #storyListContainer { display: flex; flex-wrap: wrap; gap: 20px; justify-content: flex-start; }
+
+    .story-card {
+        flex-basis: 320px; /* Default width for cards, adjust as needed */
+        flex-grow: 1;
+        max-width: 100%; /* Ensure it doesn't overflow container on very small screens before wrapping */
+        border: 1px solid #e0e0e0;
+        background-color: #fff;
+        border-radius: 10px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        /* margin-bottom: 20px; /* Replaced by gap in #storyListContainer */
+        display: flex; /* This flex is for the card itself to be a flex item */
+        flex-direction: column; /* Stacks summary and hidden modal content vertically */
+        overflow: hidden; /* Prevents content like box shadow from breaking layout */
+    }
+
+    .story-card-summary {
+        display: flex;
+        gap: 15px;
+        padding: 15px;
+        align-items: flex-start; /* Align items at the start of the cross axis */
+    }
+
+    .story-cover {
+        flex-basis: 100px; /* Smaller cover for card view */
+        flex-shrink: 0;
+        flex-grow: 0;
+    }
+    .story-cover img {
+        width: 100%;
+        height: auto;
+        display: block; /* Removes extra space below img */
+        border-radius: 4px;
+        /* border: 1px solid #ced4da; /* Optional: border for cover image */
+    }
+
+    .story-summary-info {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start; /* Content flows top to bottom */
+        min-width: 0; /* Prevents text overflow issues in flex item */
+    }
+    .story-summary-info h2 {
+        margin-top: 0;
+        font-size: 1.2em; /* Adjusted for card layout */
+        font-weight: 500;
+        color: #007bff;
+        margin-bottom: 8px;
+        word-break: break-word; /* Prevent overflow */
+    }
+    .story-summary-info h2 a { text-decoration: none; color: inherit; }
+    .story-summary-info h2 a:hover { text-decoration: underline; }
+    .story-summary-info p {
+        margin-top: 0;
+        margin-bottom: 8px; /* Adjusted spacing */
+        color: #495057;
+        font-size: 0.9em;
+        word-break: break-word; /* Prevent overflow */
+    }
+
+    .view-details-btn {
+        padding: 8px 12px;
+        background-color: #007bff;
+        color: white !important; /* Important to override potential link styles if it were an <a> */
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-top: auto; /* Pushes button to the bottom of its flex container (.story-summary-info) */
+        font-size: 0.9em;
+        text-decoration: none; /* In case it's an <a> styled as a button */
+        display: inline-block; /* Or block if full width is desired */
+        text-align: center;
+    }
+    .view-details-btn:hover {
+        background-color: #0056b3;
+        text-decoration: none;
+    }
+
+    /* .story-details { flex-grow: 1; min-width: 0; } /* This was for the old layout, content now in modal */
+    /* General h2 and p inside story-card were too broad, now scoped to story-summary-info or apply to modal content */
+
     .synopsis { max-height: 6em; /* Approx 3-4 lines based on line-height */ overflow: hidden; transition: max-height 0.3s ease-out; margin-bottom: 0px; position: relative; cursor: pointer;}
     .synopsis.expanded { max-height: 500px; /* Sufficiently large */ }
     .synopsis-toggle { color: #007bff; cursor: pointer; display: block; margin-top: 0px; font-size: 0.9em; text-align: right; }
@@ -149,6 +224,56 @@ def get_embedded_css():
         background-color: #0056b3;
         text-decoration: none;
     }
+
+    /* Modal Styles */
+    .modal {
+        display: none; /* Hidden by default */
+        position: fixed; /* Stay in place */
+        z-index: 1000; /* Sit on top */
+        left: 0;
+        top: 0;
+        width: 100%; /* Full width */
+        height: 100%; /* Full height */
+        overflow: auto; /* Enable scroll if needed */
+        background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+    }
+    .modal-content {
+        background-color: #fefefe;
+        margin: 10% auto; /* 10% from the top and centered */
+        padding: 20px;
+        border: 1px solid #888;
+        width: 80%; /* Could be more or less, depending on screen size */
+        border-radius: 8px;
+        position: relative;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    }
+    .modal-close-btn {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+    }
+    .modal-close-btn:hover,
+    .modal-close-btn:focus {
+        color: black;
+        text-decoration: none;
+        cursor: pointer;
+    }
+    #modalBodyContent {
+        max-height: 70vh; /* Example: limit height and make it scrollable if content overflows */
+        overflow-y: auto;
+    }
+    /* Ensure section titles and other elements within modalBodyContent are styled correctly */
+    #modalBodyContent .section-title { /* Scoping section-title for modal if needed, but global one should be fine */
+        margin-top: 15px; /* Add a bit more top margin for sections in modal */
+    }
+    #modalBodyContent .section-title:first-child {
+        margin-top: 0; /* No extra margin for the very first section title in modal */
+    }
+    #modalBodyContent .file-list li { /* Example of adjusting list item padding in modal */
+        padding: 6px 10px;
+    }
+
     """
 
 def get_javascript():
@@ -177,6 +302,16 @@ def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
 </head>
 <body>
     {body_content}
+
+    <div id="storyDetailModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close-btn">&times;</span>
+            <div id="modalBodyContent">
+                <!-- Story details will be injected here by JavaScript -->
+            </div>
+        </div>
+    </div>
+
     <script>
         {js_script}
     </script>
@@ -216,17 +351,21 @@ def generate_story_card_html(story_data, format_timestamp_func):
     backup_summary_class = sanitize_for_css_class(story_data.get('backup_status_summary')) # Removed default from .get()
 
     epub_list_html = generate_epub_list_html(epub_files_list, story_id_for_epub_toggle)
-
+    story_id_for_modal = story_id_for_epub_toggle # Re-use sanitized ID
 
     card_html = f"""
     <div class="story-card" data-title="{data_title}" data-author="{data_author}" data-status="{data_status}" data-last-updated="{data_last_updated}" data-progress="{data_progress}">
-        <div class="story-cover">
-            <img src="{cover_image_url}" alt="Cover for {title}">
+        <div class="story-card-summary">
+            <div class="story-cover">
+                <img src="{cover_image_url}" alt="Cover for {title}">
+            </div>
+            <div class="story-summary-info">
+                <h2><a href="{story_url}" target="_blank">{title}</a></h2>
+                <p><strong>Author:</strong> {author}</p>
+                <button class="view-details-btn" data-story-id="{story_id_for_modal}">View Details</button>
+            </div>
         </div>
-        <div class="story-details">
-            <h2><a href="{story_url}" target="_blank">{title}</a></h2>
-            <p><strong>Author:</strong> {author}</p>
-
+        <div class="story-card-modal-content" style="display: none;">
             <p class="section-title">Synopsis:</p>
             <div class="synopsis" onclick="toggleSynopsis(this)">{synopsis}</div>
             <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>

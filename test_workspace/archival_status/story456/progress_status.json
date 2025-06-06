@@ -1,0 +1,40 @@
+{
+  "version": "1.1",
+  "story_id": "story456",
+  "story_url": "http://example.com/story456",
+  "original_title": "Story 456 Title",
+  "original_author": "Author FourFiveSix",
+  "cover_image_url": null,
+  "synopsis": "A tale of 456 challenges.",
+  "tags": [
+    "sci-fi",
+    "drama"
+  ],
+  "story_id_from_source": "src456",
+  "estimated_total_chapters_source": 50,
+  "last_downloaded_chapter_url": null,
+  "next_chapter_to_download_url": null,
+  "downloaded_chapters": [],
+  "last_epub_processing": {
+    "timestamp": "2024-06-06T11:00:00Z",
+    "chapters_included_in_last_volume": null,
+    "generated_epub_files": [
+      {
+        "name": "story456_complete.epub",
+        "path": "/app/test_workspace/ebooks/story456/story456_complete.epub"
+      }
+    ]
+  },
+  "sentence_removal_config_used": null,
+  "cloud_backup_status": {
+    "last_backup_attempt_timestamp": null,
+    "last_successful_backup_timestamp": null,
+    "service": null,
+    "base_cloud_folder_name": null,
+    "story_cloud_folder_name": null,
+    "cloud_base_folder_id": null,
+    "story_cloud_folder_id": null,
+    "backed_up_files": []
+  },
+  "last_updated_timestamp": "2024-06-06T11:00:00Z"
+}

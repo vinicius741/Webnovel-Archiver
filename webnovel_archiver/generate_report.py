@@ -39,30 +39,52 @@ def generate_epub_list_html(epub_files, story_id_sanitized):
     if not epub_files:
         return "<p class=\"no-items\">No EPUB files found.</p>"
 
-    EPUB_DISPLAY_THRESHOLD = 3
+    EPUB_DISPLAY_THRESHOLD = 3 # Define how many items to show initially
     total_epubs = len(epub_files)
-    output_html = "<ul class=\"file-list\">"
+
+    # Main container for the grid
+    output_html = "<div class=\"epub-grid-container\">"
 
     for i, file_data in enumerate(epub_files):
-        item_html = f"<li><a href=\"file:///{html.escape(file_data['path'])}\" title=\"{html.escape(file_data['path'])}\">{html.escape(file_data['name'])}</a></li>"
+        epub_name_escaped = html.escape(file_data['name'])
+        epub_path_escaped = html.escape(file_data['path'])
+
+        item_html = f"""
+        <div class="epub-grid-item" data-epub-name="{epub_name_escaped}" data-epub-path="{epub_path_escaped}" onclick="openEpubModal(this)">
+            <div class="epub-cover-placeholder">📖</div>
+            <div class="epub-name" title="{epub_name_escaped}">{epub_name_escaped}</div>
+        </div>"""
+
         if i < EPUB_DISPLAY_THRESHOLD:
             output_html += item_html
         else:
             if i == EPUB_DISPLAY_THRESHOLD: # Start of hidden items
-                output_html += f"</ul><div id=\"more-epubs-{story_id_sanitized}\" style=\"display:none;\"><ul class=\"file-list\">"
+                # Close the visible items part of the grid and start the hidden part
+                output_html += f"</div><div id=\"more-epubs-{story_id_sanitized}\" style=\"display:none;\" class=\"epub-grid-container\">"
             output_html += item_html
             if i == total_epubs - 1: # End of hidden items
-                output_html += "</ul></div>"
+                output_html += "</div>" # Close the hidden items grid container
 
+    if total_epubs <= EPUB_DISPLAY_THRESHOLD:
+        output_html += "</div>" # Close the main grid container if no hidden items
+    elif total_epubs > EPUB_DISPLAY_THRESHOLD and total_epubs -1 < EPUB_DISPLAY_THRESHOLD :
+        # This case means hidden part was not created because all items were below threshold + 1
+        # but the initial conditional for total_epubs > EPUB_DISPLAY_THRESHOLD was met.
+        # Ensure the main container is closed if it wasn't closed by the hidden items logic.
+        # This condition seems complex and might indicate a slight logic overlap previously.
+        # If total_epubs > THRESHOLD, but i never reaches THRESHOLD (e.g. THRESHOLD = 3, total = 4),
+        # then the 'else' block for i == THRESHOLD is entered.
+        # The 'if i == total_epubs - 1' will close the hidden div.
+        # This specific 'elif' seems redundant if the main logic is correct.
+        # Let's simplify: if hidden items were created, their div is closed.
+        # If no hidden items were created (i.e. total_epubs <= EPUB_DISPLAY_THRESHOLD), the main div is closed above.
+        # If hidden items *were* created, the main visible div was already closed before starting the hidden one.
+        pass # The structure should handle closing divs correctly now.
+
+    # Add the "show more" button if there are hidden EPUBs
     if total_epubs > EPUB_DISPLAY_THRESHOLD:
-        if total_epubs - 1 < EPUB_DISPLAY_THRESHOLD : # only one hidden item, close first ul
-             output_html += "</ul>" # close the main list if hidden part was not created
-        # Add the button/link to toggle visibility
-        remaining_count = total_epubs - EPUB_DISPLAY_THRESHOLD
-        button_text = f"Show all {total_epubs} EPUBs" # Initial text shows total
+        button_text = f"Show all {total_epubs} EPUBs"
         output_html += f"<button type=\"button\" class=\"toggle-epubs-btn\" onclick=\"toggleExtraEpubs('{story_id_sanitized}', this, {total_epubs}, {EPUB_DISPLAY_THRESHOLD})\">{button_text}</button>"
-    else:
-        output_html += "</ul>" # Close the main list if no hidden part
 
     return output_html
 
@@ -146,6 +168,105 @@ def get_embedded_css():
     .toggle-epubs-btn:hover {
         color: #0056b3;
     }
+
+    /* EPUB Grid Styles */
+    .epub-grid-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 15px;
+        padding: 10px 0; /* Add some padding above/below the grid */
+        margin-bottom: 10px; /* Space before the 'Show all' button if it's outside */
+    }
+    .epub-grid-item {
+        border: 1px solid #ddd;
+        padding: 10px;
+        text-align: center;
+        cursor: pointer;
+        background-color: #f9f9f9;
+        border-radius: 4px;
+        transition: box-shadow 0.2s ease-in-out;
+    }
+    .epub-grid-item:hover {
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .epub-cover-placeholder { /* Shared with modal */
+        font-size: 3em; /* Larger book icon */
+        margin-bottom: 8px;
+        color: #888;
+    }
+    .epub-name {
+        font-size: 0.85em;
+        color: #333;
+        word-break: break-word; /* Ensure long names wrap */
+        line-height: 1.2;
+    }
+
+    /* Modal Styles */
+    .modal {
+        display: none; /* Hidden by default */
+        position: fixed; /* Stay in place */
+        z-index: 1000; /* Sit on top */
+        left: 0;
+        top: 0;
+        width: 100%; /* Full width */
+        height: 100%; /* Full height */
+        overflow: auto; /* Enable scroll if needed */
+        background-color: rgba(0,0,0,0.6); /* Black w/ opacity */
+    }
+    .modal-content {
+        background-color: #fefefe;
+        margin: 10% auto; /* 10% from the top and centered */
+        padding: 25px;
+        border: 1px solid #bbb;
+        width: 80%; /* Could be more or less, depending on screen size */
+        max-width: 500px; /* Maximum width */
+        border-radius: 8px;
+        position: relative;
+        box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2),0 6px 20px 0 rgba(0,0,0,0.19);
+        text-align: center; /* Center content like title and placeholder */
+    }
+    .modal-close-btn {
+        color: #aaa;
+        position: absolute; /* Position relative to modal-content */
+        top: 10px;
+        right: 15px;
+        font-size: 28px;
+        font-weight: bold;
+    }
+    .modal-close-btn:hover,
+    .modal-close-btn:focus {
+        color: black;
+        text-decoration: none;
+        cursor: pointer;
+    }
+    #modalEpubName {
+        margin-top: 0;
+        margin-bottom: 15px;
+        font-size: 1.5em;
+        color: #333;
+    }
+    /* #modalEpubCoverPlaceholder is styled by .epub-cover-placeholder */
+    #modalEpubPath {
+        font-family: monospace;
+        font-size: 0.9em;
+        color: #555;
+        word-break: break-all;
+        display: inline-block; /* Allow centering if text-align center on parent */
+        margin-bottom: 10px;
+    }
+    #modalEpubPathLink {
+        display: inline-block;
+        margin-top: 15px;
+        padding: 10px 15px;
+        background-color: #007bff;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+    }
+    #modalEpubPathLink:hover {
+        background-color: #0056b3;
+    }
     """
 
 def get_javascript():
@@ -174,6 +295,17 @@ def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
 </head>
 <body>
     {body_content}
+
+    <div id="epubModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <span class="modal-close-btn" onclick="closeEpubModal()">&times;</span>
+            <h3 id="modalEpubName"></h3>
+            <div id="modalEpubCoverPlaceholder" class="epub-cover-placeholder">📖</div>
+            <p><strong>Path:</strong> <span id="modalEpubPath"></span></p>
+            <p><a id="modalEpubPathLink" href="#" target="_blank" rel="noopener noreferrer">Open EPUB (local path)</a></p>
+        </div>
+    </div>
+
     <script>
         {js_script}
     </script>

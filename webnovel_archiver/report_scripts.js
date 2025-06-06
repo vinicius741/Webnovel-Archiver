@@ -10,6 +10,12 @@ let sortSelect = null;
 let storyListContainer = null;
 let paginationControls = null;
 
+// Modal DOM Elements
+let epubModal = null;
+let modalEpubName = null;
+let modalEpubPath = null;
+let modalEpubPathLink = null;
+let modalEpubCoverPlaceholder = null; // Added this based on HTML structure
 
 function toggleSynopsis(element) {
     element.classList.toggle('expanded');
@@ -208,6 +214,45 @@ function toggleExtraEpubs(story_id_sanitized, buttonElement, totalEpubs, thresho
     }
 }
 
+// Modal Functions
+function openEpubModal(element) {
+    if (!epubModal || !modalEpubName || !modalEpubPath || !modalEpubPathLink || !modalEpubCoverPlaceholder) {
+        console.error("Modal elements not cached correctly.");
+        return;
+    }
+
+    const epubName = element.dataset.epubName;
+    const epubPath = element.dataset.epubPath;
+
+    modalEpubName.textContent = epubName;
+    // modalEpubCoverPlaceholder.textContent = '📖'; // Already in HTML, but could update if dynamic
+
+    // Display the path textually for user info
+    modalEpubPath.textContent = epubPath;
+
+    // Create a file URI for the link
+    // Note: Direct linking to local files has security restrictions in many browsers.
+    // This creates the link, but it might not work as expected without browser configuration
+    // or if the report is not viewed locally.
+    if (epubPath) {
+        // Assuming epubPath is an absolute path. If it's relative, more logic is needed.
+        // For security, browsers are very restrictive about file:/// links from http/https pages.
+        // If this report is opened as a local file itself, file:/// links are more likely to work.
+        modalEpubPathLink.href = `file:///${epubPath}`;
+    } else {
+        modalEpubPathLink.href = '#'; // Fallback if path is missing
+    }
+
+    epubModal.style.display = 'block';
+}
+
+function closeEpubModal() {
+    if (epubModal) {
+        epubModal.style.display = 'none';
+    }
+}
+
+
 document.addEventListener('DOMContentLoaded', function() {
     // Cache DOM elements
     searchInput = document.getElementById('searchInput');
@@ -215,6 +260,22 @@ document.addEventListener('DOMContentLoaded', function() {
     sortSelect = document.getElementById('sortSelect');
     storyListContainer = document.getElementById('storyListContainer');
     paginationControls = document.getElementById('paginationControls');
+
+    // Cache Modal DOM elements
+    epubModal = document.getElementById('epubModal');
+    modalEpubName = document.getElementById('modalEpubName');
+    modalEpubPath = document.getElementById('modalEpubPath');
+    modalEpubPathLink = document.getElementById('modalEpubPathLink');
+    modalEpubCoverPlaceholder = document.getElementById('modalEpubCoverPlaceholder');
+
+    // Event listener for closing modal on outside click
+    if (epubModal) {
+        epubModal.addEventListener('click', function(event) {
+            if (event.target === epubModal) { // Check if the click is on the modal overlay itself
+                closeEpubModal();
+            }
+        });
+    }
 
     if (storyListContainer) {
         // Get all cards present in the container at load time

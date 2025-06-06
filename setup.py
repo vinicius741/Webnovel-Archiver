@@ -24,7 +24,7 @@ setup(
     install_requires=install_requires, # List of dependencies
     entry_points={
         'console_scripts': [
-            'archiver = webnovel_archiver.cli.main:archiver',
+            'webnovel-archiver = webnovel_archiver.cli.main:main',
         ],
     },
     classifiers=[

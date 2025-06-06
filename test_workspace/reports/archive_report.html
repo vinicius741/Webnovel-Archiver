@@ -320,6 +320,45 @@
             <p>N/A</p>
         </div>
     </div>
+
+    <div class="story-card" data-title="Untitled" data-author="Unknown Author" data-status="Unknown (No chapters downloaded, total unknown)" data-last-updated="" data-progress="0">
+        <div class="story-card-summary">
+            <div class="story-cover">
+                <img src="https://via.placeholder.com/150x220.png?text=No+Cover" alt="Cover for Untitled">
+            </div>
+            <div class="story-summary-info">
+                <h2><a href="#" target="_blank">Untitled</a></h2>
+                <p><strong>Author:</strong> Unknown Author</p>
+                <p><strong>Story ID:</strong> test_story_s6_001</p>
+                <button class="view-details-btn" data-story-id="teststorys6001">View Details</button>
+            </div>
+        </div>
+        <div class="story-card-modal-content" style="display: none;">
+            <p class="section-title">Synopsis:</p>
+            <div class="synopsis" onclick="toggleSynopsis(this)">No synopsis available.</div>
+            <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
+
+            <p class="section-title">Download Progress:</p>
+            <div class="progress-bar-container">
+                <div class="progress-bar" style="width:0%;">0%</div>
+            </div>
+            <p>0 chapters (total unknown)</p>
+            <p><strong>Story Status:</strong> <span class="badge status-unknown-no-chapters-downloaded-total-unknown">Unknown (No chapters downloaded, total unknown)</span></p>
+
+            <p class="section-title">Local EPUBs (Generated: N/A):</p>
+            <p class="no-items">No EPUB files found.</p>
+
+            <p class="section-title">Cloud Backup:</p>
+            <p><strong>Status:</strong> <span class="badge backup-never-backed-up">Never Backed Up</span>
+               (Service: N/A)
+            </p>
+            <p>Last Successful Backup: N/A</p>
+            <p class="no-items">No backup file details.</p>
+
+            <p class="section-title">Last Local Update:</p>
+            <p>N/A</p>
+        </div>
+    </div>
     </div>
     </div>
 
@@ -400,8 +439,8 @@ function updateDisplayedCards() {
         let valA, valB;
         switch (sortValue) {
             case 'title':
-                valA = a.dataset.title || '';
-                valB = b.dataset.title || '';
+                valA = (a.dataset.title || '').trim().toLowerCase();
+                valB = (b.dataset.title || '').trim().toLowerCase();
                 return valA.localeCompare(valB);
             case 'last_updated_desc':
                 valA = a.dataset.lastUpdated || '';

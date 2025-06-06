@@ -332,6 +332,7 @@ def generate_story_card_html(story_data, format_timestamp_func):
 
     epub_files_list = story_data.get('epub_files', [])
     story_id_for_epub_toggle = sanitize_for_css_class(story_data.get('story_id') or '') # Sanitize story_id
+    story_id_display = html.escape(story_data.get('story_id') or 'N/A')
     backup_summary_display_text = html.escape(story_data.get('backup_status_summary') or 'N/A')
     backup_service = html.escape(story_data.get('backup_service') or 'N/A')
     backup_last_success_ts = html.escape(story_data.get('formatted_last_successful_backup_ts') or 'N/A') # Already uses 'or'
@@ -362,6 +363,7 @@ def generate_story_card_html(story_data, format_timestamp_func):
             <div class="story-summary-info">
                 <h2><a href="{story_url}" target="_blank">{title}</a></h2>
                 <p><strong>Author:</strong> {author}</p>
+                <p><strong>Story ID:</strong> {story_id_display}</p>
                 <button class="view-details-btn" data-story-id="{story_id_for_modal}">View Details</button>
             </div>
         </div>

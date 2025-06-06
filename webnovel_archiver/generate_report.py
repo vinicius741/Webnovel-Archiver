@@ -1,0 +1,517 @@
+import os
+import json
+import datetime
+import sys
+import re
+import html # For escaping HTML content
+
+# Adjust path to import sibling modules
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, PROJECT_ROOT)
+
+from webnovel_archiver.core.config_manager import ConfigManager
+from webnovel_archiver.core.storage.progress_manager import load_progress, DEFAULT_WORKSPACE_ROOT, ARCHIVAL_STATUS_DIR, EBOOKS_DIR, get_epub_file_details
+from webnovel_archiver.utils.logger import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
+
+def format_timestamp(iso_timestamp_str):
+    if not iso_timestamp_str:
+        return None
+    try:
+        dt_obj = datetime.datetime.fromisoformat(iso_timestamp_str.replace('Z', '+00:00'))
+        return dt_obj.strftime('%Y-%m-%d %H:%M:%S %Z') # Include timezone
+    except ValueError:
+        logger.warning(f"Could not parse timestamp: {iso_timestamp_str}", exc_info=True)
+        return iso_timestamp_str # Return original if parsing fails
+
+def sanitize_for_css_class(text):
+    if not text: return ""
+    processed_text = str(text).lower()
+    # Replace common separators with hyphens
+    processed_text = processed_text.replace(' ', '-').replace('(', '').replace(')', '').replace('/', '-').replace('.', '')
+    # Remove any remaining non-alphanumeric characters except hyphens
+    processed_text = re.sub(r'[^a-z0-9-]', '', processed_text)
+    return processed_text.strip('-')
+
+def generate_epub_list_html(epub_files):
+    if not epub_files:
+        return "<p class=\"no-items\">No EPUB files found.</p>"
+    # Escape file names and paths for security and correctness
+    items = "".join([f"<li><a href=\"file:///{html.escape(file_data['path'])}\" title=\"{html.escape(file_data['path'])}\">{html.escape(file_data['name'])}</a></li>" for file_data in epub_files])
+    return f"<ul class=\"file-list\">{items}</ul>"
+
+def generate_backup_files_html(backup_files_list, format_timestamp_func):
+    if not backup_files_list:
+        return "<p class=\"no-items\">No backup file details.</p>"
+    items = ""
+    for bf in backup_files_list:
+        ts = format_timestamp_func(bf.get('last_backed_up_timestamp')) or 'N/A'
+        local_path_display = html.escape(bf.get('local_path', 'N/A'))
+        cloud_file_name_display = html.escape(bf.get('cloud_file_name', 'N/A'))
+        status_display = html.escape(bf.get('status', 'N/A'))
+        items += f"<li>{local_path_display} ({cloud_file_name_display}): {status_display} - Last backed up: {ts}</li>"
+    return f"<ul class=\"file-list\">{items}</ul>"
+
+def get_embedded_css():
+    return """
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f8f9fa; color: #212529; font-size: 16px; line-height: 1.6; }
+    .container { max-width: 1200px; margin: 20px auto; padding: 20px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .report-title { text-align: center; color: #343a40; margin-bottom: 30px; font-size: 2.5em; font-weight: 300; }
+    .story-card { border: 1px solid #dee2e6; margin-bottom: 25px; padding: 20px; background-color: #fff; border-radius: 8px; display: flex; flex-wrap: nowrap; gap: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .story-cover { flex-basis: 150px; flex-grow: 0; flex-shrink: 0; }
+    .story-cover img { max-width: 100%; height: auto; border-radius: 4px; border: 1px solid #ced4da; }
+    .story-details { flex-grow: 1; min-width: 0; } /* Prevents flex item from overflowing */
+    .story-card h2 { margin-top: 0; font-size: 1.75em; font-weight: 500; color: #007bff; }
+    .story-card h2 a { text-decoration: none; color: inherit; }
+    .story-card h2 a:hover { text-decoration: underline; }
+    .story-card p { margin-top: 0; margin-bottom: 0.75em; color: #495057; }
+    .synopsis { max-height: 6em; /* Approx 3-4 lines based on line-height */ overflow: hidden; transition: max-height 0.3s ease-out; margin-bottom: 0px; position: relative; cursor: pointer;}
+    .synopsis.expanded { max-height: 500px; /* Sufficiently large */ }
+    .synopsis-toggle { color: #007bff; cursor: pointer; display: block; margin-top: 0px; font-size: 0.9em; text-align: right; }
+    .progress-bar-container { background-color: #e9ecef; border-radius: .25rem; height: 22px; overflow: hidden; margin-bottom: 8px; }
+    .progress-bar { background-color: #28a745; height: 100%; line-height: 22px; color: white; text-align: center; font-weight: bold; transition: width 0.4s ease; font-size: 0.85em; }
+    .badge { display: inline-block; padding: .35em .65em; font-size: .75em; font-weight: 700; line-height: 1; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: .25rem; }
+    .status-complete { background-color: #28a745; color: white; }
+    .status-ongoing { background-color: #ffc107; color: #212529; }
+    .status-possibly-complete-total-unknown { background-color: #17a2b8; color: white; }
+    .status-unknown-no-chapters-downloaded-total-unknown { background-color: #6c757d; color: white; }
+    .backup-ok { background-color: #28a745; color: white; }
+    .backup-failed { background-color: #dc3545; color: white; }
+    .backup-never-backed-up { background-color: #6c757d; color: white; } /* Adjusted class name */
+    .backup-partial-unknown { background-color: #ffc107; color: #212529; }
+    .backup-ok-timestamp-missing { background-color: #17a2b8; color: white; }
+    .section-title { font-weight: bold; margin-top: 12px; margin-bottom: 6px; font-size: 0.95em; color: #343a40; border-bottom: 1px solid #eee; padding-bottom: 3px;}
+    .file-list { list-style: none; padding-left: 0; margin-bottom: 10px; }
+    .file-list li { font-size: 0.9em; margin-bottom: 4px; color: #495057; word-break: break-all; }
+    .file-list li a { text-decoration: none; color: #007bff; }
+    .file-list li a:hover { text-decoration: underline; }
+    .no-items { color: #6c757d; font-style: italic; font-size: 0.9em; }
+    .search-sort-filter { margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
+    .search-sort-filter input, .search-sort-filter select { padding: 10px; border-radius: 4px; border: 1px solid #ced4da; font-size: 0.95em; }
+    .search-sort-filter input[type="text"] { flex-grow: 1; min-width: 200px; }
+    """
+
+def get_javascript():
+    return """
+    function toggleSynopsis(element) {
+        element.classList.toggle('expanded');
+        const toggleLink = element.nextElementSibling;
+        if (element.classList.contains('expanded')) {
+            toggleLink.textContent = '(Read less)';
+        } else {
+            toggleLink.textContent = '(Read more)';
+        }
+    }
+
+    function filterStories() {
+        let input = document.getElementById('searchInput');
+        let filterTitle = input.value.toUpperCase();
+        let statusFilter = document.getElementById('filterStatusSelect').value;
+        let storyListContainer = document.getElementById('storyListContainer');
+        if (!storyListContainer) return;
+        let cards = storyListContainer.getElementsByClassName('story-card');
+
+        for (let i = 0; i < cards.length; i++) {
+            let title = (cards[i].dataset.title || '').toUpperCase();
+            let author = (cards[i].dataset.author || '').toUpperCase();
+            let status = cards[i].dataset.status || '';
+
+            let titleMatch = title.includes(filterTitle) || author.includes(filterTitle);
+            let statusMatch = (statusFilter === "" || status === statusFilter);
+
+            if (titleMatch && statusMatch) {
+                cards[i].style.display = "flex";
+            } else {
+                cards[i].style.display = "none";
+            }
+        }
+    }
+
+    function sortStories() {
+        let sortValue = document.getElementById('sortSelect').value;
+        let storyListContainer = document.getElementById('storyListContainer');
+        if (!storyListContainer) return;
+        let cards = Array.from(storyListContainer.getElementsByClassName('story-card'));
+
+        cards.sort(function(a, b) {
+            let valA, valB;
+            switch (sortValue) {
+                case 'title':
+                    valA = a.dataset.title || '';
+                    valB = b.dataset.title || '';
+                    return valA.localeCompare(valB);
+                case 'last_updated_desc':
+                    valA = a.dataset.lastUpdated || '';
+                    valB = b.dataset.lastUpdated || '';
+                    return valB.localeCompare(valA);
+                case 'last_updated_asc':
+                    valA = a.dataset.lastUpdated || '';
+                    valB = b.dataset.lastUpdated || '';
+                    return valA.localeCompare(valB);
+                case 'progress_desc':
+                    valA = parseInt(a.dataset.progress || 0);
+                    valB = parseInt(b.dataset.progress || 0);
+                    return valB - valA;
+                default:
+                    return 0;
+            }
+        });
+        cards.forEach(card => storyListContainer.appendChild(card));
+    }
+    """
+
+def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
+    return f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{html.escape(title_text)}</title>
+    <style>
+        {css_styles}
+    </style>
+</head>
+<body>
+    {body_content}
+    <script>
+        {js_script}
+    </script>
+</body>
+</html>
+"""
+
+def generate_story_card_html(story_data, format_timestamp_func):
+    title = html.escape(story_data.get('title', 'Untitled'))
+    author = html.escape(story_data.get('author', 'Unknown Author'))
+    story_url = html.escape(story_data.get('story_url', '#'))
+    cover_image_url = html.escape(story_data.get('cover_image_url', 'https://via.placeholder.com/150x220.png?text=No+Cover'))
+    synopsis = html.escape(story_data.get('synopsis', 'No synopsis available.'))
+    progress_percentage = story_data.get('progress_percentage', 0)
+    progress_text = html.escape(story_data.get('progress_text', 'N/A'))
+    status_display_text = html.escape(story_data.get('status', 'N/A')) # For display
+    epub_gen_ts = html.escape(story_data.get('epub_generation_timestamp') or 'N/A')
+    epub_files_list = story_data.get('epub_files', [])
+    backup_summary_display_text = html.escape(story_data.get('backup_status_summary', 'N/A')) # For display
+    backup_service = html.escape(story_data.get('backup_service', 'N/A'))
+    backup_last_success_ts = html.escape(story_data.get('formatted_last_successful_backup_ts') or 'N/A')
+    backup_files_detail_list = story_data.get('backup_files_status', [])
+    last_updated = html.escape(story_data.get('formatted_last_updated_ts') or 'N/A')
+
+    # Data attributes for JS (raw values are fine, but escape them for safety in attributes)
+    data_title = html.escape(story_data.get('title', ''))
+    data_author = html.escape(story_data.get('author', ''))
+    data_status = html.escape(story_data.get('status', '')) # Raw status for filtering logic
+    data_last_updated = html.escape(story_data.get('last_updated_timestamp', '')) # Raw ISO for sorting
+    data_progress = html.escape(str(progress_percentage))
+
+    # CSS class names from statuses (these should not be HTML escaped)
+    status_class = sanitize_for_css_class(story_data.get('status', ''))
+    backup_summary_class = sanitize_for_css_class(story_data.get('backup_status_summary', ''))
+
+    card_html = f"""
+    <div class="story-card" data-title="{data_title}" data-author="{data_author}" data-status="{data_status}" data-last-updated="{data_last_updated}" data-progress="{data_progress}">
+        <div class="story-cover">
+            <img src="{cover_image_url}" alt="Cover for {title}">
+        </div>
+        <div class="story-details">
+            <h2><a href="{story_url}" target="_blank">{title}</a></h2>
+            <p><strong>Author:</strong> {author}</p>
+
+            <p class="section-title">Synopsis:</p>
+            <div class="synopsis" onclick="toggleSynopsis(this)">{synopsis}</div>
+            <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
+
+            <p class="section-title">Download Progress:</p>
+            <div class="progress-bar-container">
+                <div class="progress-bar" style="width:{progress_percentage}%;">{progress_percentage}%</div>
+            </div>
+            <p>{progress_text}</p>
+            <p><strong>Story Status:</strong> <span class="badge status-{status_class}">{status_display_text}</span></p>
+
+            <p class="section-title">Local EPUBs (Generated: {epub_gen_ts}):</p>
+            {generate_epub_list_html(epub_files_list)}
+
+            <p class="section-title">Cloud Backup:</p>
+            <p><strong>Status:</strong> <span class="badge backup-{backup_summary_class}">{backup_summary_display_text}</span>
+               (Service: {backup_service})
+            </p>
+            <p>Last Successful Backup: {backup_last_success_ts}</p>
+            {generate_backup_files_html(backup_files_detail_list, format_timestamp)}
+
+            <p class="section-title">Last Local Update:</p>
+            <p>{last_updated}</p>
+        </div>
+    </div>
+    """
+    return card_html
+
+def process_story_for_report(progress_data, workspace_root):
+    logger.debug(f"Processing story for report: {progress_data.get('story_id')}")
+    story_id = progress_data.get('story_id')
+
+    # Download Progress
+    downloaded_chapters_list = progress_data.get('downloaded_chapters', [])
+    downloaded_chapters_count = len(downloaded_chapters_list)
+    total_chapters = progress_data.get('estimated_total_chapters_source')
+    progress_percentage = 0
+    progress_text = f"{downloaded_chapters_count} / {total_chapters if total_chapters is not None else 'N/A'} chapters"
+    if total_chapters and total_chapters > 0: # Check if total_chapters is a positive integer
+        progress_percentage = int((downloaded_chapters_count / total_chapters) * 100)
+    elif (total_chapters == 0 or total_chapters is None) and downloaded_chapters_count > 0:
+        progress_text += " (total unknown)"
+    elif (total_chapters == 0 or total_chapters is None) and downloaded_chapters_count == 0:
+        progress_text = "0 chapters (total unknown)"
+
+
+    # Story Status
+    next_chapter_url = progress_data.get('next_chapter_to_download_url')
+    status = "Ongoing"
+    if total_chapters is not None and downloaded_chapters_count >= total_chapters and not next_chapter_url:
+        status = "Complete"
+    elif total_chapters is None and not next_chapter_url and downloaded_chapters_count > 0:
+        status = "Possibly Complete (Total Unknown)"
+    elif not next_chapter_url and downloaded_chapters_count == 0 and total_chapters is None:
+        status = "Unknown (No chapters downloaded, total unknown)"
+
+    # Local EPUB Paths
+    epub_generation_timestamp_raw = progress_data.get('last_epub_processing', {}).get('timestamp')
+    epub_generation_timestamp = format_timestamp(epub_generation_timestamp_raw)
+    epub_files = get_epub_file_details(progress_data, story_id, workspace_root)
+
+    # Cloud Backup Status
+    cloud_backup_info = progress_data.get('cloud_backup_status', {})
+    last_successful_backup_ts_raw = cloud_backup_info.get('last_successful_backup_timestamp')
+    formatted_last_successful_backup_ts = format_timestamp(last_successful_backup_ts_raw)
+    backup_files_status = cloud_backup_info.get('backed_up_files', [])
+    backup_status_summary = "Never Backed Up"
+    backup_service = cloud_backup_info.get('service', 'N/A')
+    story_cloud_folder_id = cloud_backup_info.get('story_cloud_folder_id')
+
+    if backup_files_status:
+        all_uploaded_or_skipped = all(f.get('status') in ['uploaded', 'skipped_up_to_date'] for f in backup_files_status)
+        any_failed = any(f.get('status') == 'failed' for f in backup_files_status)
+        if any_failed:
+            backup_status_summary = "Failed"
+        elif all_uploaded_or_skipped and last_successful_backup_ts_raw: # check raw ts here
+            backup_status_summary = "OK"
+        elif all_uploaded_or_skipped and not last_successful_backup_ts_raw:
+            backup_status_summary = "OK (Timestamp Missing)"
+        else:
+            backup_status_summary = "Partial/Unknown"
+
+    # Last Updated
+    last_updated_ts_raw = progress_data.get('last_updated_timestamp')
+    formatted_last_updated_ts = format_timestamp(last_updated_ts_raw)
+
+    # Other Fields
+    cover_image_url = progress_data.get('cover_image_url')
+    story_url = progress_data.get('story_url')
+    title = progress_data.get('effective_title') or progress_data.get('original_title') or "Untitled"
+    author = progress_data.get('original_author') or "Unknown Author"
+    synopsis = progress_data.get('synopsis') or "No synopsis available."
+
+    return {
+        'story_id': story_id,
+        'title': title,
+        'author': author,
+        'story_url': story_url,
+        'cover_image_url': cover_image_url,
+        'synopsis': synopsis,
+        'progress_text': progress_text,
+        'progress_percentage': progress_percentage,
+        'status': status,
+        'epub_files': epub_files,
+        'epub_generation_timestamp': epub_generation_timestamp,
+        'backup_status_summary': backup_status_summary,
+        'formatted_last_successful_backup_ts': formatted_last_successful_backup_ts,
+        'backup_service': backup_service,
+        'story_cloud_folder_id': story_cloud_folder_id,
+        'backup_files_status': backup_files_status,
+        'formatted_last_updated_ts': formatted_last_updated_ts,
+    }
+
+def main():
+    logger.info("HTML report generation script started.")
+
+    logger.info("Determining workspace and report output paths...")
+    try:
+        config_manager = ConfigManager()
+        workspace_root = config_manager.get_workspace_path()
+
+        if not workspace_root: # Should not happen with default fallback in ConfigManager
+            logger.error("Workspace root could not be determined. Exiting.")
+            return
+
+        archival_status_path = os.path.join(workspace_root, ARCHIVAL_STATUS_DIR)
+        reports_dir = os.path.join(workspace_root, "reports")
+
+        # Create reports directory if it doesn't exist
+        os.makedirs(reports_dir, exist_ok=True)
+        logger.info(f"Ensured reports directory exists at: {reports_dir}")
+
+        report_html_path = os.path.join(reports_dir, "archive_report.html")
+
+        logger.info(f"Workspace root: {workspace_root}")
+        logger.info(f"Archival status path: {archival_status_path}")
+        logger.info(f"Reports directory: {reports_dir}")
+        logger.info(f"Report HTML will be saved to: {report_html_path}")
+
+    except Exception as e:
+        logger.error(f"Error during path determination: {e}", exc_info=True)
+        return
+
+    # Further implementation will go here (story discovery, processing, HTML generation)
+
+    logger.info("Discovering and loading story progress data...")
+    all_story_data = []
+
+    if not os.path.exists(archival_status_path) or not os.path.isdir(archival_status_path):
+        logger.error(f"Archival status path does not exist or is not a directory: {archival_status_path}")
+        logger.info("No stories to process. Exiting.")
+        return
+
+    story_ids = [name for name in os.listdir(archival_status_path)
+                 if os.path.isdir(os.path.join(archival_status_path, name))]
+
+    if not story_ids:
+        logger.info(f"No story subdirectories found in {archival_status_path}.")
+        # Generate an empty report later, or just exit for now
+        # For now, let's log and proceed to generate an empty report.
+    else:
+        logger.info(f"Found {len(story_ids)} potential story directories.")
+
+    for story_id in story_ids:
+        logger.debug(f"Processing story_id: {story_id}")
+        try:
+            # Pass workspace_root to load_progress as it's needed for resolving potential relative paths
+            # within the progress file if any, or for default values.
+            progress_data = load_progress(story_id, workspace_root)
+
+            # Ensure that loaded_data is not None and contains story_id,
+            # which load_progress should guarantee by returning a new structure if file is missing/corrupt.
+            if progress_data and progress_data.get("story_id"):
+                all_story_data.append(progress_data)
+                logger.debug(f"Successfully loaded progress for story_id: {story_id}")
+            else:
+                # This case should ideally not be hit if load_progress always returns a valid structure
+                logger.warning(f"Failed to load valid progress data for story_id: {story_id} or data is malformed. Skipping.")
+        except Exception as e:
+            logger.error(f"Error loading progress for story_id {story_id}: {e}", exc_info=True)
+            # Decide if you want to skip this story or halt. For a report, skipping is better.
+
+    logger.info(f"Successfully loaded data for {len(all_story_data)} out of {len(story_ids)} stories found.")
+
+    # Store workspace_root and report_html_path to be accessible by other functions if needed
+    # For now, they are local to main, which is fine as we'll pass them around.
+
+    processed_stories = []
+    if all_story_data:
+        logger.info(f"Processing {len(all_story_data)} stories for the report...")
+        for story_data in all_story_data:
+            try:
+                processed_data = process_story_for_report(story_data, workspace_root)
+                processed_stories.append(processed_data)
+            except Exception as e:
+                logger.error(f"Error processing story data for story_id {story_data.get('story_id', 'N/A')}: {e}", exc_info=True)
+        logger.info(f"Successfully processed {len(processed_stories)} stories.")
+    else:
+        logger.info("No story data to process for the report.")
+
+    final_html = ""
+    story_cards_html_list = []
+    if not processed_stories:
+        story_cards_html = "<p class=\"no-items\">No stories found in the archive to report.</p>"
+    else:
+        logger.info(f"Generating HTML cards for {len(processed_stories)} stories...")
+        for story_data in processed_stories:
+            try:
+                story_cards_html_list.append(generate_story_card_html(story_data, format_timestamp))
+            except Exception as e:
+                logger.error(f"Error generating HTML card for story_id {story_data.get('story_id', 'N/A')}: {e}", exc_info=True)
+        story_cards_html = "".join(story_cards_html_list)
+        logger.info(f"Successfully generated {len(story_cards_html_list)} HTML cards.")
+
+    css_styles = get_embedded_css()
+    header_controls = """
+    <div class="search-sort-filter">
+        <input type="text" id="searchInput" onkeyup="filterStories()" placeholder="Search by title or author..." aria-label="Search stories">
+        <select id="sortSelect" onchange="sortStories()" aria-label="Sort stories by">
+            <option value="title">Sort by Title (A-Z)</option>
+            <option value="last_updated_desc">Sort by Last Updated (Newest First)</option>
+            <option value="last_updated_asc">Sort by Last Updated (Oldest First)</option>
+            <option value="progress_desc">Sort by Progress (Highest First)</option>
+        </select>
+        <select id="filterStatusSelect" onchange="filterStories()" aria-label="Filter stories by status">
+            <option value="">Filter by Status (All)</option>
+            <option value="Complete">Complete</option>
+            <option value="Ongoing">Ongoing</option>
+            <option value="Possibly Complete (Total Unknown)">Possibly Complete</option>
+            <option value="Unknown (No chapters downloaded, total unknown)">Unknown</option>
+            {status_options_html}
+        </select>
+    </div>
+    """
+
+    # Dynamically generate status options for filter based on available statuses
+    # This can be improved by getting unique statuses from processed_stories
+    # For now, using the provided list plus a placeholder for more.
+    # A more robust way would be:
+    # available_statuses = sorted(list(set(s['status'] for s in processed_stories if s.get('status'))))
+    # status_options_html_list = [f'<option value="{html.escape(s)}">{html.escape(s)}</option>' for s in available_statuses]
+    # For simplicity, using the fixed list from prompt for now.
+
+    unique_statuses = set()
+    if processed_stories:
+        for s_data in processed_stories:
+            if s_data.get('status'):
+                unique_statuses.add(s_data['status'])
+
+    status_options_html_list = [f'<option value="{html.escape(status)}">{html.escape(status)}</option>' for status in sorted(list(unique_statuses))]
+
+
+    # Replacing placeholder in header_controls
+    # This is a bit simplistic; a more robust template engine would be better for complex HTML.
+    # For now, just ensuring the placeholder is removed or filled.
+    # The prompt had a fixed list, let's stick to that for simplicity and add others if found
+    fixed_status_options = [
+        "Complete", "Ongoing", "Possibly Complete (Total Unknown)",
+        "Unknown (No chapters downloaded, total unknown)" # This one is long, matches the class
+    ]
+
+    # Combine fixed options with any other unique statuses found, ensuring no duplicates and proper escaping
+    all_available_statuses = sorted(list(set(fixed_status_options + list(unique_statuses))))
+
+    status_options_for_filter_html = "".join([f'<option value="{html.escape(s)}">{html.escape(s)}</option>' for s in all_available_statuses])
+
+    header_controls = header_controls.replace("{status_options_html}", status_options_for_filter_html)
+
+
+    main_body_content = f'<div class="container"><h1 class="report-title">Webnovel Archive Report</h1>{header_controls}<div id="storyListContainer">{story_cards_html}</div></div>'
+    js_code = get_javascript()
+    final_html = get_html_skeleton("Webnovel Archive Report", css_styles, main_body_content, js_code)
+    logger.info("Successfully generated HTML content string.")
+
+    if final_html: # Ensure final_html was actually generated
+        logger.info(f"Attempting to write HTML report to: {report_html_path}")
+        try:
+            with open(report_html_path, 'w', encoding='utf-8') as f:
+                f.write(final_html)
+            logger.info(f"Successfully wrote HTML report to: {report_html_path}")
+            print(f"HTML report generated: {report_html_path}")
+        except IOError as e: # More specific exception for file I/O
+            logger.error(f"Failed to write HTML report due to IOError {report_html_path}: {e}", exc_info=True)
+            print(f"Error: Could not write HTML report to {report_html_path}. Check logs for details.")
+        except Exception as e: # General exception
+            logger.error(f"An unexpected error occurred while writing HTML report to {report_html_path}: {e}", exc_info=True)
+            print(f"Error: An unexpected error occurred while writing HTML report. Check logs for details.")
+    else:
+        logger.warning("final_html string is empty. Report file will not be written.")
+        print("Notice: No HTML content was generated, so the report file was not written.")
+
+    logger.info("HTML report generation script finished.")
+
+if __name__ == '__main__':
+    main()

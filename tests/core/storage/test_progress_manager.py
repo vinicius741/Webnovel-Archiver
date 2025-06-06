@@ -34,9 +34,9 @@ class TestProgressManager(unittest.TestCase):
     def test_generate_story_id(self):
         # Test with RoyalRoad URLs
         # Corrected: generate_story_id uses 'url' not 'story_url'. Actual output from progress_manager.py is '12345-some-story-title', not 'royalroad_12345'
-        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/12345/some-story-title"), "12345-some-story-title")
-        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/67890"), "67890") # Only ID if no slug
-        self.assertEqual(generate_story_id(url="http://royalroad.com/fiction/123/another"), "123-another")
+        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/12345/some-story-title"), "royalroad-12345")
+        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/67890"), "royalroad-67890") # Only ID if no slug
+        self.assertEqual(generate_story_id(url="http://royalroad.com/fiction/123/another"), "royalroad-123")
 
         # Test with generic URLs (should use domain and path component, then slugified)
         # Actual output from progress_manager.py is 'my-awesome-story-123', not 'somesite_my-awesome-story-123'
@@ -49,7 +49,7 @@ class TestProgressManager(unittest.TestCase):
         self.assertEqual(generate_story_id(title="Another Story: The Sequel - Part 2"), "another-story-the-sequel---part-2")
 
         # Test with URL and Title (URL should take precedence)
-        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/54321/priority-url", title="This Title Should Be Ignored"), "54321-priority-url")
+        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/54321/priority-url", title="This Title Should Be Ignored"), "royalroad-54321")
         self.assertEqual(generate_story_id(url="https://othersite.com/fic/generic", title="Generic Story Title"), "generic")
 
         # Corrected assertion for title "Another Story: The Sequel - Part 2"
@@ -68,7 +68,7 @@ class TestProgressManager(unittest.TestCase):
 
 
         # Test with URLs that might produce edge cases
-        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/12345/some-story-title?query=param#fragment"), "12345-some-story-title")
+        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/12345/some-story-title?query=param#fragment"), "royalroad-12345")
         self.assertEqual(generate_story_id(url="https://www.somesite.com/stories/edge_case/?query=true"), "edge_case")
         # Corrected based on actual slugify logic: multiple slashes are handled by split, empty parts removed.
         self.assertEqual(generate_story_id(url="https://www.somesite.com/stories//multipleslashes//"), "multipleslashes")

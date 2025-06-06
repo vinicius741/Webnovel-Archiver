@@ -1,6 +1,6 @@
 import click
 from typing import Optional
-from webnovel_archiver.cli.handlers import archive_story_handler
+from webnovel_archiver.cli.handlers import archive_story_handler, migrate_royalroad_legacy_id_handler # Import handler
 
 @click.group()
 def archiver():
@@ -86,6 +86,31 @@ def cloud_backup(
         gdrive_credentials_path=credentials_file,
         gdrive_token_path=token_file
     )
+
+@archiver.group()
+def migrate():
+    """Migrates story archives from old formats to new formats."""
+    pass
+
+@migrate.command(name="royalroad-legacy-id") # Keep name consistent with --type
+@click.argument('story_id', required=False, default=None)
+@click.option(
+    '--type', # This option might seem redundant now but is for future extensibility
+    "migration_type", # Use a distinct name for the parameter to avoid conflict with command name
+    required=True,
+    default="royalroad-legacy-id", # Default to current type
+    show_default=True, # Show this default in help
+    type=click.Choice(['royalroad-legacy-id'], case_sensitive=False), # Initially only this type
+    help='The type of migration to perform.'
+)
+def migrate_royalroad_legacy_id(story_id: Optional[str], migration_type: str):
+    """Migrates RoyalRoad stories from the legacy ID format (e.g., 12345-some-slug)
+    to the new format (e.g., royalroad-12345).
+
+    If STORY_ID is provided, only that specific story will be migrated.
+    Otherwise, all stories matching the legacy RoyalRoad format will be scanned and migrated.
+    """
+    migrate_royalroad_legacy_id_handler(legacy_story_id=story_id, migration_type=migration_type) # Pass story_id as legacy_story_id
 
 if __name__ == '__main__':
     archiver()

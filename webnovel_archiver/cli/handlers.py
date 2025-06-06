@@ -1,4 +1,6 @@
 import os
+import re # Added for migration handler
+import shutil # Added for migration handler
 import click # For feedback and potentially type hinting
 import datetime # For timestamps
 # import json # No longer needed directly for loading/saving progress in handler
@@ -371,3 +373,145 @@ def cloud_backup_handler(
         pass
     else:
         click.echo("Cloud backup process completed, but no stories were actually backed up.")
+
+# --- Migration Handler ---
+
+# Constants for directory names used in migration (consistent with progress_manager and workspace structure)
+# ARCHIVAL_STATUS_DIR is already imported as WORKSPACE_ARCHIVAL_STATUS_DIR
+# EBOOKS_DIR is already imported as WORKSPACE_EBOOKS_DIR
+RAW_CONTENT_DIR = "raw_content"  # Typically where raw HTML/text might be stored
+PROCESSED_CONTENT_DIR = "processed_content" # Typically where processed/parsed content might be stored
+
+def migrate_royalroad_legacy_id_handler(legacy_story_id: Optional[str], migration_type: str):
+    """
+    Handles the migration of RoyalRoad stories from the legacy ID format
+    (e.g., 12345-some-slug) to the new format (e.g., royalroad-12345).
+    """
+    if migration_type != "royalroad-legacy-id":
+        click.echo(f"Error: Unknown migration type '{migration_type}'. Only 'royalroad-legacy-id' is supported.", err=True)
+        logger.error(f"Attempted migration with unsupported type: {migration_type}")
+        return
+
+    click.echo("Starting RoyalRoad legacy ID migration...")
+    logger.info("RoyalRoad legacy ID migration process started.")
+
+    try:
+        config_manager = ConfigManager()
+        workspace_root = config_manager.get_workspace_path()
+    except Exception as e:
+        logger.error(f"Failed to initialize ConfigManager or get workspace path: {e}")
+        click.echo(f"Error: Could not determine workspace path. {e}", err=True)
+        # Fallback to default path as a last resort, though operations might still fail if this isn't the correct user workspace
+        workspace_root = DEFAULT_WORKSPACE_PATH
+        click.echo(f"Warning: Using default workspace path '{workspace_root}' due to error. Ensure this is correct.", err=True)
+
+
+    archival_status_base_path = os.path.join(workspace_root, WORKSPACE_ARCHIVAL_STATUS_DIR)
+    story_dirs_to_migrate = []
+
+    if legacy_story_id:
+        # Specific story ID provided
+        if not os.path.isdir(os.path.join(archival_status_base_path, legacy_story_id)):
+            click.echo(f"Error: Provided legacy story ID directory '{legacy_story_id}' not found in {archival_status_base_path}.", err=True)
+            logger.error(f"Legacy story ID directory not found: {legacy_story_id} in {archival_status_base_path}")
+            return
+        story_dirs_to_migrate.append(legacy_story_id)
+    else:
+        # Scan all directories in archival_status
+        if not os.path.isdir(archival_status_base_path):
+            click.echo(f"Error: Archival status directory not found at {archival_status_base_path}. Cannot scan for stories.", err=True)
+            logger.error(f"Archival status directory not found: {archival_status_base_path}")
+            return
+        try:
+            story_dirs_to_migrate = [d for d in os.listdir(archival_status_base_path) if os.path.isdir(os.path.join(archival_status_base_path, d))]
+        except OSError as e:
+            click.echo(f"Error reading archival status directory {archival_status_base_path}: {e}", err=True)
+            logger.error(f"Error listing directories in {archival_status_base_path}: {e}")
+            return
+
+        if not story_dirs_to_migrate:
+            click.echo(f"No story directories found in {archival_status_base_path} to scan.")
+            logger.info(f"No story directories found in {archival_status_base_path}.")
+            return
+
+    legacy_pattern = re.compile(r"^\d+-[a-zA-Z0-9_-]+$") # Allow underscores as well in slug
+    migrated_count = 0
+    processed_count = 0
+
+    for dir_name in story_dirs_to_migrate:
+        processed_count += 1
+        if not legacy_pattern.match(dir_name):
+            logger.debug(f"Directory '{dir_name}' does not match legacy RoyalRoad format. Skipping.")
+            if legacy_story_id: # If a specific ID was given and it doesn't match
+                click.echo(f"Warning: Story ID '{dir_name}' does not match the expected legacy RoyalRoad format (e.g., '12345-some-slug'). No migration performed.", err=True)
+            continue
+
+        numerical_id_match = re.match(r"^(\d+)-", dir_name)
+        if not numerical_id_match:
+            logger.warning(f"Could not extract numerical ID from '{dir_name}' despite matching pattern. Skipping.")
+            continue
+
+        numerical_id = numerical_id_match.group(1)
+        new_story_id = f"royalroad-{numerical_id}"
+
+        click.echo(f"INFO: Found legacy story '{dir_name}'. Attempting to migrate to '{new_story_id}'...")
+        logger.info(f"Found legacy story '{dir_name}'. Migrating to '{new_story_id}'.")
+
+        # Check if target directory already exists in archival_status (primary check)
+        if os.path.exists(os.path.join(archival_status_base_path, new_story_id)):
+            click.echo(f"Warning: Target directory '{new_story_id}' already exists in {WORKSPACE_ARCHIVAL_STATUS_DIR}. Skipping migration for '{dir_name}'.", err=True)
+            logger.warning(f"Target directory '{new_story_id}' already exists in {WORKSPACE_ARCHIVAL_STATUS_DIR}. Skipping migration for '{dir_name}'.")
+            continue
+
+        migration_successful_for_story = True
+        # Define paths relative to workspace_root for clarity
+        paths_to_rename = {
+            WORKSPACE_ARCHIVAL_STATUS_DIR: (os.path.join(workspace_root, WORKSPACE_ARCHIVAL_STATUS_DIR, dir_name), os.path.join(workspace_root, WORKSPACE_ARCHIVAL_STATUS_DIR, new_story_id)),
+            WORKSPACE_EBOOKS_DIR: (os.path.join(workspace_root, WORKSPACE_EBOOKS_DIR, dir_name), os.path.join(workspace_root, WORKSPACE_EBOOKS_DIR, new_story_id)),
+            RAW_CONTENT_DIR: (os.path.join(workspace_root, RAW_CONTENT_DIR, dir_name), os.path.join(workspace_root, RAW_CONTENT_DIR, new_story_id)),
+            PROCESSED_CONTENT_DIR: (os.path.join(workspace_root, PROCESSED_CONTENT_DIR, dir_name), os.path.join(workspace_root, PROCESSED_CONTENT_DIR, new_story_id)),
+        }
+
+        for key, (old_path, new_path) in paths_to_rename.items():
+            if os.path.exists(old_path):
+                try:
+                    # Ensure parent directory of new_path exists if we are renaming into a structure that might not be there
+                    # For simple renaming of story_id folders, the parent (e.g. workspace/ebooks) should exist.
+                    # If renaming story_id to new_story_id, os.makedirs(os.path.dirname(new_path), exist_ok=True) isn't strictly necessary
+                    # unless the base directories (ebooks, raw_content etc.) themselves might not exist.
+                    # Assuming base directories like 'ebooks', 'raw_content' exist at workspace_root.
+                    shutil.move(old_path, new_path)
+                    logger.info(f"Successfully renamed {key} directory: '{old_path}' to '{new_path}'.")
+                except Exception as e:
+                    click.echo(f"Error renaming {key} directory from '{old_path}' to '{new_path}': {e}", err=True)
+                    logger.error(f"Error renaming {key} directory for story '{dir_name}' to '{new_story_id}': {e}", exc_info=True)
+                    migration_successful_for_story = False
+                    # Basic rollback attempt for the critical archival_status dir if it failed after others succeeded.
+                    # This is complex; for now, log error and make user aware.
+                    if key == WORKSPACE_ARCHIVAL_STATUS_DIR:
+                        click.echo(f"CRITICAL: Failed to rename main archival status directory for '{dir_name}'. Story state might be inconsistent.", err=True)
+                    break # Stop renaming for this story if one part fails
+            else:
+                logger.info(f"{key} directory not found at '{old_path}'. No action needed for this part.")
+
+        if migration_successful_for_story:
+            click.echo(click.style(f"SUCCESS: Migration for '{new_story_id}' (from '{dir_name}') completed.", fg="green"))
+            logger.info(f"Successfully migrated story '{dir_name}' to '{new_story_id}'.")
+            migrated_count += 1
+        else:
+            click.echo(click.style(f"ERROR: Migration for '{dir_name}' failed or was incomplete. Check logs. You may need to manually restore from backups or complete the rename.", fg="red"), err=True)
+            logger.error(f"Migration for '{dir_name}' failed or was incomplete.")
+
+
+    if legacy_story_id: # Reporting for single story migration
+        if migrated_count == 1:
+             click.echo(f"Migration for '{legacy_story_id}' to '{new_story_id}' successful.") # new_story_id will be set if migration happened
+        elif processed_count == 1 : # Processed the one, but didn't migrate it (e.g. wrong format, target existed, or error)
+             click.echo(f"Migration check for '{legacy_story_id}' complete. No migration was performed or it failed. See logs for details.")
+        # else: # processed_count == 0, means the initial dir check failed, error already printed.
+    else: # Reporting for full scan
+        click.echo(f"Migration scan complete. Processed {processed_count} directories. Successfully migrated {migrated_count} stories.")
+        logger.info(f"Migration scan complete. Processed {processed_count} directories. Migrated {migrated_count} stories.")
+
+    if processed_count == 0 and not legacy_story_id: # Only if full scan and nothing found
+        click.echo(f"No story directories found to process in {archival_status_base_path}.")

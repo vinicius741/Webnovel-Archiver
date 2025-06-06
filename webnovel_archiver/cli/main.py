@@ -87,5 +87,30 @@ def cloud_backup(
         gdrive_token_path=token_file
     )
 
+@archiver.command(name='migrate')
+@click.argument('story_id', required=False, default=None)
+@click.option(
+    '--type', 'migration_type', # Use 'migration_type' as the Python variable name
+    required=True,
+    type=click.Choice(['royalroad-legacy-id'], case_sensitive=False),
+    help='The type of migration to perform. Currently only supports "royalroad-legacy-id".'
+)
+def migrate(story_id: Optional[str], migration_type: str):
+    """
+    Migrates existing story archives to new formats or structures.
+
+    If STORY_ID is provided, only that specific story archive will be considered for migration.
+    Otherwise, all relevant story archives will be scanned.
+    The --type option specifies the migration logic to apply.
+    """
+    # Dynamically import the handler to avoid potential circular imports
+    # and to keep imports minimal at the top level if handlers.py grows.
+    from webnovel_archiver.cli.handlers import migration_handler # Assuming this will be the handler's name
+
+    migration_handler(
+        story_id=story_id,
+        migration_type=migration_type
+    )
+
 if __name__ == '__main__':
     archiver()

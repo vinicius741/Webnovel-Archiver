@@ -2,6 +2,8 @@ import os
 import click # For feedback and potentially type hinting
 import datetime # For timestamps
 # import json # No longer needed directly for loading/saving progress in handler
+import shutil # Added for migration_handler
+import re # Added for migration_handler
 from typing import Optional, List, Dict, Any, Union # Added Union
 
 # Import existing components
@@ -371,3 +373,179 @@ def cloud_backup_handler(
         pass
     else:
         click.echo("Cloud backup process completed, but no stories were actually backed up.")
+
+# Migration Handler
+# Note: logger is already defined at the top of this file.
+# from webnovel_archiver.core.config_manager import ConfigManager, DEFAULT_WORKSPACE_PATH # Already imported
+# from webnovel_archiver.core.storage.progress_manager import ARCHIVAL_STATUS_DIR, EBOOKS_DIR # Already imported as WORKSPACE_ARCHIVAL_STATUS_DIR etc.
+# from webnovel_archiver.utils.logger import get_logger # Already imported and logger instance created
+# import click # Already imported
+# from typing import Optional, List # Already imported
+
+def migration_handler(
+    story_id: Optional[str],
+    migration_type: str
+):
+    """Handles the logic for the 'migrate' CLI command."""
+    click.echo(f"Migration process initiated. Type: {migration_type}, Story ID: {story_id if story_id else 'All stories'}")
+
+    if migration_type.lower() != 'royalroad-legacy-id':
+        click.echo(f"Error: Migration type '{migration_type}' is not supported. Currently, only 'royalroad-legacy-id' is available.", err=True)
+        logger.error(f"Unsupported migration type requested: {migration_type}")
+        return
+
+    try:
+        config_manager = ConfigManager()
+        workspace_root = config_manager.get_workspace_path()
+    except Exception as e:
+        logger.error(f"Failed to initialize ConfigManager or get workspace path: {e}")
+        click.echo(f"Error: Could not determine workspace path. {e}", err=True)
+        return
+
+    archival_status_base_dir = os.path.join(workspace_root, WORKSPACE_ARCHIVAL_STATUS_DIR)
+    ebooks_base_dir = os.path.join(workspace_root, WORKSPACE_EBOOKS_DIR)
+    # Define other potential directories if they are standard and need migration
+    # For example:
+    # raw_content_base_dir = os.path.join(workspace_root, "raw_content")
+    # processed_content_base_dir = os.path.join(workspace_root, "processed_content")
+
+    if not os.path.isdir(archival_status_base_dir):
+        click.echo(f"Error: Archival status directory not found: {archival_status_base_dir}. Nothing to migrate.", err=True)
+        logger.error(f"Archival status directory {archival_status_base_dir} not found.")
+        return
+
+    legacy_story_ids_to_process: List[str] = []
+    if story_id:
+        # Check if the provided story_id looks like a legacy one before proceeding
+        if not re.match(r"^\d+-[\w-]+$", story_id): # Simple regex: starts with digits, hyphen, then chars/hyphens
+            click.echo(f"Provided story ID '{story_id}' does not match the expected legacy RoyalRoad format (e.g., '12345-some-title'). Skipping.", err=True)
+            logger.warning(f"Skipping migration for explicitly provided ID '{story_id}' as it doesn't match legacy format.")
+            return
+        legacy_story_ids_to_process.append(story_id)
+    else:
+        try:
+            # Scan all directories in archival_status_base_dir
+            for item_name in os.listdir(archival_status_base_dir):
+                item_path = os.path.join(archival_status_base_dir, item_name)
+                if os.path.isdir(item_path):
+                    # Check if item_name matches the legacy RoyalRoad format
+                    # Regex: starts with one or more digits, followed by a hyphen,
+                    # followed by one or more word characters (alphanumeric/underscore) or hyphens.
+                    if re.match(r"^\d+-[\w-]+$", item_name):
+                        legacy_story_ids_to_process.append(item_name)
+
+            if not legacy_story_ids_to_process:
+                click.echo("No legacy RoyalRoad stories found to migrate in the scan.")
+                logger.info("No legacy RoyalRoad story IDs found matching pattern during scan.")
+                return
+            click.echo(f"Found {len(legacy_story_ids_to_process)} potential legacy RoyalRoad stories to process: {', '.join(legacy_story_ids_to_process)}")
+        except OSError as e:
+            click.echo(f"Error listing stories in {archival_status_base_dir}: {e}", err=True)
+            logger.error(f"OSError while listing legacy stories in {archival_status_base_dir}: {e}")
+            return
+
+    migrated_count = 0
+    for legacy_id in legacy_story_ids_to_process:
+        click.echo(f"Processing legacy story ID: {legacy_id}")
+
+        # Double check it's not already in the new format (e.g. "royalroad-12345")
+        if legacy_id.startswith("royalroad-"):
+            click.echo(f"Skipping '{legacy_id}': Already appears to be in the new format.")
+            logger.info(f"Skipping migration for '{legacy_id}' as it seems to be in the new format.")
+            continue
+
+        numerical_id_match = re.match(r"^(\d+)-", legacy_id)
+        if not numerical_id_match:
+            click.echo(f"Warning: Could not extract numerical ID from '{legacy_id}'. Skipping.", err=True)
+            logger.warning(f"Could not extract numerical ID from legacy ID '{legacy_id}'.")
+            continue
+
+        numerical_id = numerical_id_match.group(1)
+        new_story_id = f"royalroad-{numerical_id}"
+
+        click.echo(f"  Attempting to migrate '{legacy_id}' to '{new_story_id}'...")
+
+        # Define paths for various directories
+        # Store them as (old_path, new_path) tuples
+        dirs_to_migrate = [
+            (os.path.join(archival_status_base_dir, legacy_id), os.path.join(archival_status_base_dir, new_story_id)),
+            (os.path.join(ebooks_base_dir, legacy_id), os.path.join(ebooks_base_dir, new_story_id)),
+            # Add other dirs here if they follow the same <base_dir>/<story_id> pattern
+            # (os.path.join(workspace_root, "raw_content", legacy_id), os.path.join(workspace_root, "raw_content", new_story_id)),
+            # (os.path.join(workspace_root, "processed_content", legacy_id), os.path.join(workspace_root, "processed_content", new_story_id)),
+        ]
+
+        all_renames_successful_for_story = True
+        for old_dir_path, new_dir_path in dirs_to_migrate:
+            if os.path.isdir(old_dir_path):
+                if os.path.exists(new_dir_path):
+                    click.echo(f"  Warning: Target directory '{new_dir_path}' already exists. Skipping rename for this path. Manual check may be required.", err=True)
+                    logger.warning(f"Target directory '{new_dir_path}' already exists for legacy ID '{legacy_id}'. Skipping rename of '{old_dir_path}'.")
+                    # This specific path rename failed/skipped, but we might continue with others for the story.
+                    # Depending on desired atomicity, could set all_renames_successful_for_story = False
+                    continue
+                try:
+                    shutil.move(old_dir_path, new_dir_path)
+                    click.echo(f"  Successfully renamed '{old_dir_path}' to '{new_dir_path}'.")
+                    logger.info(f"Successfully renamed directory from '{old_dir_path}' to '{new_dir_path}' for story '{legacy_id}'.")
+                except Exception as e:
+                    click.echo(f"  Error renaming directory '{old_dir_path}' to '{new_dir_path}': {e}", err=True)
+                    logger.error(f"Error renaming directory '{old_dir_path}' to '{new_dir_path}': {e}", exc_info=True)
+                    all_renames_successful_for_story = False
+                    # If one rename fails, we might want to stop or attempt to revert,
+                    # but simple approach is to report and continue.
+            elif os.path.exists(old_dir_path): # It's a file, not a directory, something is wrong.
+                click.echo(f"  Warning: Expected a directory but found a file at '{old_dir_path}'. Skipping.", err=True)
+                logger.warning(f"Expected directory, found file at '{old_dir_path}' for story '{legacy_id}'.")
+            # else:
+                # click.echo(f"  Directory '{old_dir_path}' not found, no action needed for this path.")
+                # logger.debug(f"Directory '{old_dir_path}' not found for story '{legacy_id}', skipping rename for this path.")
+
+        json_update_ok = False
+        if all_renames_successful_for_story:
+            progress_json_path_in_new_dir = pm.get_progress_filepath(new_story_id, workspace_root)
+
+            if os.path.exists(progress_json_path_in_new_dir):
+                try:
+                    progress_data = pm.load_progress(new_story_id, workspace_root)
+
+                    if progress_data.get('story_id') == new_story_id:
+                        click.echo(f"  INFO: Story ID in '{progress_json_path_in_new_dir}' is already '{new_story_id}'. No update needed.")
+                        logger.info(f"Story ID in progress file {progress_json_path_in_new_dir} is already correct.")
+                        json_update_ok = True
+                    else:
+                        old_json_story_id = progress_data.get('story_id')
+                        progress_data['story_id'] = new_story_id
+                        # Future: Consider updating story_url if it contains the old ID/slug.
+                        # This is complex due to various URL structures and potential for unintended changes.
+                        # For now, only story_id field is updated.
+
+                        pm.save_progress(new_story_id, progress_data, workspace_root)
+                        click.echo(f"  Successfully updated story_id from '{old_json_story_id}' to '{new_story_id}' in '{progress_json_path_in_new_dir}'.")
+                        logger.info(f"Updated story_id in {progress_json_path_in_new_dir} from '{old_json_story_id}' to '{new_story_id}'.")
+                        json_update_ok = True
+                except Exception as e:
+                    click.echo(f"  Error updating story_id in '{progress_json_path_in_new_dir}': {e}", err=True)
+                    logger.error(f"Failed to update story_id in {progress_json_path_in_new_dir} for new ID {new_story_id}: {e}", exc_info=True)
+                    click.echo(f"  WARNING: Directories for {legacy_id} renamed to {new_story_id}, but failed to update internal story_id in progress file. Manual correction needed.", err=True)
+                    json_update_ok = False # Explicitly set
+            else:
+                click.echo(f"  Warning: Progress file '{progress_json_path_in_new_dir}' not found after directory rename. Cannot update story_id.", err=True)
+                logger.warning(f"Progress file {progress_json_path_in_new_dir} not found for new story ID {new_story_id} after rename. Cannot update internal story_id.")
+                json_update_ok = False # Cannot update JSON if not found
+
+        if all_renames_successful_for_story and json_update_ok:
+            migrated_count += 1
+            logger.info(f"Successfully migrated '{legacy_id}' to '{new_story_id}' (directories and JSON).")
+        else:
+            click.echo(f"  Migration for '{legacy_id}' completed with issues or was skipped. Directory rename status: {all_renames_successful_for_story}, JSON update status: {json_update_ok}. Manual review may be recommended.", err=True)
+            logger.error(f"Migration for '{legacy_id}' to '{new_story_id}' failed or was incomplete. Dirs renamed: {all_renames_successful_for_story}, JSON updated: {json_update_ok}.")
+
+    if migrated_count > 0:
+        click.echo(f"\nSuccessfully completed full migration for {migrated_count} story/stories.")
+    elif not legacy_story_ids_to_process and not story_id:
+        click.echo("No legacy RoyalRoad stories requiring migration were found.")
+    elif story_id and not migrated_count:
+         click.echo(f"Migration for story ID '{story_id}' was not completed or it was not a legacy RoyalRoad ID. Check previous messages.")
+    else:
+        click.echo("Migration process finished. No stories were fully migrated.")

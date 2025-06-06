@@ -131,12 +131,13 @@ def generate_story_id(url: Optional[str] = None, title: Optional[str] = None) ->
         path_parts = [part for part in parsed_url.path.split('/') if part]
 
         if "royalroad.com" in parsed_url.netloc and len(path_parts) >= 2 and path_parts[0] == "fiction":
-            story_identifier = path_parts[1]
-            if len(path_parts) > 2:
-                 story_identifier += "-" + path_parts[2]
-            story_identifier = re.sub(r'[^a-zA-Z0-9_-]+', '', story_identifier)
-            if story_identifier:
-                return story_identifier
+            numerical_id = path_parts[1]
+            # It's good practice to ensure the ID is purely numeric if expected.
+            # However, the original code didn't explicitly check this for path_parts[1]
+            # and would have included it as is.
+            # For the new format "royalroad-<numerical_id>", if numerical_id can have non-numeric chars,
+            # they would be included. The task implies it's a number.
+            return f"royalroad-{numerical_id}"
 
         if path_parts:
             base_id = path_parts[-1]

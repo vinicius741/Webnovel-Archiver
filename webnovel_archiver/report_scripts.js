@@ -65,8 +65,8 @@ function updateDisplayedCards() {
         let valA, valB;
         switch (sortValue) {
             case 'title':
-                valA = a.dataset.title || '';
-                valB = b.dataset.title || '';
+                valA = (a.dataset.title || '').trim().toLowerCase();
+                valB = (b.dataset.title || '').trim().toLowerCase();
                 return valA.localeCompare(valB);
             case 'last_updated_desc':
                 valA = a.dataset.lastUpdated || '';

@@ -1,0 +1,15 @@
+{
+    "story_id": "test_story_s6_001",
+    "original_title": "  A Tale of Spaces  ",
+    "effective_title": "  A Tale of Spaces  ",
+    "original_author": "Test Author",
+    "chapters_downloaded_count": 1,
+    "estimated_total_chapters_source": 1,
+    "next_chapter_to_download_url": null,
+    "downloaded_chapters": [{"chapter_number": 1, "title": "Chapter 1", "url": "http://example.com/1", "download_timestamp": "2023-01-01T12:00:00Z", "word_count": 100, "token_count": 150}],
+    "last_updated_timestamp": "2023-01-01T12:00:00Z",
+    "story_url": "http://example.com/story",
+    "cover_image_url": null,
+    "synopsis": "A test story for sorting.",
+    "status": "Complete"
+}

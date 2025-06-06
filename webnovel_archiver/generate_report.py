@@ -192,21 +192,6 @@ def get_embedded_css():
     .search-sort-filter input:focus, .search-sort-filter select:focus { border-color: #007bff; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); outline: none; }
     .search-sort-filter input[type="text"] { flex-grow: 1; min-width: 200px; }
 
-    /* Pagination Styles */
-    .pagination-controls { text-align: center; margin-top: 20px; padding: 10px 0; }
-    .pagination-controls .page-button, .pagination-controls .page-link {
-        display: inline-block; padding: 8px 12px; margin: 0 4px;
-        border: 1px solid #ddd; background-color: #f9f9f9;
-        color: #007bff; text-decoration: none; border-radius: 4px; cursor: pointer;
-        transition: background-color 0.2s, color 0.2s;
-    }
-    .pagination-controls .page-link.active { background-color: #007bff; color: white; border-color: #007bff; }
-    .pagination-controls .page-button:hover, .pagination-controls .page-link:hover:not(.active) { background-color: #e9e9e9; }
-    .pagination-controls .page-button.disabled, .pagination-controls .page-link.disabled {
-        color: #aaa; cursor: not-allowed; background-color: #f0f0f0; border-color: #eee;
-    }
-    .pagination-controls .page-ellipsis { display: inline-block; padding: 8px 0; margin: 0 4px; border: none; background: none; color: #555; }
-
     /* Toggle Epubs Button Style */
     .toggle-epubs-btn {
         background-color: #007bff;
@@ -609,7 +594,6 @@ def main():
         <h1 class="report-title">Webnovel Archive Report</h1>
         {header_controls}
         <div id="storyListContainer">{story_cards_html}</div>
-        <div id="paginationControls" class="pagination-controls"></div>
     </div>'''
     js_code = get_javascript()
     final_html = get_html_skeleton("Webnovel Archive Report", css_styles, main_body_content, js_code)

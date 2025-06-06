@@ -1,6 +1,6 @@
 // Global variables
-let currentPage = 1;
-const itemsPerPage = 25; // Number of items per page
+// let currentPage = 1; // Removed pagination
+// const itemsPerPage = 25; // Removed pagination
 let masterStoryCards = []; // Holds all story cards, never changes after load
 let allVisibleStoryCards = []; // Holds currently visible/filtered/sorted cards
 
@@ -8,7 +8,7 @@ let allVisibleStoryCards = []; // Holds currently visible/filtered/sorted cards
 let searchInput = null;
 let sortSelect = null;
 let storyListContainer = null;
-let paginationControls = null;
+// let paginationControls = null; // Removed pagination
 
 // Modal elements
 let modal = null;
@@ -25,105 +25,22 @@ function toggleSynopsis(element) {
     }
 }
 
-function displayPage(pageNumber, currentItems) {
-    currentPage = pageNumber;
-    const startIndex = (pageNumber - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-
-    // Hide all cards in the current set first
-    currentItems.forEach(card => card.style.display = 'none');
-
-    // Show only the cards for the current page
-    const pageItems = currentItems.slice(startIndex, endIndex);
-    pageItems.forEach(card => card.style.display = 'flex'); // Assuming 'flex' is the default display
-
-    updatePaginationControlsUI(currentItems.length);
-}
-
-function updatePaginationControlsUI(totalItemsCount) {
-    if (!paginationControls) return; // Ensure paginationControls is cached
-
-    const totalPages = Math.ceil(totalItemsCount / itemsPerPage);
-
-    const pageLinks = paginationControls.querySelectorAll('.page-link');
-    pageLinks.forEach(link => {
-        link.classList.remove('active');
-        if (parseInt(link.dataset.page) === currentPage) {
-            link.classList.add('active');
-        }
-    });
-
-    const prevButton = paginationControls.querySelector('.page-button[data-action="prev"]');
-    const nextButton = paginationControls.querySelector('.page-button[data-action="next"]');
-
-    if (prevButton) {
-        prevButton.classList.toggle('disabled', currentPage === 1);
-    }
-    if (nextButton) {
-        nextButton.classList.toggle('disabled', currentPage === totalPages || totalPages === 0);
-    }
-}
-
-function setupPaginationControls(totalItemsCount, itemsPerPage, containerId, displayFnForPageChange) {
-    const container = document.getElementById(containerId); // paginationControls is already cached
-    if (!container) return;
-    container.innerHTML = ''; // Clear existing controls
-
-    const totalPages = Math.ceil(totalItemsCount / itemsPerPage);
-    if (totalPages <= 1) return; // No controls needed for single page
-
-    let paginationHTML = '';
-
-    // Previous Button
-    paginationHTML += `<button class="page-button" data-action="prev">&laquo; Prev</button>`;
-
-    // Page Number Links
-    for (let i = 1; i <= totalPages; i++) {
-        if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
-             paginationHTML += `<a href="#" class="page-link" data-page="${i}">${i}</a>`;
-        } else if (i === currentPage - 3 || i === currentPage + 3) {
-             paginationHTML += `<span class="page-ellipsis">...</span>`;
-        }
-    }
-
-    // Next Button
-    paginationHTML += `<button class="page-button" data-action="next">&raquo; Next</button>`;
-
-    container.innerHTML = paginationHTML;
-
-    // Add event listeners
-    container.querySelectorAll('.page-button, .page-link').forEach(el => {
-        el.addEventListener('click', function(event) {
-            event.preventDefault();
-            const pageAction = this.dataset.action;
-            const pageNum = this.dataset.page;
-            let newPageToDisplay;
-
-            if (pageAction === 'prev') {
-                newPageToDisplay = currentPage - 1;
-            } else if (pageAction === 'next') {
-                newPageToDisplay = currentPage + 1;
-            } else if (pageNum) {
-                newPageToDisplay = parseInt(pageNum);
-            }
-
-            if (newPageToDisplay) {
-                 handlePageChange(newPageToDisplay, totalItemsCount, displayFnForPageChange);
-            }
-        });
-    });
-}
-
-function handlePageChange(newPage, totalItems, displayFn) {
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-    if (newPage < 1 || newPage > totalPages) return;
-    displayFn(newPage, allVisibleStoryCards); // displayFn is displayPage
-}
+// Removed function displayPage(pageNumber, currentItems)
+// Removed function updatePaginationControlsUI(totalItemsCount)
+// Removed function setupPaginationControls(totalItemsCount, itemsPerPage, containerId, displayFnForPageChange)
+// Removed function handlePageChange(newPage, totalItems, displayFn)
 
 function updateDisplayedCards() {
     if (!searchInput || !sortSelect || !storyListContainer) {
         // console.warn("updateDisplayedCards called before DOM elements are cached.");
         return;
+    }
+
+    // Hide all master cards initially to ensure a clean slate
+    if (masterStoryCards && masterStoryCards.length > 0) {
+        masterStoryCards.forEach(card => {
+            card.style.display = 'none'; // Hide all cards initially
+        });
     }
 
     const filterText = searchInput.value.toUpperCase();
@@ -170,9 +87,15 @@ function updateDisplayedCards() {
 
     allVisibleStoryCards = sortedCards;
 
-    // 3. Update pagination and display
-    setupPaginationControls(allVisibleStoryCards.length, itemsPerPage, 'paginationControls', displayPage);
-    displayPage(1, allVisibleStoryCards);
+    // 3. Display all filtered and sorted cards
+    // All masterStoryCards were hidden at the start of this function.
+    // Now, make the cards in allVisibleStoryCards visible.
+    if (allVisibleStoryCards && allVisibleStoryCards.length > 0) {
+        allVisibleStoryCards.forEach(card => {
+            card.style.display = 'flex'; // Assuming 'flex' is the default display for visible cards
+        });
+    }
+    // If allVisibleStoryCards is empty, no cards will be shown, which is correct.
 }
 
 function filterStories() {
@@ -201,7 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
     searchInput = document.getElementById('searchInput');
     sortSelect = document.getElementById('sortSelect');
     storyListContainer = document.getElementById('storyListContainer');
-    paginationControls = document.getElementById('paginationControls');
+    // paginationControls = document.getElementById('paginationControls'); // Removed pagination
 
     if (storyListContainer) {
         // Populate masterStoryCards with all story cards from the DOM.

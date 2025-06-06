@@ -600,50 +600,8 @@ def main():
             <option value="last_updated_asc">Sort by Last Updated (Oldest First)</option>
             <option value="progress_desc">Sort by Progress (Highest First)</option>
         </select>
-        <select id="filterStatusSelect" onchange="filterStories()" aria-label="Filter stories by status">
-            <option value="">Filter by Status (All)</option>
-            <option value="Complete">Complete</option>
-            <option value="Ongoing">Ongoing</option>
-            <option value="Possibly Complete (Total Unknown)">Possibly Complete</option>
-            <option value="Unknown (No chapters downloaded, total unknown)">Unknown</option>
-            {status_options_html}
-        </select>
     </div>
     """
-
-    # Dynamically generate status options for filter based on available statuses
-    # This can be improved by getting unique statuses from processed_stories
-    # For now, using the provided list plus a placeholder for more.
-    # A more robust way would be:
-    # available_statuses = sorted(list(set(s['status'] for s in processed_stories if s.get('status'))))
-    # status_options_html_list = [f'<option value="{html.escape(s)}">{html.escape(s)}</option>' for s in available_statuses]
-    # For simplicity, using the fixed list from prompt for now.
-
-    unique_statuses = set()
-    if processed_stories:
-        for s_data in processed_stories:
-            if s_data.get('status'):
-                unique_statuses.add(s_data['status'])
-
-    # status_options_html_list = [f'<option value="{html.escape(status)}">{html.escape(status)}</option>' for status in sorted(list(unique_statuses))]
-
-
-    # Replacing placeholder in header_controls
-    # This is a bit simplistic; a more robust template engine would be better for complex HTML.
-    # For now, just ensuring the placeholder is removed or filled.
-    # The prompt had a fixed list, let's stick to that for simplicity and add others if found
-    fixed_status_options = [
-        "Complete", "Ongoing", "Possibly Complete (Total Unknown)",
-        "Unknown (No chapters downloaded, total unknown)" # This one is long, matches the class
-    ]
-
-    # Combine fixed options with any other unique statuses found, ensuring no duplicates and proper escaping
-    all_available_statuses = sorted(list(set(fixed_status_options + list(unique_statuses))))
-
-    status_options_for_filter_html = "".join([f'<option value="{html.escape(s)}">{html.escape(s)}</option>' for s in all_available_statuses])
-
-    header_controls = header_controls.replace("{status_options_html}", status_options_for_filter_html)
-
 
     main_body_content = f'''<div class="container">
         <h1 class="report-title">Webnovel Archive Report</h1>

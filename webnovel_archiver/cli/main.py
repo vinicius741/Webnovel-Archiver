@@ -1,6 +1,7 @@
 import click
 from typing import Optional
-from webnovel_archiver.cli.handlers import archive_story_handler
+from webnovel_archiver.cli.handlers import archive_story_handler, generate_report_handler
+from webnovel_archiver.generate_report import main as generate_report_main
 
 @click.group()
 def archiver():
@@ -111,6 +112,22 @@ def migrate(story_id: Optional[str], migration_type: str):
         story_id=story_id,
         migration_type=migration_type
     )
+
+@archiver.command(name='generate-report')
+def generate_report_command():
+    """Generates an HTML report of the archived webnovels."""
+    # Handler will be called here in a later step
+    # For now, we can import and call the handler directly if it's simple,
+    # or call a placeholder / the actual function.
+    # Let's call generate_report_main directly for now, and refine if a separate handler is strictly needed.
+    # This simplifies the plan slightly by merging handler creation if direct call is sufficient.
+    # However, the plan was to create a separate handler.
+    # For now, let's stick to the plan and assume a handler will be created.
+    # So, this function body will be updated later to call the handler.
+    # For this step, just defining the command and its docstring is enough.
+    # The actual call to generate_report_main or a handler will be done in step 4.
+    # To make the file runnable, we can add a pass or a click.echo temporary message.
+    generate_report_handler()
 
 if __name__ == '__main__':
     archiver()

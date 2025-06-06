@@ -18,6 +18,9 @@ from webnovel_archiver.core.cloud_sync import GDriveSync, BaseSyncService # Assu
 # Import progress_manager functionally
 import webnovel_archiver.core.storage.progress_manager as pm
 
+# Import for generate_report_handler
+from webnovel_archiver.generate_report import main as generate_report_main_func
+# click and get_logger are already imported above.
 
 logger = get_logger(__name__)
 
@@ -549,3 +552,21 @@ def migration_handler(
          click.echo(f"Migration for story ID '{story_id}' was not completed or it was not a legacy RoyalRoad ID. Check previous messages.")
     else:
         click.echo("Migration process finished. No stories were fully migrated.")
+
+def generate_report_handler():
+    """Handles the logic for the 'generate-report' CLI command."""
+    logger.info("generate_report_handler invoked.")
+    click.echo("Starting HTML report generation...")
+    try:
+        # Call the main function from the generate_report script
+        generate_report_main_func()
+        # generate_report_main_func is expected to print the success message and path to the report.
+        # If it doesn't, we might need to adjust it or capture output.
+        # For now, assume it prints "HTML report generated: <path>" on success.
+        logger.info("generate_report_main_func completed successfully.")
+        # click.echo(click.style("✓ HTML report generation complete!", fg="green"))
+        # The line above is commented out because generate_report_main_func already prints the final path.
+    except Exception as e:
+        logger.error(f"Error during report generation: {e}", exc_info=True)
+        click.echo(click.style(f"Error generating report: {e}", fg="red"), err=True)
+        click.echo("Check logs for more details.")

@@ -184,32 +184,33 @@ def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
 """
 
 def generate_story_card_html(story_data, format_timestamp_func):
-    title = html.escape(story_data.get('title', 'Untitled'))
-    author = html.escape(story_data.get('author', 'Unknown Author'))
-    story_url = html.escape(story_data.get('story_url', '#'))
-    cover_image_url = html.escape(story_data.get('cover_image_url', 'https://via.placeholder.com/150x220.png?text=No+Cover'))
-    synopsis = html.escape(story_data.get('synopsis', 'No synopsis available.'))
-    progress_percentage = story_data.get('progress_percentage', 0)
-    progress_text = html.escape(story_data.get('progress_text', 'N/A'))
-    status_display_text = html.escape(story_data.get('status', 'N/A')) # For display
-    epub_gen_ts = html.escape(story_data.get('epub_generation_timestamp') or 'N/A')
-    epub_files_list = story_data.get('epub_files', [])
-    backup_summary_display_text = html.escape(story_data.get('backup_status_summary', 'N/A')) # For display
-    backup_service = html.escape(story_data.get('backup_service', 'N/A'))
-    backup_last_success_ts = html.escape(story_data.get('formatted_last_successful_backup_ts') or 'N/A')
-    backup_files_detail_list = story_data.get('backup_files_status', [])
-    last_updated = html.escape(story_data.get('formatted_last_updated_ts') or 'N/A')
+    title = html.escape(story_data.get('title') or 'Untitled')
+    author = html.escape(story_data.get('author') or 'Unknown Author')
+    story_url = html.escape(story_data.get('story_url') or '#')
+    cover_image_url = html.escape(story_data.get('cover_image_url') or 'https://via.placeholder.com/150x220.png?text=No+Cover')
+    synopsis = html.escape(story_data.get('synopsis') or 'No synopsis available.')
+    progress_percentage = story_data.get('progress_percentage', 0) # Keep as is, not directly escaped
+    progress_text = html.escape(story_data.get('progress_text') or 'N/A')
+    status_display_text = html.escape(story_data.get('status') or 'N/A') # For display
+    epub_gen_ts = html.escape(story_data.get('epub_generation_timestamp') or 'N/A') # Already uses 'or'
+    epub_files_list = story_data.get('epub_files', []) # Not escaped directly, handled by generate_epub_list_html
+    backup_summary_display_text = html.escape(story_data.get('backup_status_summary') or 'N/A')
+    backup_service = html.escape(story_data.get('backup_service') or 'N/A')
+    backup_last_success_ts = html.escape(story_data.get('formatted_last_successful_backup_ts') or 'N/A') # Already uses 'or'
+    backup_files_detail_list = story_data.get('backup_files_status', []) # Not escaped directly, handled by generate_backup_files_html
+    last_updated = html.escape(story_data.get('formatted_last_updated_ts') or 'N/A') # Already uses 'or'
 
     # Data attributes for JS (raw values are fine, but escape them for safety in attributes)
-    data_title = html.escape(story_data.get('title', ''))
-    data_author = html.escape(story_data.get('author', ''))
-    data_status = html.escape(story_data.get('status', '')) # Raw status for filtering logic
-    data_last_updated = html.escape(story_data.get('last_updated_timestamp', '')) # Raw ISO for sorting
-    data_progress = html.escape(str(progress_percentage))
+    # Apply `or ''` pattern for data attributes to ensure they are strings.
+    data_title = html.escape(story_data.get('title') or '')
+    data_author = html.escape(story_data.get('author') or '')
+    data_status = html.escape(story_data.get('status') or '') # Raw status for filtering logic
+    data_last_updated = html.escape(story_data.get('last_updated_timestamp') or '') # Raw ISO for sorting
+    data_progress = html.escape(str(progress_percentage)) # Already a string or number
 
-    # CSS class names from statuses (these should not be HTML escaped)
-    status_class = sanitize_for_css_class(story_data.get('status', ''))
-    backup_summary_class = sanitize_for_css_class(story_data.get('backup_status_summary', ''))
+    # CSS class names from statuses (these should not be HTML escaped, sanitize_for_css_class handles None)
+    status_class = sanitize_for_css_class(story_data.get('status')) # Removed default from .get()
+    backup_summary_class = sanitize_for_css_class(story_data.get('backup_status_summary')) # Removed default from .get()
 
     card_html = f"""
     <div class="story-card" data-title="{data_title}" data-author="{data_author}" data-status="{data_status}" data-last-updated="{data_last_updated}" data-progress="{data_progress}">

@@ -5,7 +5,6 @@ let allVisibleStoryCards = []; // To store all cards initially or after filterin
 
 // DOM Element caching (populated in DOMContentLoaded)
 let searchInput = null;
-let filterStatusSelect = null;
 let sortSelect = null;
 let storyListContainer = null;
 let paginationControls = null;
@@ -121,10 +120,9 @@ function handlePageChange(newPage, totalItems, displayFn) {
 }
 
 function filterStories() {
-    if (!searchInput || !filterStatusSelect || !storyListContainer) return; // Ensure elements are cached
+    if (!searchInput || !storyListContainer) return; // Ensure elements are cached
 
     let filterTitle = searchInput.value.toUpperCase();
-    let statusFilter = filterStatusSelect.value;
 
     // Reset to all cards from the DOM before filtering
     // This assumes all cards are initially within storyListContainer
@@ -133,11 +131,9 @@ function filterStories() {
     allVisibleStoryCards = originalCards.filter(card => {
         let title = (card.dataset.title || '').toUpperCase();
         let author = (card.dataset.author || '').toUpperCase();
-        let status = card.dataset.status || '';
 
         let titleMatch = title.includes(filterTitle) || author.includes(filterTitle);
-        let statusMatch = (statusFilter === "" || status === statusFilter);
-        return titleMatch && statusMatch;
+        return titleMatch;
     });
 
     // No direct DOM manipulation for filtering here; pagination handles display
@@ -156,7 +152,7 @@ function sortStories() {
     if (!allVisibleStoryCards || allVisibleStoryCards.length === 0) {
         const currentCardsInDOM = Array.from(storyListContainer.children).filter(child => child.classList.contains('story-card'));
          // Check if cards are currently displayed by a filter or if it's an empty filter result
-        const activeFilter = searchInput.value || filterStatusSelect.value;
+        const activeFilter = searchInput.value;
         if (!activeFilter && currentCardsInDOM.length > 0) {
             // If no filter is active, and cards are in DOM, use them (e.g. initial load, no filter applied yet)
             allVisibleStoryCards = currentCardsInDOM;
@@ -215,7 +211,6 @@ function toggleExtraEpubs(story_id_sanitized, buttonElement, totalEpubs, thresho
 document.addEventListener('DOMContentLoaded', function() {
     // Cache DOM elements
     searchInput = document.getElementById('searchInput');
-    filterStatusSelect = document.getElementById('filterStatusSelect');
     sortSelect = document.getElementById('sortSelect');
     storyListContainer = document.getElementById('storyListContainer');
     paginationControls = document.getElementById('paginationControls');
@@ -241,9 +236,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add event listeners for filter and sort controls
     if (searchInput) {
         searchInput.addEventListener('keyup', filterStories);
-    }
-    if (filterStatusSelect) {
-        filterStatusSelect.addEventListener('change', filterStories);
     }
     if (sortSelect) {
         sortSelect.addEventListener('change', sortStories);

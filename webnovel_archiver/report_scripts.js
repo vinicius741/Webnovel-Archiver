@@ -1,7 +1,8 @@
 // Global variables
 let currentPage = 1;
 const itemsPerPage = 25; // Number of items per page
-let allVisibleStoryCards = []; // To store all cards initially or after filtering/sorting
+let masterStoryCards = []; // Holds all story cards, never changes after load
+let allVisibleStoryCards = []; // Holds currently visible/filtered/sorted cards
 
 // DOM Element caching (populated in DOMContentLoaded)
 let searchInput = null;
@@ -119,53 +120,31 @@ function handlePageChange(newPage, totalItems, displayFn) {
     displayFn(newPage, allVisibleStoryCards); // displayFn is displayPage
 }
 
-function filterStories() {
-    if (!searchInput || !storyListContainer) return; // Ensure elements are cached
-
-    let filterTitle = searchInput.value.toUpperCase();
-
-    // Reset to all cards from the DOM before filtering
-    // This assumes all cards are initially within storyListContainer
-    const originalCards = Array.from(storyListContainer.children).filter(child => child.classList.contains('story-card'));
-
-    allVisibleStoryCards = originalCards.filter(card => {
-        let title = (card.dataset.title || '').toUpperCase();
-        let author = (card.dataset.author || '').toUpperCase();
-
-        let titleMatch = title.includes(filterTitle) || author.includes(filterTitle);
-        return titleMatch;
-    });
-
-    // No direct DOM manipulation for filtering here; pagination handles display
-    setupPaginationControls(allVisibleStoryCards.length, itemsPerPage, 'paginationControls', displayPage);
-    displayPage(1, allVisibleStoryCards);
-}
-
-function sortStories() {
-    if (!sortSelect || !storyListContainer) return; // Ensure elements are cached
-
-    let sortValue = sortSelect.value;
-
-    // If allVisibleStoryCards is empty (e.g. after a filter that returns no results),
-    // or if it hasn't been populated yet (e.g. sort is the first action before any filtering/initial load processing)
-    // we should ensure it's populated.
-    if (!allVisibleStoryCards || allVisibleStoryCards.length === 0) {
-        const currentCardsInDOM = Array.from(storyListContainer.children).filter(child => child.classList.contains('story-card'));
-         // Check if cards are currently displayed by a filter or if it's an empty filter result
-        const activeFilter = searchInput.value;
-        if (!activeFilter && currentCardsInDOM.length > 0) {
-            // If no filter is active, and cards are in DOM, use them (e.g. initial load, no filter applied yet)
-            allVisibleStoryCards = currentCardsInDOM;
-        } else if (!activeFilter && currentCardsInDOM.length === 0 && allVisibleStoryCards.length === 0) {
-            // True initial load, no cards in allVisibleStoryCards, no cards in DOM (they are all display:none by default until first displayPage)
-            // So, get all cards from the container.
-            allVisibleStoryCards = Array.from(document.querySelectorAll('#storyListContainer .story-card'));
-        }
-        // If a filter is active and resulted in zero cards, allVisibleStoryCards is already correctly empty.
+function updateDisplayedCards() {
+    if (!searchInput || !sortSelect || !storyListContainer) {
+        // console.warn("updateDisplayedCards called before DOM elements are cached.");
+        return;
     }
 
+    const filterText = searchInput.value.toUpperCase();
+    const sortValue = sortSelect.value;
 
-    allVisibleStoryCards.sort(function(a, b) {
+    // 1. Filter masterStoryCards
+    let filteredCards;
+    if (filterText) {
+        filteredCards = masterStoryCards.filter(card => {
+            let title = (card.dataset.title || '').toUpperCase();
+            let author = (card.dataset.author || '').toUpperCase();
+            return title.includes(filterText) || author.includes(filterText);
+        });
+    } else {
+        filteredCards = [...masterStoryCards]; // If no filter, use all master cards
+    }
+
+    // 2. Sort a copy of filteredCards
+    // Create a mutable copy for sorting, to not affect filteredCards if it's masterStoryCards itself
+    let sortedCards = [...filteredCards];
+    sortedCards.sort(function(a, b) {
         let valA, valB;
         switch (sortValue) {
             case 'title':
@@ -189,10 +168,19 @@ function sortStories() {
         }
     });
 
-    // displayPage will handle showing the sorted cards from allVisibleStoryCards.
-    // No direct DOM manipulation for sorting here.
+    allVisibleStoryCards = sortedCards;
+
+    // 3. Update pagination and display
     setupPaginationControls(allVisibleStoryCards.length, itemsPerPage, 'paginationControls', displayPage);
     displayPage(1, allVisibleStoryCards);
+}
+
+function filterStories() {
+    updateDisplayedCards();
+}
+
+function sortStories() {
+    updateDisplayedCards();
 }
 
 function toggleExtraEpubs(story_id_sanitized, buttonElement, totalEpubs, threshold) {
@@ -216,21 +204,15 @@ document.addEventListener('DOMContentLoaded', function() {
     paginationControls = document.getElementById('paginationControls');
 
     if (storyListContainer) {
-        // Get all cards present in the container at load time
-        allVisibleStoryCards = Array.from(storyListContainer.children).filter(child => child.classList.contains('story-card'));
+        // Populate masterStoryCards with all story cards from the DOM.
+        masterStoryCards = Array.from(storyListContainer.querySelectorAll('.story-card'));
 
-        if (allVisibleStoryCards.length > 0) {
-            setupPaginationControls(allVisibleStoryCards.length, itemsPerPage, 'paginationControls', displayPage);
-            displayPage(1, allVisibleStoryCards);
-        } else {
-            // Handle case where storyListContainer is empty or has no story-cards
-            // console.log("No story cards found on initial load.");
-            // Still setup pagination controls (it will show nothing if totalItems is 0)
-             setupPaginationControls(0, itemsPerPage, 'paginationControls', displayPage);
-             displayPage(1, []); // Display an empty page
-        }
+        // Initial display: apply default sort and no filter.
+        updateDisplayedCards();
     } else {
         // console.error("Story list container not found.");
+        // Still attempt to setup pagination for an empty list if other controls might exist
+        updateDisplayedCards(); // Will likely do nothing if storyListContainer is null but handles gracefully
     }
 
     // Add event listeners for filter and sort controls

@@ -35,12 +35,36 @@ def sanitize_for_css_class(text):
     processed_text = re.sub(r'[^a-z0-9-]', '', processed_text)
     return processed_text.strip('-')
 
-def generate_epub_list_html(epub_files):
+def generate_epub_list_html(epub_files, story_id_sanitized):
     if not epub_files:
         return "<p class=\"no-items\">No EPUB files found.</p>"
-    # Escape file names and paths for security and correctness
-    items = "".join([f"<li><a href=\"file:///{html.escape(file_data['path'])}\" title=\"{html.escape(file_data['path'])}\">{html.escape(file_data['name'])}</a></li>" for file_data in epub_files])
-    return f"<ul class=\"file-list\">{items}</ul>"
+
+    EPUB_DISPLAY_THRESHOLD = 3
+    total_epubs = len(epub_files)
+    output_html = "<ul class=\"file-list\">"
+
+    for i, file_data in enumerate(epub_files):
+        item_html = f"<li><a href=\"file:///{html.escape(file_data['path'])}\" title=\"{html.escape(file_data['path'])}\">{html.escape(file_data['name'])}</a></li>"
+        if i < EPUB_DISPLAY_THRESHOLD:
+            output_html += item_html
+        else:
+            if i == EPUB_DISPLAY_THRESHOLD: # Start of hidden items
+                output_html += f"</ul><div id=\"more-epubs-{story_id_sanitized}\" style=\"display:none;\"><ul class=\"file-list\">"
+            output_html += item_html
+            if i == total_epubs - 1: # End of hidden items
+                output_html += "</ul></div>"
+
+    if total_epubs > EPUB_DISPLAY_THRESHOLD:
+        if total_epubs - 1 < EPUB_DISPLAY_THRESHOLD : # only one hidden item, close first ul
+             output_html += "</ul>" # close the main list if hidden part was not created
+        # Add the button/link to toggle visibility
+        remaining_count = total_epubs - EPUB_DISPLAY_THRESHOLD
+        button_text = f"Show all {total_epubs} EPUBs" # Initial text shows total
+        output_html += f"<button type=\"button\" class=\"toggle-epubs-btn\" onclick=\"toggleExtraEpubs('{story_id_sanitized}', this, {total_epubs}, {EPUB_DISPLAY_THRESHOLD})\">{button_text}</button>"
+    else:
+        output_html += "</ul>" # Close the main list if no hidden part
+
+    return output_html
 
 def generate_backup_files_html(backup_files_list, format_timestamp_func):
     if not backup_files_list:
@@ -91,76 +115,50 @@ def get_embedded_css():
     .search-sort-filter { margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
     .search-sort-filter input, .search-sort-filter select { padding: 10px; border-radius: 4px; border: 1px solid #ced4da; font-size: 0.95em; }
     .search-sort-filter input[type="text"] { flex-grow: 1; min-width: 200px; }
+
+    /* Pagination Styles */
+    .pagination-controls { text-align: center; margin-top: 20px; padding: 10px 0; }
+    .pagination-controls .page-button, .pagination-controls .page-link {
+        display: inline-block; padding: 8px 12px; margin: 0 4px;
+        border: 1px solid #ddd; background-color: #f9f9f9;
+        color: #007bff; text-decoration: none; border-radius: 4px; cursor: pointer;
+        transition: background-color 0.2s, color 0.2s;
+    }
+    .pagination-controls .page-link.active { background-color: #007bff; color: white; border-color: #007bff; }
+    .pagination-controls .page-button:hover, .pagination-controls .page-link:hover:not(.active) { background-color: #e9e9e9; }
+    .pagination-controls .page-button.disabled, .pagination-controls .page-link.disabled {
+        color: #aaa; cursor: not-allowed; background-color: #f0f0f0; border-color: #eee;
+    }
+    .pagination-controls .page-ellipsis { display: inline-block; padding: 8px 0; margin: 0 4px; border: none; background: none; color: #555; }
+
+    /* Toggle Epubs Button Style */
+    .toggle-epubs-btn {
+        background: none;
+        border: none;
+        color: #007bff;
+        text-decoration: underline;
+        cursor: pointer;
+        padding: 5px 0;
+        font-size: 0.85em;
+        display: block; /* Or inline-block as needed */
+        margin-top: 5px;
+    }
+    .toggle-epubs-btn:hover {
+        color: #0056b3;
+    }
     """
 
 def get_javascript():
-    return """
-    function toggleSynopsis(element) {
-        element.classList.toggle('expanded');
-        const toggleLink = element.nextElementSibling;
-        if (element.classList.contains('expanded')) {
-            toggleLink.textContent = '(Read less)';
-        } else {
-            toggleLink.textContent = '(Read more)';
-        }
-    }
-
-    function filterStories() {
-        let input = document.getElementById('searchInput');
-        let filterTitle = input.value.toUpperCase();
-        let statusFilter = document.getElementById('filterStatusSelect').value;
-        let storyListContainer = document.getElementById('storyListContainer');
-        if (!storyListContainer) return;
-        let cards = storyListContainer.getElementsByClassName('story-card');
-
-        for (let i = 0; i < cards.length; i++) {
-            let title = (cards[i].dataset.title || '').toUpperCase();
-            let author = (cards[i].dataset.author || '').toUpperCase();
-            let status = cards[i].dataset.status || '';
-
-            let titleMatch = title.includes(filterTitle) || author.includes(filterTitle);
-            let statusMatch = (statusFilter === "" || status === statusFilter);
-
-            if (titleMatch && statusMatch) {
-                cards[i].style.display = "flex";
-            } else {
-                cards[i].style.display = "none";
-            }
-        }
-    }
-
-    function sortStories() {
-        let sortValue = document.getElementById('sortSelect').value;
-        let storyListContainer = document.getElementById('storyListContainer');
-        if (!storyListContainer) return;
-        let cards = Array.from(storyListContainer.getElementsByClassName('story-card'));
-
-        cards.sort(function(a, b) {
-            let valA, valB;
-            switch (sortValue) {
-                case 'title':
-                    valA = a.dataset.title || '';
-                    valB = b.dataset.title || '';
-                    return valA.localeCompare(valB);
-                case 'last_updated_desc':
-                    valA = a.dataset.lastUpdated || '';
-                    valB = b.dataset.lastUpdated || '';
-                    return valB.localeCompare(valA);
-                case 'last_updated_asc':
-                    valA = a.dataset.lastUpdated || '';
-                    valB = b.dataset.lastUpdated || '';
-                    return valA.localeCompare(valB);
-                case 'progress_desc':
-                    valA = parseInt(a.dataset.progress || 0);
-                    valB = parseInt(b.dataset.progress || 0);
-                    return valB - valA;
-                default:
-                    return 0;
-            }
-        });
-        cards.forEach(card => storyListContainer.appendChild(card));
-    }
-    """
+    script_path = os.path.join(os.path.dirname(__file__), 'report_scripts.js')
+    try:
+        with open(script_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        logger.error(f"JavaScript file not found: {script_path}")
+        return "console.error('Error: report_scripts.js not found.');"
+    except Exception as e:
+        logger.error(f"Error reading JavaScript file {script_path}: {e}", exc_info=True)
+        return f"console.error('Error loading report_scripts.js: {str(e).replace('`', '')}');"
 
 def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
     return f"""
@@ -193,7 +191,9 @@ def generate_story_card_html(story_data, format_timestamp_func):
     progress_text = html.escape(story_data.get('progress_text') or 'N/A')
     status_display_text = html.escape(story_data.get('status') or 'N/A') # For display
     epub_gen_ts = html.escape(story_data.get('epub_generation_timestamp') or 'N/A') # Already uses 'or'
-    epub_files_list = story_data.get('epub_files', []) # Not escaped directly, handled by generate_epub_list_html
+
+    epub_files_list = story_data.get('epub_files', [])
+    story_id_for_epub_toggle = sanitize_for_css_class(story_data.get('story_id') or '') # Sanitize story_id
     backup_summary_display_text = html.escape(story_data.get('backup_status_summary') or 'N/A')
     backup_service = html.escape(story_data.get('backup_service') or 'N/A')
     backup_last_success_ts = html.escape(story_data.get('formatted_last_successful_backup_ts') or 'N/A') # Already uses 'or'
@@ -211,6 +211,9 @@ def generate_story_card_html(story_data, format_timestamp_func):
     # CSS class names from statuses (these should not be HTML escaped, sanitize_for_css_class handles None)
     status_class = sanitize_for_css_class(story_data.get('status')) # Removed default from .get()
     backup_summary_class = sanitize_for_css_class(story_data.get('backup_status_summary')) # Removed default from .get()
+
+    epub_list_html = generate_epub_list_html(epub_files_list, story_id_for_epub_toggle)
+
 
     card_html = f"""
     <div class="story-card" data-title="{data_title}" data-author="{data_author}" data-status="{data_status}" data-last-updated="{data_last_updated}" data-progress="{data_progress}">
@@ -233,7 +236,7 @@ def generate_story_card_html(story_data, format_timestamp_func):
             <p><strong>Story Status:</strong> <span class="badge status-{status_class}">{status_display_text}</span></p>
 
             <p class="section-title">Local EPUBs (Generated: {epub_gen_ts}):</p>
-            {generate_epub_list_html(epub_files_list)}
+            {epub_list_html}
 
             <p class="section-title">Cloud Backup:</p>
             <p><strong>Status:</strong> <span class="badge backup-{backup_summary_class}">{backup_summary_display_text}</span>
@@ -280,7 +283,11 @@ def process_story_for_report(progress_data, workspace_root):
     # Local EPUB Paths
     epub_generation_timestamp_raw = progress_data.get('last_epub_processing', {}).get('timestamp')
     epub_generation_timestamp = format_timestamp(epub_generation_timestamp_raw)
+
+    print(f"DEBUG [process_story]: story_id for get_epub_file_details: {story_id}, workspace_root: {workspace_root}")
     epub_files = get_epub_file_details(progress_data, story_id, workspace_root)
+    print(f"DEBUG [process_story]: epub_files returned: {epub_files}")
+
 
     # Cloud Backup Status
     cloud_backup_info = progress_data.get('cloud_backup_status', {})
@@ -335,12 +342,16 @@ def process_story_for_report(progress_data, workspace_root):
     }
 
 def main():
+    # logger.info(f"WNA_WORKSPACE_ROOT env var from within main(): {os.getenv('WNA_WORKSPACE_ROOT')}") # Removed temp debug
     logger.info("HTML report generation script started.")
 
     logger.info("Determining workspace and report output paths...")
     try:
         config_manager = ConfigManager()
         workspace_root = config_manager.get_workspace_path()
+        # workspace_root = "/app/test_workspace" # TEMP OVERRIDE FOR TESTING - REMOVED
+        # logger.info(f"Using TEMPORARY workspace_root override: {workspace_root}") # Removed temp debug
+
 
         if not workspace_root: # Should not happen with default fallback in ConfigManager
             logger.error("Workspace root could not be determined. Exiting.")
@@ -383,6 +394,7 @@ def main():
         # For now, let's log and proceed to generate an empty report.
     else:
         logger.info(f"Found {len(story_ids)} potential story directories.")
+        # print(f"DEBUG: Found {len(story_ids)} story IDs: {story_ids}") # TEMP DEBUG PRINT - REMOVED
 
     for story_id in story_ids:
         logger.debug(f"Processing story_id: {story_id}")
@@ -390,6 +402,7 @@ def main():
             # Pass workspace_root to load_progress as it's needed for resolving potential relative paths
             # within the progress file if any, or for default values.
             progress_data = load_progress(story_id, workspace_root)
+            # print(f"DEBUG: Loaded progress for {story_id}: {progress_data.get('title', 'NO TITLE LOADED')} - Keys: {list(progress_data.keys())}") # TEMP DEBUG PRINT - REMOVED
 
             # Ensure that loaded_data is not None and contains story_id,
             # which load_progress should guarantee by returning a new structure if file is missing/corrupt.
@@ -470,7 +483,7 @@ def main():
             if s_data.get('status'):
                 unique_statuses.add(s_data['status'])
 
-    status_options_html_list = [f'<option value="{html.escape(status)}">{html.escape(status)}</option>' for status in sorted(list(unique_statuses))]
+    # status_options_html_list = [f'<option value="{html.escape(status)}">{html.escape(status)}</option>' for status in sorted(list(unique_statuses))]
 
 
     # Replacing placeholder in header_controls
@@ -490,7 +503,12 @@ def main():
     header_controls = header_controls.replace("{status_options_html}", status_options_for_filter_html)
 
 
-    main_body_content = f'<div class="container"><h1 class="report-title">Webnovel Archive Report</h1>{header_controls}<div id="storyListContainer">{story_cards_html}</div></div>'
+    main_body_content = f'''<div class="container">
+        <h1 class="report-title">Webnovel Archive Report</h1>
+        {header_controls}
+        <div id="storyListContainer">{story_cards_html}</div>
+        <div id="paginationControls" class="pagination-controls"></div>
+    </div>'''
     js_code = get_javascript()
     final_html = get_html_skeleton("Webnovel Archive Report", css_styles, main_body_content, js_code)
     logger.info("Successfully generated HTML content string.")

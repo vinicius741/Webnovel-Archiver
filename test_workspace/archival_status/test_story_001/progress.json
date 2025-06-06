@@ -1,0 +1,43 @@
+{
+    "story_id": "test_story_001",
+    "original_title": "My Test Story",
+    "effective_title": "My Test Story",
+    "original_author": "Test Author",
+    "chapters_downloaded_count": 1,
+    "estimated_total_chapters_source": 2,
+    "next_chapter_to_download_url": "http://example.com/story/chapter/2",
+    "downloaded_chapters": [
+        {
+            "chapter_number": 1,
+            "title": "Chapter 1",
+            "url": "http://example.com/story/chapter/1",
+            "download_timestamp": "2023-01-01T12:00:00Z",
+            "word_count": 100,
+            "token_count": 150
+        }
+    ],
+    "last_updated_timestamp": "2023-01-01T12:00:00Z",
+    "story_url": "http://example.com/story",
+    "cover_image_url": null,
+    "synopsis": "A test story.",
+    "last_epub_processing": {
+        "timestamp": "2023-01-01T12:05:00Z",
+        "last_processed_chapter_number": 1
+    },
+    "cloud_backup_status": {
+        "service": "TestService",
+        "last_successful_backup_timestamp": "2023-01-01T12:10:00Z",
+        "story_cloud_folder_id": "folder123",
+        "backed_up_files": [
+            {
+                "local_path": "ebooks/test_story_001/My Test Story.epub",
+                "cloud_file_name": "My Test Story.epub",
+                "cloud_file_id": "file123",
+                "last_backed_up_timestamp": "2023-01-01T12:10:00Z",
+                "status": "uploaded",
+                "md5_hash_local": "dummyhash1",
+                "md5_hash_cloud": "dummyhash1"
+            }
+        ]
+    }
+}

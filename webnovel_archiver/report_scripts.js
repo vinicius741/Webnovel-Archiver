@@ -10,6 +10,10 @@ let sortSelect = null;
 let storyListContainer = null;
 let paginationControls = null;
 
+// Modal elements
+let modal = null;
+let modalCloseBtn = null;
+let modalBodyContent = null;
 
 function toggleSynopsis(element) {
     element.classList.toggle('expanded');
@@ -244,4 +248,66 @@ document.addEventListener('DOMContentLoaded', function() {
     if (sortSelect) {
         sortSelect.addEventListener('change', sortStories);
     }
+
+    // Modal elements caching
+    modal = document.getElementById('storyDetailModal');
+    modalCloseBtn = document.querySelector('.modal-close-btn'); // Assuming only one such button
+    modalBodyContent = document.getElementById('modalBodyContent');
+
+    // Event listener for "View Details" buttons (using event delegation)
+    if (storyListContainer) {
+        storyListContainer.addEventListener('click', function(event) {
+            const button = event.target.closest('.view-details-btn');
+            if (button) {
+                openModalWithStoryData(button);
+            }
+        });
+    }
+
+    // Event listener for modal close button
+    if (modalCloseBtn) {
+        modalCloseBtn.onclick = function() {
+            if (modal) {
+                modal.style.display = 'none';
+            }
+            if (modalBodyContent) {
+                modalBodyContent.innerHTML = ''; // Clear content for next time
+            }
+        };
+    }
+
+    // Event listener for clicking outside the modal content to close
+    if (modal) {
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.style.display = 'none';
+                if (modalBodyContent) {
+                    modalBodyContent.innerHTML = ''; // Clear content
+                }
+            }
+        };
+    }
 });
+
+// Function to open modal and populate it with story data
+function openModalWithStoryData(buttonElement) {
+    if (!modal || !modalBodyContent) {
+        console.error('Modal elements not found.');
+        return;
+    }
+
+    const storyCard = buttonElement.closest('.story-card');
+    if (!storyCard) {
+        console.error('Parent story card not found for the button.');
+        return;
+    }
+
+    const modalContentSource = storyCard.querySelector('.story-card-modal-content');
+    if (!modalContentSource) {
+        console.error('Modal content source div not found in the story card.');
+        return;
+    }
+
+    modalBodyContent.innerHTML = modalContentSource.innerHTML;
+    modal.style.display = 'block';
+}

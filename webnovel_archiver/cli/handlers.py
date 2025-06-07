@@ -212,6 +212,8 @@ def cloud_backup_handler(
         return
 
     story_ids_to_process: List[str] = []
+    cloud_base_folder_id: Optional[str] = None # Initialize before the loop
+
     if story_id:
         # Verify this story_id exists
         if not os.path.isdir(os.path.join(archival_status_dir, story_id)):
@@ -373,9 +375,67 @@ def cloud_backup_handler(
     if processed_stories_count > 0:
         click.echo(f"Cloud backup process completed for {processed_stories_count} story/stories.")
     elif not story_ids_to_process:
-        pass
+        pass # No stories were found to process initially
     else:
+        # This case means stories were found, but none were actually processed (e.g. all skipped due to errors or missing files)
         click.echo("Cloud backup process completed, but no stories were actually backed up.")
+
+    # --- HTML Report Upload Logic ---
+    report_path = os.path.join(workspace_root, "reports", "archive_report.html")
+    logger.info(f"Checking for HTML report at: {report_path}")
+
+    if os.path.exists(report_path):
+        click.echo("HTML report found. Attempting to upload...")
+        logger.info("Attempting to upload HTML report...")
+
+        if not cloud_base_folder_id and sync_service: # If not set during story processing (e.g. no stories)
+            try:
+                base_backup_folder_name = "Webnovel Archiver Backups" # Ensure this matches the one in the loop
+                logger.info(f"Attempting to get or create cloud base folder '{base_backup_folder_name}' for report upload.")
+                cloud_base_folder_id = sync_service.create_folder_if_not_exists(base_backup_folder_name, parent_folder_id=None)
+                if cloud_base_folder_id:
+                    logger.info(f"Successfully obtained cloud base folder ID: {cloud_base_folder_id} for report upload.")
+                else:
+                    logger.error(f"Failed to obtain cloud base folder ID for report upload.")
+                    click.echo(click.style(f"Error: Could not obtain cloud base folder ID for report. Skipping report upload.", fg="red"), err=True)
+            except ConnectionError as e:
+                logger.error(f"Connection error while ensuring base cloud folder for report upload: {e}", exc_info=True)
+                click.echo(click.style(f"Error: Connection error while preparing for report upload: {e}. Skipping report upload.", fg="red"), err=True)
+                cloud_base_folder_id = None # Ensure it's None so upload is skipped
+            except Exception as e:
+                logger.error(f"Unexpected error while ensuring base cloud folder for report upload: {e}", exc_info=True)
+                click.echo(click.style(f"Error: Unexpected error while preparing for report upload: {e}. Skipping report upload.", fg="red"), err=True)
+                cloud_base_folder_id = None # Ensure it's None so upload is skipped
+
+        if cloud_base_folder_id and sync_service:
+            try:
+                logger.info(f"Uploading report '{report_path}' to cloud folder ID '{cloud_base_folder_id}'.")
+                uploaded_report_meta = sync_service.upload_file(
+                    local_file_path=report_path,
+                    remote_folder_id=cloud_base_folder_id,
+                    remote_file_name="archive_report.html"
+                )
+                click.echo(click.style(f"✓ Successfully uploaded HTML report: {uploaded_report_meta.get('name')}", fg="green"))
+                logger.info(f"HTML report uploaded successfully: {uploaded_report_meta.get('name')} (ID: {uploaded_report_meta.get('id')})")
+            except FileNotFoundError:
+                # This specific check might be redundant if os.path.exists passed, but good for robustness
+                click.echo(click.style(f"Error: Report file {report_path} not found at time of upload. Skipping.", fg="red"), err=True)
+                logger.error(f"Report file {report_path} not found during upload attempt.")
+            except ConnectionError as e:
+                click.echo(click.style(f"Error uploading HTML report: {e}", fg="red"), err=True)
+                logger.error(f"Connection error during HTML report upload: {e}", exc_info=True)
+            except Exception as e:
+                click.echo(click.style(f"An unexpected error occurred during HTML report upload: {e}", fg="red"), err=True)
+                logger.error(f"Unexpected error during HTML report upload: {e}", exc_info=True)
+        elif sync_service: # Implies cloud_base_folder_id was not obtained
+            # Message already printed if folder creation failed
+            if not os.path.exists(report_path): # Should not happen if outer if was true, but for safety
+                 logger.warning("HTML report existed but cloud base folder ID was not available. Skipping upload.")
+
+    else:
+        click.echo(f"HTML report not found at {report_path}, skipping upload.")
+        logger.info(f"HTML report not found at {report_path}, skipping upload.")
+    # --- End of HTML Report Upload Logic ---
 
 # Migration Handler
 # Note: logger is already defined at the top of this file.

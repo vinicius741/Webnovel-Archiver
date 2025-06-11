@@ -796,29 +796,41 @@ def handle_restore_from_epubs():
         # Extract from EPUB
         try:
             with zipfile.ZipFile(epub_path, 'r') as epub_archive:
-                archive_files = epub_archive.namelist()
-                # Filter for chapter files, typically in OEBPS or OPS directory
-                # Common patterns: chapter_XXX.html/xhtml, itemXXX.html/xhtml etc.
-                # This needs to be robust or configurable if EPUB structures vary wildly.
-                # A common pattern is files within an "OEBPS" or "OPS" folder.
-                chapter_files_in_epub = sorted([
-                    f for f in archive_files
-                    if (f.lower().startswith('oebps/chapter') or f.lower().startswith('ops/chapter') or \
-                        f.lower().startswith('oebps/item') or f.lower().startswith('ops/item') or \
-                        (f.lower().startswith('oebps/') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html'))) or \
-                        (f.lower().startswith('ops/') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html'))))
-                       and (f.lower().endswith('.xhtml') or f.lower().endswith('.html'))
-                ])
+                all_files_in_epub = epub_archive.namelist()
 
-                # If the generic filter is too broad, refine based on common EPUB structures or specific knowledge.
-                # For now, this is a broad attempt. A more specific filter might be needed if it picks up non-chapter files.
-                # Example: if 'toc.xhtml' is caught, it might need exclusion.
-                # Let's assume for now that `local_processed_filename` in progress.json is the ground truth for filenames.
+                chapter_patterns = [
+                    (lambda f: f.lower().startswith('oebps/chapter') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OEBPS/chapter*.xhtml/html"),
+                    (lambda f: f.lower().startswith('ops/chapter') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OPS/chapter*.xhtml/html"),
+                    (lambda f: f.lower().startswith('oebps/item') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OEBPS/item*.xhtml/html"),
+                    (lambda f: f.lower().startswith('ops/item') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OPS/item*.xhtml/html"),
+                    (lambda f: f.lower().startswith('oebps/page') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OEBPS/page*.xhtml/html"),
+                    (lambda f: f.lower().startswith('ops/page') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OPS/page*.xhtml/html"),
+                    (lambda f: f.lower().startswith('xhtml/') and f.lower().endswith('.xhtml'), "xhtml/*.xhtml"),
+                    (lambda f: f.lower().startswith('html/') and f.lower().endswith('.html'), "html/*.html"),
+                    (lambda f: (f.lower().startswith('oebps/') or f.lower().startswith('ops/')) and f.lower().endswith('.xhtml'), "OEBPS/*.xhtml or OPS/*.xhtml"),
+                    (lambda f: (f.lower().startswith('oebps/') or f.lower().startswith('ops/')) and f.lower().endswith('.html'), "OEBPS/*.html or OPS/*.html"),
+                    (lambda f: not f.lower().startswith('meta-inf/') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "Non-META-INF *.xhtml/html (last resort)"),
+                ]
 
-                logger_restore.info(f"Found {len(chapter_files_in_epub)} potential chapter files in EPUB '{epub_path}'.")
+                chapter_files_in_epub = []
+                used_pattern_description = "None"
+
+                for pattern_fn, pattern_desc in chapter_patterns:
+                    potential_chapters = sorted([f for f in all_files_in_epub if pattern_fn(f)])
+                    if potential_chapters:
+                        logger_restore.info(f"Pattern '{pattern_desc}' found {len(potential_chapters)} potential chapter files for story '{story_id}'.")
+                        # Basic check: if a pattern yields an unusually high number of files (e.g. more than total chapters + reasonable overhead)
+                        # it might be too broad. For now, we accept the first match.
+                        # A more sophisticated check could compare against num_chapters_in_progress here if desired,
+                        # but that might prematurely discard a valid pattern if progress.json is off.
+                        chapter_files_in_epub = potential_chapters
+                        used_pattern_description = pattern_desc
+                        click.echo(f"  Discovered {len(chapter_files_in_epub)} chapter files using pattern: {pattern_desc}.")
+                        break
+
                 if not chapter_files_in_epub:
-                    logger_restore.warning(f"No chapter files found within EPUB '{epub_path}' using pattern. Skipping story.")
-                    click.echo(click.style(f"  Warning: No chapter files (e.g., OEBPS/chapter_*.xhtml) found in '{os.path.basename(epub_path)}'. Skipping.", fg="yellow"))
+                    logger_restore.warning(f"No chapter files found within EPUB '{epub_path}' after trying all patterns. Skipping story '{story_id}'.")
+                    click.echo(click.style(f"  Warning: No chapter files found in '{os.path.basename(epub_path)}' after trying all patterns. Skipping.", fg="yellow"))
                     continue
 
                 # Chapter Count Validation
@@ -831,9 +843,14 @@ def handle_restore_from_epubs():
                     continue
 
                 if num_chapters_in_progress != num_chapters_in_epub:
-                    logger_restore.critical(f"Chapter count mismatch for story ID '{story_id}' (Title: '{story_title}'). Progress.json has {num_chapters_in_progress}, EPUB ('{os.path.basename(epub_path)}') has {num_chapters_in_epub} (based on file list). Skipping restoration for this story.")
-                    click.echo(click.style(f"  CRITICAL: Chapter count mismatch for '{story_id}'. Progress: {num_chapters_in_progress}, EPUB: {num_chapters_in_epub}. Skipping.", fg="red"))
-                    click.echo(click.style(f"  Files found in EPUB: {chapter_files_in_epub}", fg="red")) # Log files for debugging
+                    logger_restore.critical(f"Chapter count mismatch for story ID '{story_id}' (Title: '{story_title}'). Progress.json has {num_chapters_in_progress}, EPUB ('{os.path.basename(epub_path)}') has {num_chapters_in_epub} (found with pattern '{used_pattern_description}'). Skipping restoration for this story.")
+                    click.echo(click.style(f"  CRITICAL: Chapter count mismatch for '{story_id}'. Progress: {num_chapters_in_progress}, EPUB: {num_chapters_in_epub} (Pattern: '{used_pattern_description}'). Skipping.", fg="red"))
+                    # Log more details if count mismatches, this can help diagnose pattern issues
+                    if num_chapters_in_epub > 0 : # Only log if files were actually found
+                        logger_restore.debug(f"Files found by pattern '{used_pattern_description}' for '{story_id}': {chapter_files_in_epub[:10]}") # Log first 10
+                    if abs(num_chapters_in_progress - num_chapters_in_epub) > 5 and num_chapters_in_epub > num_chapters_in_progress : # Arbitrary threshold for "too many files"
+                        logger_restore.warning(f"Pattern '{used_pattern_description}' yielded significantly more files ({num_chapters_in_epub}) than expected ({num_chapters_in_progress}) for story '{story_id}'. This pattern might be too broad for this EPUB structure.")
+
                     continue
 
                 # Restore Chapter Files

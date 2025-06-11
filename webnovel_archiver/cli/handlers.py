@@ -212,7 +212,27 @@ def cloud_backup_handler(
         return
 
     story_ids_to_process: List[str] = []
-    cloud_base_folder_id: Optional[str] = None # Initialize before the loop
+    # This will store the ID of the main "Webnovel Archiver Backups" folder in the cloud.
+    cloud_base_folder_id: Optional[str] = None
+    base_backup_folder_name = "Webnovel Archiver Backups" # Define folder name once
+
+    # Attempt to create the base backup folder before processing any stories.
+    try:
+        click.echo(f"Ensuring base cloud backup folder '{base_backup_folder_name}' exists...")
+        cloud_base_folder_id = sync_service.create_folder_if_not_exists(base_backup_folder_name, parent_folder_id=None)
+        if not cloud_base_folder_id:
+            click.echo(click.style(f"Error: Failed to create or retrieve base cloud folder '{base_backup_folder_name}'. Cannot proceed with backup.", fg="red"), err=True)
+            logger.error(f"Failed to create/retrieve base cloud folder '{base_backup_folder_name}'. Aborting cloud backup.")
+            return
+        click.echo(f"Base cloud folder '{base_backup_folder_name}' ensured (ID: {cloud_base_folder_id}).")
+    except ConnectionError as e:
+        click.echo(click.style(f"Error: Connection error while creating base cloud folder '{base_backup_folder_name}': {e}. Cannot proceed.", fg="red"), err=True)
+        logger.error(f"Connection error creating base cloud folder '{base_backup_folder_name}': {e}")
+        return
+    except Exception as e: # Catch any other unexpected errors during base folder creation
+        click.echo(click.style(f"Error: Unexpected error while creating base cloud folder '{base_backup_folder_name}': {e}. Cannot proceed.", fg="red"), err=True)
+        logger.error(f"Unexpected error creating base cloud folder '{base_backup_folder_name}': {e}", exc_info=True)
+        return
 
     if story_id:
         # Verify this story_id exists
@@ -233,6 +253,7 @@ def cloud_backup_handler(
 
     processed_stories_count = 0
     for current_story_id in story_ids_to_process:
+        an_upload_occurred = False # Initialize flag for each story
         click.echo(f"Processing story: {current_story_id}")
 
         progress_file_path = pm.get_progress_filepath(current_story_id, workspace_root)
@@ -247,13 +268,25 @@ def cloud_backup_handler(
             click.echo(f"Error: Failed to load progress data for story {current_story_id}. Skipping.", err=True)
             continue
 
+        # cloud_base_folder_id is now created before the loop.
+        # We must have it to proceed for this story.
+        if not cloud_base_folder_id:
+            # This case should ideally be prevented by the initial check, but as a safeguard:
+            click.echo(click.style(f"Critical Error: Base cloud folder ID not available for story {current_story_id}. Skipping.", fg="red"), err=True)
+            logger.error(f"Critical: cloud_base_folder_id is None when processing story {current_story_id}. This should not happen.")
+            continue
+
+        story_cloud_folder_id: Optional[str] = None
         try:
-            base_backup_folder_name = "Webnovel Archiver Backups"
-            cloud_base_folder_id = sync_service.create_folder_if_not_exists(base_backup_folder_name, parent_folder_id=None)
+            # Create story-specific folder inside the base backup folder
             story_cloud_folder_id = sync_service.create_folder_if_not_exists(current_story_id, parent_folder_id=cloud_base_folder_id)
-            click.echo(f"Ensured cloud folder structure: '{base_backup_folder_name}/{current_story_id}' (ID: {story_cloud_folder_id})")
+            if not story_cloud_folder_id:
+                click.echo(click.style(f"Error: Failed to create or retrieve cloud folder for story '{current_story_id}' inside '{base_backup_folder_name}'. Skipping story.", fg="red"), err=True)
+                logger.error(f"Failed to create/retrieve story folder for {current_story_id} under parent {cloud_base_folder_id}.")
+                continue
+            click.echo(f"Ensured cloud folder structure: '{base_backup_folder_name}/{current_story_id}' (Story Folder ID: {story_cloud_folder_id})")
         except ConnectionError as e:
-            click.echo(f"Error creating/verifying cloud folder for story {current_story_id}: {e}", err=True)
+            click.echo(f"Error creating/verifying cloud folder for story {current_story_id}: {e}. Skipping story.", err=True)
             logger.error(f"Cloud folder creation error for {current_story_id}: {e}")
             continue
 
@@ -336,7 +369,15 @@ def cloud_backup_handler(
                     logger.error(f"Unexpected error uploading {local_path} for story {current_story_id}: {e}", exc_info=True)
                     backup_files_results.append({ 'local_path': local_path, 'cloud_file_name': upload_name, 'status': 'failed', 'error': str(e) })
 
-        if backup_files_results:
+        # Check if any file was actually uploaded for the current story
+        if backup_files_results: # Only iterate if there are results
+            for result in backup_files_results:
+                if result.get('status') == 'uploaded':
+                    an_upload_occurred = True
+                    break
+
+        if an_upload_occurred: # Only update progress if an upload happened
+            click.echo(f"An upload occurred for story {current_story_id}. Updating progress file.") # Added for clarity
             current_utc_time_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
             all_ops_successful_or_skipped = all(f.get('status') in ['uploaded', 'skipped_up_to_date'] for f in backup_files_results)
             existing_backup_status = pm.get_cloud_backup_status(progress_data)
@@ -364,10 +405,15 @@ def cloud_backup_handler(
             try:
                 pm.update_cloud_backup_status(progress_data, cloud_backup_update_data)
                 pm.save_progress(current_story_id, progress_data, workspace_root)
-                click.echo(f"Updated local progress status for story {current_story_id} with backup information.")
+                click.echo(f"Successfully updated and saved local progress status for story {current_story_id}.")
             except Exception as e:
                 click.echo(f"Error updating and saving progress file for story {current_story_id}: {e}", err=True)
-                logger.error(f"Failed to update/save progress_status.json for {current_story_id}: {e}", exc_info=True)
+                logger.error(f"Failed to update/save progress_status.json for {current_story_id} after uploads: {e}", exc_info=True)
+        elif backup_files_results: # Files were processed (skipped/failed), but no new uploads
+            click.echo(f"No new files were uploaded for story {current_story_id}. Progress file not updated with new backup timestamps for individual files.")
+            # Optionally, one might still want to update 'last_backup_attempt_timestamp' even if no files were uploaded.
+            # For now, sticking to the requirement of only saving if an upload occurred.
+            # If a general update is desired, the logic for cloud_backup_update_data would need adjustment here.
 
         processed_stories_count +=1
         click.echo(f"Finished processing story: {current_story_id}\n")
@@ -388,26 +434,12 @@ def cloud_backup_handler(
         click.echo("HTML report found. Attempting to upload...")
         logger.info("Attempting to upload HTML report...")
 
-        if not cloud_base_folder_id and sync_service: # If not set during story processing (e.g. no stories)
-            try:
-                base_backup_folder_name = "Webnovel Archiver Backups" # Ensure this matches the one in the loop
-                logger.info(f"Attempting to get or create cloud base folder '{base_backup_folder_name}' for report upload.")
-                cloud_base_folder_id = sync_service.create_folder_if_not_exists(base_backup_folder_name, parent_folder_id=None)
-                if cloud_base_folder_id:
-                    logger.info(f"Successfully obtained cloud base folder ID: {cloud_base_folder_id} for report upload.")
-                else:
-                    logger.error(f"Failed to obtain cloud base folder ID for report upload.")
-                    click.echo(click.style(f"Error: Could not obtain cloud base folder ID for report. Skipping report upload.", fg="red"), err=True)
-            except ConnectionError as e:
-                logger.error(f"Connection error while ensuring base cloud folder for report upload: {e}", exc_info=True)
-                click.echo(click.style(f"Error: Connection error while preparing for report upload: {e}. Skipping report upload.", fg="red"), err=True)
-                cloud_base_folder_id = None # Ensure it's None so upload is skipped
-            except Exception as e:
-                logger.error(f"Unexpected error while ensuring base cloud folder for report upload: {e}", exc_info=True)
-                click.echo(click.style(f"Error: Unexpected error while preparing for report upload: {e}. Skipping report upload.", fg="red"), err=True)
-                cloud_base_folder_id = None # Ensure it's None so upload is skipped
-
-        if cloud_base_folder_id and sync_service:
+        # cloud_base_folder_id should have been created at the beginning.
+        # If it wasn't (e.g., initial connection error), then we can't upload the report to the specific base folder.
+        if not cloud_base_folder_id:
+            click.echo(click.style(f"Warning: Base cloud folder ID ('{base_backup_folder_name}') not available. Cannot upload HTML report to it. This might be due to earlier errors.", fg="yellow"), err=True)
+            logger.warning(f"HTML report upload skipped: cloud_base_folder_id is not set (base folder: '{base_backup_folder_name}').")
+        elif sync_service: # cloud_base_folder_id exists and sync_service is available
             try:
                 logger.info(f"Uploading report '{report_path}' to cloud folder ID '{cloud_base_folder_id}'.")
                 uploaded_report_meta = sync_service.upload_file(
@@ -427,10 +459,8 @@ def cloud_backup_handler(
             except Exception as e:
                 click.echo(click.style(f"An unexpected error occurred during HTML report upload: {e}", fg="red"), err=True)
                 logger.error(f"Unexpected error during HTML report upload: {e}", exc_info=True)
-        elif sync_service: # Implies cloud_base_folder_id was not obtained
-            # Message already printed if folder creation failed
-            if not os.path.exists(report_path): # Should not happen if outer if was true, but for safety
-                 logger.warning("HTML report existed but cloud base folder ID was not available. Skipping upload.")
+        # Removed 'elif sync_service:' as the logic is now: if cloud_base_folder_id is None, it's skipped.
+        # If it exists, the 'try' block above is attempted.
 
     else:
         click.echo(f"HTML report not found at {report_path}, skipping upload.")

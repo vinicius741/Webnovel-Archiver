@@ -88,23 +88,73 @@ def load_progress(story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                if data.get("version") != PROGRESS_FILE_VERSION:
-                    logger.warning(f"Progress file version mismatch for story {story_id}. "
-                                   f"Expected {PROGRESS_FILE_VERSION}, found {data.get('version')}. "
-                                   "Data might be read/written unexpectedly. Consider migration.")
-                # Ensure all top-level keys from new structure exist
-                for key in new_structure.keys():
-                    if key not in data:
-                        data[key] = new_structure[key]
-                # Specifically ensure cloud_backup_status and its sub-keys are present
-                if "cloud_backup_status" not in data or not isinstance(data["cloud_backup_status"], dict):
-                     data["cloud_backup_status"] = new_structure["cloud_backup_status"]
-                else:
-                    for sub_key in new_structure["cloud_backup_status"].keys():
-                        if sub_key not in data["cloud_backup_status"]:
-                            data["cloud_backup_status"][sub_key] = new_structure["cloud_backup_status"][sub_key]
 
-                return data
+            # Migration logic for chapter status fields
+            # This should be done *before* other structural checks like version or missing top-level keys,
+            # as the migration addresses a specific part (downloaded_chapters structure).
+            downloaded_chapters_list = data.get("downloaded_chapters")
+            migration_required = False
+
+            if downloaded_chapters_list is None: # Key 'downloaded_chapters' is missing
+                logger.info(f"'downloaded_chapters' key missing in progress file for story '{story_id}' at {filepath}. Initializing key and marking for migration.")
+                data["downloaded_chapters"] = [] # Initialize the key with an empty list
+                migration_required = True # File exists, but this key is missing, treat as old format needing this structure
+            elif not isinstance(downloaded_chapters_list, list):
+                logger.warning(f"'downloaded_chapters' in progress file for story '{story_id}' at {filepath} is not a list. Re-initializing key and marking for migration.")
+                data["downloaded_chapters"] = [] # Reset to empty list if malformed
+                migration_required = True
+            else: # It is a list
+                if not downloaded_chapters_list: # List is empty
+                    # As per requirement: "if downloaded_chapters is empty but the file exists... proceed with migration."
+                    # This means logging and backup will occur. The chapter modification loop won't run.
+                    migration_required = True
+                elif not downloaded_chapters_list[0].get("status"): # Non-empty list, check first chapter for "status" field
+                    migration_required = True
+
+            if migration_required:
+                logger.info(f"Migrating progress file for story '{story_id}' at {filepath} to new format with status fields in chapters.")
+
+                backup_filepath = filepath + ".bak"
+                try:
+                    import shutil # Import here for focused change, though top-level is conventional
+                    shutil.copy2(filepath, backup_filepath)
+                    logger.info(f"Backed up original progress file for story '{story_id}' to {backup_filepath}")
+                except Exception as e_backup:
+                    logger.error(f"Failed to create backup {backup_filepath} for story '{story_id}': {e_backup}. Proceeding with migration without backup.")
+
+                current_chapters_data = data.get("downloaded_chapters", []) # Get potentially reset list
+                migrated_chapters_list = []
+                if isinstance(current_chapters_data, list): # Iterate only if it's a list
+                    for chapter in current_chapters_data:
+                        if isinstance(chapter, dict): # Process only if chapter is a dictionary
+                            chapter_copy = chapter.copy()
+                            chapter_copy["status"] = "active"
+                            chapter_copy["first_seen_on"] = "N/A"
+                            chapter_copy["last_checked_on"] = "N/A"
+                            migrated_chapters_list.append(chapter_copy)
+                        else:
+                            logger.warning(f"Skipping non-dict chapter entry during migration for story '{story_id}' in {filepath}: {chapter}")
+                            migrated_chapters_list.append(chapter) # Preserve non-dict items
+                data["downloaded_chapters"] = migrated_chapters_list
+
+            # Existing checks for version and ensuring all top-level keys
+            if data.get("version") != PROGRESS_FILE_VERSION:
+                logger.warning(f"Progress file version mismatch for story {story_id}. "
+                               f"Expected {PROGRESS_FILE_VERSION}, found {data.get('version')}. "
+                               "Data might be read/written unexpectedly. Consider migration.")
+
+            for key in new_structure.keys(): # new_structure was defined at the start of the function
+                if key not in data:
+                    data[key] = new_structure[key]
+
+            if "cloud_backup_status" not in data or not isinstance(data["cloud_backup_status"], dict):
+                 data["cloud_backup_status"] = new_structure["cloud_backup_status"]
+            else:
+                for sub_key in new_structure["cloud_backup_status"].keys():
+                    if sub_key not in data["cloud_backup_status"]:
+                        data["cloud_backup_status"][sub_key] = new_structure["cloud_backup_status"][sub_key]
+
+            return data
         except json.JSONDecodeError:
             logger.error(f"Progress file for {story_id} at {filepath} is corrupted. Initializing new one.")
             return new_structure

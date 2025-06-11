@@ -186,6 +186,176 @@ class TestProgressManager(unittest.TestCase):
         loaded_data = load_progress(story_id, workspace_root=TEST_WORKSPACE_ROOT)
         self.assertEqual(loaded_data['original_title'], "Auto Dir Creation Test")
 
+    def test_load_progress_migration_old_format_single_chapter(self):
+        story_id = "test_story_migration_single"
+        progress_dir = os.path.join(TEST_WORKSPACE_ROOT, "archival_status", story_id)
+        os.makedirs(progress_dir, exist_ok=True)
+        filepath = os.path.join(progress_dir, "progress_status.json")
+
+        old_format_data = {
+            "story_id": story_id,
+            "original_title": "Test Story for Migration",
+            "version": "1.0", # Simulate an older version
+            "downloaded_chapters": [
+                {
+                    "source_chapter_id": "chap1",
+                    "download_order": 1,
+                    "chapter_url": "http://example.com/chap1",
+                    "chapter_title": "Chapter 1",
+                    "local_raw_filename": "chap1_raw.html",
+                    "local_processed_filename": "chap1_processed.html"
+                }
+            ],
+            "last_run_timestamp": "2023-01-01T00:00:00Z"
+        }
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(old_format_data, f, indent=2)
+
+        loaded_data = load_progress(story_id, workspace_root=TEST_WORKSPACE_ROOT)
+
+        self.assertTrue(len(loaded_data["downloaded_chapters"]) == 1)
+        first_chapter = loaded_data["downloaded_chapters"][0]
+        self.assertEqual(first_chapter.get("status"), "active")
+        self.assertEqual(first_chapter.get("first_seen_on"), "N/A")
+        self.assertEqual(first_chapter.get("last_checked_on"), "N/A")
+        self.assertEqual(first_chapter.get("source_chapter_id"), "chap1") # Original data preserved
+
+        backup_filepath = filepath + ".bak"
+        self.assertTrue(os.path.exists(backup_filepath))
+        with open(backup_filepath, 'r', encoding='utf-8') as bak_f:
+            backup_data = json.load(bak_f)
+        self.assertNotIn("status", backup_data["downloaded_chapters"][0])
+
+    def test_load_progress_migration_empty_downloaded_chapters(self):
+        story_id = "test_migration_empty_chapters"
+        progress_dir = os.path.join(TEST_WORKSPACE_ROOT, "archival_status", story_id)
+        os.makedirs(progress_dir, exist_ok=True)
+        filepath = os.path.join(progress_dir, "progress_status.json")
+
+        old_format_empty_chapters = {
+            "story_id": story_id,
+            "original_title": "Empty Chapters Migration Test",
+            "version": "1.0",
+            "downloaded_chapters": [] # Empty list
+        }
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(old_format_empty_chapters, f, indent=2)
+
+        loaded_data = load_progress(story_id, workspace_root=TEST_WORKSPACE_ROOT)
+
+        # Chapters list should still be empty
+        self.assertEqual(len(loaded_data["downloaded_chapters"]), 0)
+
+        # Backup should still be created due to "conformity" migration
+        backup_filepath = filepath + ".bak"
+        self.assertTrue(os.path.exists(backup_filepath))
+        with open(backup_filepath, 'r', encoding='utf-8') as bak_f:
+            backup_data = json.load(bak_f)
+        self.assertEqual(len(backup_data["downloaded_chapters"]), 0)
+
+
+    def test_load_progress_migration_missing_downloaded_chapters_key(self):
+        story_id = "test_migration_missing_key"
+        progress_dir = os.path.join(TEST_WORKSPACE_ROOT, "archival_status", story_id)
+        os.makedirs(progress_dir, exist_ok=True)
+        filepath = os.path.join(progress_dir, "progress_status.json")
+
+        # Data where 'downloaded_chapters' key is entirely missing
+        old_format_missing_key = {
+            "story_id": story_id,
+            "original_title": "Missing Key Migration Test",
+            "version": "1.0"
+            # "downloaded_chapters" key is absent
+        }
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(old_format_missing_key, f, indent=2)
+
+        loaded_data = load_progress(story_id, workspace_root=TEST_WORKSPACE_ROOT)
+
+        # 'downloaded_chapters' should be initialized as an empty list
+        self.assertIn("downloaded_chapters", loaded_data)
+        self.assertEqual(len(loaded_data["downloaded_chapters"]), 0)
+
+        # Backup should be created because the structure was modified (key added)
+        backup_filepath = filepath + ".bak"
+        self.assertTrue(os.path.exists(backup_filepath))
+        with open(backup_filepath, 'r', encoding='utf-8') as bak_f:
+            backup_data = json.load(bak_f)
+        self.assertNotIn("downloaded_chapters", backup_data) # Key was missing in original
+
+    def test_load_progress_already_new_format_no_migration(self):
+        story_id = "test_already_new_format"
+        progress_dir = os.path.join(TEST_WORKSPACE_ROOT, "archival_status", story_id)
+        os.makedirs(progress_dir, exist_ok=True)
+        filepath = os.path.join(progress_dir, "progress_status.json")
+
+        new_format_data = {
+            "story_id": story_id,
+            "original_title": "Already New Format Test",
+            "version": "1.1", # Current version
+            "downloaded_chapters": [
+                {
+                    "source_chapter_id": "chap1",
+                    "download_order": 1,
+                    "chapter_url": "http://example.com/chap1",
+                    "chapter_title": "Chapter 1",
+                    "local_raw_filename": "chap1_raw.html",
+                    "local_processed_filename": "chap1_processed.html",
+                    "status": "active", # Already has status
+                    "first_seen_on": "2023-10-01T10:00:00Z",
+                    "last_checked_on": "2023-10-28T10:00:00Z"
+                }
+            ]
+        }
+        # Fill with all other keys expected in a new structure for completeness
+        base_new = _get_new_progress_structure(story_id)
+        for key, value in base_new.items():
+            if key not in new_format_data:
+                new_format_data[key] = value
+        new_format_data["downloaded_chapters"] = [ # ensure this specific part is set
+             {
+                "source_chapter_id": "chap1", "download_order": 1, "chapter_url": "http://example.com/chap1",
+                "chapter_title": "Chapter 1", "local_raw_filename": "chap1_raw.html",
+                "local_processed_filename": "chap1_processed.html", "status": "active",
+                "first_seen_on": "2023-10-01T10:00:00Z", "last_checked_on": "2023-10-28T10:00:00Z"
+            }
+        ]
+
+
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(new_format_data, f, indent=2)
+
+        loaded_data = load_progress(story_id, workspace_root=TEST_WORKSPACE_ROOT)
+
+        # Data should be loaded as is
+        self.assertEqual(loaded_data["downloaded_chapters"][0]["status"], "active")
+        self.assertEqual(loaded_data["downloaded_chapters"][0]["first_seen_on"], "2023-10-01T10:00:00Z")
+
+        # No backup file should be created
+        backup_filepath = filepath + ".bak"
+        self.assertFalse(os.path.exists(backup_filepath))
+
+    def test_load_progress_non_existent_file_no_migration_backup(self):
+        story_id = "test_non_existent_file"
+        # No file is created for this story_id
+
+        # Ensure no progress file or backup exists initially
+        filepath = get_progress_filepath(story_id, workspace_root=TEST_WORKSPACE_ROOT)
+        backup_filepath = filepath + ".bak"
+        self.assertFalse(os.path.exists(filepath))
+        self.assertFalse(os.path.exists(backup_filepath))
+
+        loaded_data = load_progress(story_id, workspace_root=TEST_WORKSPACE_ROOT)
+
+        # Should return a new progress structure
+        expected_new_structure = _get_new_progress_structure(story_id)
+        self.assertEqual(loaded_data, expected_new_structure)
+        self.assertEqual(loaded_data["story_id"], story_id)
+        self.assertEqual(len(loaded_data["downloaded_chapters"]), 0) # New structure has empty chapters
+
+        # No backup file should be created as no migration from an existing file happened
+        self.assertFalse(os.path.exists(backup_filepath))
+
 
 if __name__ == '__main__':
     unittest.main()

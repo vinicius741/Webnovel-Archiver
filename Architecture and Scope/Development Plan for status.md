@@ -56,8 +56,8 @@ This phase ensures backward compatibility by automatically and safely upgrading 
             3.  Iterate through each chapter in the `downloaded_chapters` list.
             4.  For each chapter, add the new fields:
                 * `"status": "active"` (Assume all previously saved chapters were active at the time).
-                * `"first_seen_on": "N/A"` or use the file's last modification date as an approximation.
-                * `"last_checked_on": "N/A"`.
+                * `"first_seen_on"`: Use the progress file's last modification date as an approximation. If this date is unavailable (e.g., due to OS/filesystem limitations or an error), use "N/A" as a fallback. Log a warning if the file modification date is unavailable and "N/A" is used.
+                * `"last_checked_on"`: Use the progress file's last modification date as an approximation (mirroring `first_seen_on` for migrated entries). If this date is unavailable, use "N/A" as a fallback. Log a warning if the file modification date is unavailable and "N/A" is used.
         * Return the migrated data structure in memory for the application to use.
 
 2.  **Create Migration Unit Tests:**

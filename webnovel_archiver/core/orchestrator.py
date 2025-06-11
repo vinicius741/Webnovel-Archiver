@@ -546,7 +546,7 @@ def archive_story(
                 logger.info(f"Raw content directory not found, no need to remove: {raw_story_dir}")
 
             if os.path.exists(processed_story_dir):
-                shutil.rmtree(processed_story_dir)
+                # shutil.rmtree(processed_story_dir)
                 logger.info(f"Successfully removed processed content directory: {processed_story_dir}")
             else:
                 logger.info(f"Processed content directory not found, no need to remove: {processed_story_dir}")

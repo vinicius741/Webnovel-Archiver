@@ -1,6 +1,6 @@
 import click
 from typing import Optional
-from webnovel_archiver.cli.handlers import archive_story_handler, generate_report_handler
+from webnovel_archiver.cli.handlers import archive_story_handler, generate_report_handler, handle_restore_from_epubs
 from webnovel_archiver.generate_report import main as generate_report_main
 
 @click.group()
@@ -130,6 +130,11 @@ def generate_report_command():
     # The actual call to generate_report_main or a handler will be done in step 4.
     # To make the file runnable, we can add a pass or a click.echo temporary message.
     generate_report_handler()
+
+@archiver.command(name='restore-from-epubs')
+def restore_from_epubs_command():
+    """Restores processed chapter content from existing EPUB files."""
+    handle_restore_from_epubs()
 
 if __name__ == '__main__':
     archiver()

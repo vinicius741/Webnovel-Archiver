@@ -467,5 +467,147 @@ class TestArchiveStory(unittest.TestCase):
         self.mock_fetcher_instance.download_chapter_content.assert_not_called() # No downloads
 
 
+    def test_archived_chapter_reappears_becomes_active(self):
+        # Arrange
+        OLD_FIRST_SEEN = "2022-10-01T12:00:00Z"
+        OLD_LAST_CHECKED = "2022-11-01T12:00:00Z"
+        OLD_DOWNLOAD_TS = "2022-10-01T13:00:00Z"
+
+        reappearing_chapter_info = ChapterInfo(
+            chapter_url="https://test.com/fiction/123/chapter/1",
+            chapter_title="Chapter 1 Reappears",
+            download_order=1,
+            source_chapter_id="c1_reappears"
+        )
+
+        initial_progress = {
+            "story_id": self.story_id,
+            "downloaded_chapters": [{
+                "source_chapter_id": reappearing_chapter_info.source_chapter_id,
+                "chapter_url": reappearing_chapter_info.chapter_url,
+                "chapter_title": reappearing_chapter_info.chapter_title,
+                "download_order": reappearing_chapter_info.download_order,
+                "local_raw_filename": "c1_reappears_raw.html",
+                "local_processed_filename": "c1_reappears_proc.html",
+                "status": "archived", # Initially archived
+                "first_seen_on": OLD_FIRST_SEEN,
+                "last_checked_on": OLD_LAST_CHECKED,
+                "download_timestamp": OLD_DOWNLOAD_TS,
+            }]
+        }
+        self.patchers['load_progress'].return_value = copy.deepcopy(initial_progress)
+
+        # Mock fetcher to return this chapter as if it reappeared on the source
+        self.mock_fetcher_instance.get_chapter_urls.return_value = [reappearing_chapter_info]
+        self.mock_metadata.estimated_total_chapters_source = 1 # Update metadata to reflect chapter count
+
+        # Mock os.path.exists to return False for this chapter's files to trigger reprocessing/re-download
+        self.patchers['os.path.exists'].return_value = False
+
+        # Act
+        archive_story(
+            story_url=self.test_story_url,
+            workspace_root=self.test_workspace_root,
+            progress_callback=self.mock_progress_callback
+        )
+
+        # Assert
+        self.patchers['save_progress'].assert_called_once()
+        saved_data = self.patchers['save_progress'].call_args[0][1]
+
+        self.assertEqual(len(saved_data["downloaded_chapters"]), 1)
+        chapter_entry = saved_data["downloaded_chapters"][0]
+
+        self.assertEqual(chapter_entry["status"], "active") # Status updated to active
+        self.assertEqual(chapter_entry["first_seen_on"], OLD_FIRST_SEEN) # Preserved
+        self.assertEqual(chapter_entry["last_checked_on"], self.FROZEN_TIME_STR) # Updated
+        self.assertEqual(chapter_entry["download_timestamp"], self.FROZEN_TIME_STR) # Updated due to re-download
+
+        # Verify download_chapter_content was called for this chapter
+        self.mock_fetcher_instance.download_chapter_content.assert_called_once_with(reappearing_chapter_info.chapter_url)
+        # Verify EPUBGenerator was called (even with one chapter)
+        self.mock_epub_generator_instance.generate_epub.assert_called_once()
+
+
+    def test_orchestrator_filters_chapters_for_epub_generator(self):
+        # Arrange
+        OLD_TIME_CH1 = "2022-01-01T10:00:00Z"
+        OLD_TIME_CH2 = "2022-01-01T11:00:00Z"
+        OLD_TIME_CH3 = "2022-01-01T12:00:00Z"
+
+        chapters_info_for_epub_test = [
+            ChapterInfo(chapter_url="https://test.com/epub/ch1", chapter_title="Active Chapter 1", download_order=1, source_chapter_id="ec1"),
+            ChapterInfo(chapter_url="https://test.com/epub/ch2", chapter_title="Archived Chapter 2", download_order=2, source_chapter_id="ec2"),
+            ChapterInfo(chapter_url="https://test.com/epub/ch3", chapter_title="Active Chapter 3", download_order=3, source_chapter_id="ec3"),
+        ]
+
+        initial_progress_for_epub = {
+            "story_id": self.story_id,
+            "original_title": "EPUB Filter Test Story", # Added for EPUB generation
+            "downloaded_chapters": [
+                {
+                    "source_chapter_id": "ec1", "chapter_url": "https://test.com/epub/ch1", "chapter_title": "Active Chapter 1",
+                    "download_order": 1, "local_raw_filename": "ec1_raw.html", "local_processed_filename": "ec1_proc.html",
+                    "status": "active", "first_seen_on": OLD_TIME_CH1, "last_checked_on": OLD_TIME_CH1, "download_timestamp": OLD_TIME_CH1
+                },
+                {
+                    "source_chapter_id": "ec2", "chapter_url": "https://test.com/epub/ch2", "chapter_title": "Archived Chapter 2",
+                    "download_order": 2, "local_raw_filename": "ec2_raw.html", "local_processed_filename": "ec2_proc.html",
+                    "status": "archived", "first_seen_on": OLD_TIME_CH2, "last_checked_on": OLD_TIME_CH2, "download_timestamp": OLD_TIME_CH2
+                },
+                {
+                    "source_chapter_id": "ec3", "chapter_url": "https://test.com/epub/ch3", "chapter_title": "Active Chapter 3",
+                    "download_order": 3, "local_raw_filename": "ec3_raw.html", "local_processed_filename": "ec3_proc.html",
+                    "status": "active", "first_seen_on": OLD_TIME_CH3, "last_checked_on": OLD_TIME_CH3, "download_timestamp": OLD_TIME_CH3
+                }
+            ]
+        }
+        self.patchers['load_progress'].return_value = copy.deepcopy(initial_progress_for_epub)
+        self.patchers['os.path.exists'].return_value = True # All files exist, no reprocessing
+        self.mock_fetcher_instance.get_chapter_urls.return_value = chapters_info_for_epub_test
+        self.mock_metadata.estimated_total_chapters_source = len(chapters_info_for_epub_test)
+
+
+        # --- Part 1: epub_contents='active-only' ---
+        self.mock_epub_generator_instance.reset_mock() # Reset mock before the first call
+        archive_story(
+            story_url=self.test_story_url,
+            workspace_root=self.test_workspace_root,
+            progress_callback=self.mock_progress_callback,
+            epub_contents='active-only'
+        )
+
+        self.mock_epub_generator_instance.generate_epub.assert_called_once()
+        call_args_active_only = self.mock_epub_generator_instance.generate_epub.call_args
+        progress_data_for_epub_active = call_args_active_only[0][0] # First positional argument
+
+        self.assertEqual(len(progress_data_for_epub_active['downloaded_chapters']), 2)
+        self.assertEqual(progress_data_for_epub_active['downloaded_chapters'][0]['chapter_title'], "Active Chapter 1")
+        self.assertEqual(progress_data_for_epub_active['downloaded_chapters'][1]['chapter_title'], "Active Chapter 3")
+
+        # --- Part 2: epub_contents='all' ---
+        # Need to reload progress as it's modified by the orchestrator (last_checked_on timestamps)
+        self.patchers['load_progress'].return_value = copy.deepcopy(initial_progress_for_epub)
+        self.mock_fetcher_instance.get_chapter_urls.return_value = chapters_info_for_epub_test # Re-set mock
+        self.mock_epub_generator_instance.reset_mock() # Reset mock before the second call
+        self.patchers['save_progress'].reset_mock() # Reset this as well for the second run
+
+        archive_story(
+            story_url=self.test_story_url,
+            workspace_root=self.test_workspace_root,
+            progress_callback=self.mock_progress_callback,
+            epub_contents='all'
+        )
+
+        self.mock_epub_generator_instance.generate_epub.assert_called_once()
+        call_args_all = self.mock_epub_generator_instance.generate_epub.call_args
+        progress_data_for_epub_all = call_args_all[0][0]
+
+        self.assertEqual(len(progress_data_for_epub_all['downloaded_chapters']), 3)
+        self.assertEqual(progress_data_for_epub_all['downloaded_chapters'][0]['chapter_title'], "Active Chapter 1")
+        self.assertEqual(progress_data_for_epub_all['downloaded_chapters'][1]['chapter_title'], "Archived Chapter 2")
+        self.assertEqual(progress_data_for_epub_all['downloaded_chapters'][2]['chapter_title'], "Active Chapter 3")
+
+
 if __name__ == '__main__':
     unittest.main()

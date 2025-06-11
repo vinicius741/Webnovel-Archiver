@@ -323,6 +323,7 @@ def generate_story_card_html(story_data, format_timestamp_func):
     backup_last_success_ts = html.escape(story_data.get('formatted_last_successful_backup_ts') or 'N/A') # Already uses 'or'
     backup_files_detail_list = story_data.get('backup_files_status', []) # Not escaped directly, handled by generate_backup_files_html
     last_updated = html.escape(story_data.get('formatted_last_updated_ts') or 'N/A') # Already uses 'or'
+    chapters_for_report = story_data.get('chapters_for_report', []) # Get the new chapter data
 
     # Data attributes for JS (raw values are fine, but escape them for safety in attributes)
     # Apply `or ''` pattern for data attributes to ensure they are strings.
@@ -338,6 +339,39 @@ def generate_story_card_html(story_data, format_timestamp_func):
 
     epub_list_html = generate_epub_list_html(epub_files_list, story_id_for_epub_toggle)
     story_id_for_modal = story_id_for_epub_toggle # Re-use sanitized ID
+
+    # Generate HTML for chapter list
+    chapters_html = ""
+    if chapters_for_report:
+        chapter_items = []
+        for chapter in chapters_for_report:
+            title = html.escape(chapter.get('title', 'Untitled Chapter'))
+            url = html.escape(chapter.get('url', '#'))
+            status = chapter.get('status', 'active')
+            downloaded = chapter.get('downloaded', False)
+
+            status_marker = ""
+            if status == 'archived':
+                status_marker = " [Archived]"
+
+            # Display link if URL exists, otherwise just title. Add downloaded status.
+            # Add class for styling based on status if needed later.
+            download_status_display = " (Downloaded)" if downloaded else " (Not Downloaded)"
+            if url and url != '#':
+                chapter_items.append(f"<li><a href=\"{url}\" target=\"_blank\">{title}</a>{status_marker}{download_status_display}</li>")
+            else:
+                chapter_items.append(f"<li>{title}{status_marker}{download_status_display}</li>")
+
+        if chapter_items:
+            chapters_html = f"""
+            <p class="section-title">Chapters ({len(chapters_for_report)} total):</p>
+            <ul class="file-list chapter-list">{''.join(chapter_items)}</ul>
+            """
+        else:
+            chapters_html = "<p class=\"section-title\">Chapters:</p><p class=\"no-items\">No chapter details available.</p>"
+    else:
+        chapters_html = "<p class=\"section-title\">Chapters:</p><p class=\"no-items\">No chapter details available.</p>"
+
 
     card_html = f"""
     <div class="story-card" data-title="{data_title}" data-author="{data_author}" data-status="{data_status}" data-last-updated="{data_last_updated}" data-progress="{data_progress}">
@@ -364,6 +398,8 @@ def generate_story_card_html(story_data, format_timestamp_func):
             <p>{progress_text}</p>
             <p><strong>Story Status:</strong> <span class="badge status-{status_class}">{status_display_text}</span></p>
 
+            {chapters_html}
+
             <p class="section-title">Local EPUBs (Generated: {epub_gen_ts}):</p>
             {epub_list_html}
 
@@ -385,18 +421,59 @@ def process_story_for_report(progress_data, workspace_root):
     logger.debug(f"Processing story for report: {progress_data.get('story_id')}")
     story_id = progress_data.get('story_id')
 
-    # Download Progress
-    downloaded_chapters_list = progress_data.get('downloaded_chapters', [])
-    downloaded_chapters_count = len(downloaded_chapters_list)
-    total_chapters = progress_data.get('estimated_total_chapters_source')
+    # Download Progress & Chapter Status Analysis
+    chapters = progress_data.get('chapters', [])
+    downloaded_chapters_count = 0
+    active_chapters_count = 0
+    archived_chapters_count = 0
+    processed_chapters_for_report = []
+
+    if chapters: # If 'chapters' list exists and is not empty
+        for chapter in chapters:
+            is_downloaded = chapter.get('content_file') is not None # Assuming content_file means downloaded
+            if is_downloaded:
+                downloaded_chapters_count +=1
+
+            status = chapter.get('status', 'active') # Default to active if status is missing
+            if status == 'archived':
+                archived_chapters_count += 1
+            elif is_downloaded: # Count as active only if downloaded and not archived
+                active_chapters_count +=1
+
+            processed_chapters_for_report.append({
+                'title': chapter.get('title', 'Untitled Chapter'),
+                'url': chapter.get('url'),
+                'status': status,
+                'downloaded': is_downloaded
+            })
+    else: # Fallback to using 'downloaded_chapters' if 'chapters' is not available
+        downloaded_chapters_list = progress_data.get('downloaded_chapters', [])
+        downloaded_chapters_count = len(downloaded_chapters_list)
+        # In this fallback, we can't determine active/archived status accurately
+        # We might assume all downloaded are active if no other info
+        active_chapters_count = downloaded_chapters_count
+
+    total_chapters_source = progress_data.get('estimated_total_chapters_source') # From source (e.g. RoyalRoad)
+
+    # If total_chapters_source is None, use the count of chapters from the 'chapters' list if available
+    # This provides a more accurate total if the source estimate is missing but we have a full chapter list
+    display_total_chapters = total_chapters_source
+    if display_total_chapters is None and chapters:
+        display_total_chapters = len(chapters)
+    elif display_total_chapters is None: # Still None, means no source estimate and no 'chapters' list
+        display_total_chapters = downloaded_chapters_count # Best guess is the number of downloaded chapters
+
     progress_percentage = 0
-    progress_text = f"{downloaded_chapters_count} / {total_chapters if total_chapters is not None else 'N/A'} chapters"
-    if total_chapters and total_chapters > 0: # Check if total_chapters is a positive integer
-        progress_percentage = int((downloaded_chapters_count / total_chapters) * 100)
-    elif (total_chapters == 0 or total_chapters is None) and downloaded_chapters_count > 0:
-        progress_text += " (total unknown)"
-    elif (total_chapters == 0 or total_chapters is None) and downloaded_chapters_count == 0:
-        progress_text = "0 chapters (total unknown)"
+    if display_total_chapters and display_total_chapters > 0:
+        progress_percentage = int((downloaded_chapters_count / display_total_chapters) * 100)
+
+    progress_text = f"{downloaded_chapters_count} / {display_total_chapters if display_total_chapters is not None else 'N/A'} chapters downloaded"
+    if chapters: # Only add active/archived breakdown if we have chapter details
+        progress_text += f" ({active_chapters_count} Active, {archived_chapters_count} Archived)"
+    elif downloaded_chapters_count > 0 and display_total_chapters is None: # Fallback for older progress files
+         progress_text += " (total unknown)"
+    elif downloaded_chapters_count == 0 and display_total_chapters is None:
+         progress_text = "0 chapters (total unknown)"
 
 
     # Story Status
@@ -443,6 +520,9 @@ def process_story_for_report(progress_data, workspace_root):
     last_updated_ts_raw = progress_data.get('last_updated_timestamp')
     formatted_last_updated_ts = format_timestamp(last_updated_ts_raw)
 
+    # Chapters for detailed listing (already processed)
+    # processed_chapters_for_report is defined above
+
     # Other Fields
     cover_image_url = progress_data.get('cover_image_url')
     story_url = progress_data.get('story_url')
@@ -468,6 +548,9 @@ def process_story_for_report(progress_data, workspace_root):
         'story_cloud_folder_id': story_cloud_folder_id,
         'backup_files_status': backup_files_status,
         'formatted_last_updated_ts': formatted_last_updated_ts,
+        'chapters_for_report': processed_chapters_for_report, # Add this line
+        'active_chapters_count': active_chapters_count, # Add this line
+        'archived_chapters_count': archived_chapters_count, # Add this line
     }
 
 def main():

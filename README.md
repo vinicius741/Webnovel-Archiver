@@ -9,6 +9,14 @@ A command-line tool for archiving webnovels from various sources and managing yo
 *   Manage archival progress.
 *   Backup your archived stories to Google Drive.
 
+## Our Philosophy: Preservation-First
+
+Webnovel Archiver is built with a "preservation-first" approach. This means:
+
+*   **Once Archived, Always Kept:** When a chapter is successfully downloaded and added to your local archive, it is considered "archived."
+*   **Resilience to Source Changes:** Even if a chapter is later removed from the original webnovel source by the author or publisher, your archived copy remains untouched in your local storage. The tool will simply mark its status as 'archived' in your `progress.json` to reflect that it's no longer available at the source, but the content itself is preserved.
+*   **Your Data, Your Control:** This philosophy ensures that your collection is protected against content takedowns or website unavailability, safeguarding the stories you've invested time in reading and archiving.
+
 ## Installation
 
 To install the Webnovel Archiver CLI, ensure you have Python 3.7 or higher. You can then install it using pip:
@@ -32,6 +40,21 @@ webnovel-archiver archive-story <STORY_URL> [OPTIONS]
 ```bash
 webnovel-archiver archive-story "https://www.royalroad.com/fiction/xxxxx/some-story-title"
 ```
+
+**Key Options for `archive-story`:**
+
+*   `--epub-contents [all|active-only]`
+    *   Determines which chapters are included in the generated EPUB file(s).
+    *   `all`: Includes all chapters that have been downloaded, regardless of their current status (active or archived). This is useful if you want a complete EPUB of everything you've ever captured for the story.
+    *   `active-only` (Default): Includes only chapters currently marked as 'active'. This means chapters that were once downloaded but have since been marked 'archived' (e.g., because they were removed from the source) will not be included. This is typically what you want for ongoing reading, as it reflects the current state of the story on the source.
+    *   **Example (archive and create EPUB with active chapters only):**
+        ```bash
+        webnovel-archiver archive-story "STORY_URL" --epub-contents active-only
+        ```
+    *   **Example (archive and create EPUB with all ever-downloaded chapters):**
+        ```bash
+        webnovel-archiver archive-story "STORY_URL" --epub-contents all
+        ```
 
 See `webnovel-archiver archive-story --help` for all available options.
 

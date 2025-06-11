@@ -479,11 +479,11 @@ def process_story_for_report(progress_data, workspace_root):
     # Story Status
     next_chapter_url = progress_data.get('next_chapter_to_download_url')
     status = "Ongoing"
-    if total_chapters is not None and downloaded_chapters_count >= total_chapters and not next_chapter_url:
+    if display_total_chapters is not None and downloaded_chapters_count >= display_total_chapters and not next_chapter_url:
         status = "Complete"
-    elif total_chapters is None and not next_chapter_url and downloaded_chapters_count > 0:
+    elif display_total_chapters is None and not next_chapter_url and downloaded_chapters_count > 0:
         status = "Possibly Complete (Total Unknown)"
-    elif not next_chapter_url and downloaded_chapters_count == 0 and total_chapters is None:
+    elif not next_chapter_url and downloaded_chapters_count == 0 and display_total_chapters is None:
         status = "Unknown (No chapters downloaded, total unknown)"
 
     # Local EPUB Paths

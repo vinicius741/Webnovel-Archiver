@@ -33,6 +33,19 @@ def _get_new_progress_structure(story_id: str, story_url: Optional[str] = None) 
         "estimated_total_chapters_source": None,
         "last_downloaded_chapter_url": None,
         "next_chapter_to_download_url": None,
+        # List of dicts, where each dict represents a chapter and its status.
+        # New chapter schema:
+        # {
+        #   "source_chapter_id": "...",  // Unique ID for the chapter from the source website
+        #   "download_order": 1,         // Sequential order in which the chapter was downloaded or should appear
+        #   "chapter_url": "...",        // Full URL to the chapter
+        #   "chapter_title": "...",      // Title of the chapter
+        #   "status": "active",          // 'active' (exists on source) or 'archived' (removed from source)
+        #   "first_seen_on": "YYYY-MM-DDTHH:MM:SSZ", // ISO 8601 timestamp when chapter was first recorded
+        #   "last_checked_on": "YYYY-MM-DDTHH:MM:SSZ",// ISO 8601 timestamp when chapter status was last verified
+        #   "local_raw_filename": "...", // Filename of the raw downloaded chapter content (e.g., .html)
+        #   "local_processed_filename": "..." // Filename of the processed chapter content (e.g., .txt, .xhtml)
+        # }
         "downloaded_chapters": [],
         "last_epub_processing": {
             "timestamp": None,
@@ -274,7 +287,7 @@ if __name__ == '__main__':
 
     rr_url = "https://www.royalroad.com/fiction/117255/rend-a-tale-of-something"
     test_story_id = generate_story_id(url=rr_url)
-    test_workspace = "_test_pm_workspace"
+    test_workspace = os.path.abspath("_test_pm_workspace") # Make workspace path absolute
 
     logger.info(f"Test Story ID: {test_story_id}, Workspace: {test_workspace}")
 
@@ -318,6 +331,37 @@ if __name__ == '__main__':
     assert len(retrieved_epubs) == 1
     assert retrieved_epubs[0]['path'] == epub1_abs_path
 
+    # --- Test downloaded_chapters ---
+    logger.info(f"--- Testing downloaded_chapters section for story {test_story_id} ---")
+    sample_chapter = {
+        "source_chapter_id": "ch123",
+        "download_order": 1,
+        "chapter_url": "http://example.com/chapter/123",
+        "chapter_title": "The First Chapter",
+        "status": "active",
+        "first_seen_on": "2023-01-15T10:00:00Z",
+        "last_checked_on": "2023-01-16T12:00:00Z",
+        "local_raw_filename": "raw_chapter_1.html",
+        "local_processed_filename": "processed_chapter_1.xhtml"
+    }
+    loaded_progress['downloaded_chapters'].append(sample_chapter)
+    save_progress(test_story_id, loaded_progress, workspace_root=test_workspace)
+
+    progress_with_chapter = load_progress(test_story_id, workspace_root=test_workspace)
+    logger.info(f"Progress after adding chapter: {json.dumps(progress_with_chapter['downloaded_chapters'], indent=2)}")
+    assert len(progress_with_chapter['downloaded_chapters']) == 1
+    retrieved_chapter = progress_with_chapter['downloaded_chapters'][0]
+    assert retrieved_chapter['source_chapter_id'] == sample_chapter['source_chapter_id']
+    assert retrieved_chapter['download_order'] == sample_chapter['download_order']
+    assert retrieved_chapter['chapter_url'] == sample_chapter['chapter_url']
+    assert retrieved_chapter['chapter_title'] == sample_chapter['chapter_title']
+    assert retrieved_chapter['status'] == sample_chapter['status']
+    assert retrieved_chapter['first_seen_on'] == sample_chapter['first_seen_on']
+    assert retrieved_chapter['last_checked_on'] == sample_chapter['last_checked_on']
+    assert retrieved_chapter['local_raw_filename'] == sample_chapter['local_raw_filename']
+    assert retrieved_chapter['local_processed_filename'] == sample_chapter['local_processed_filename']
+    logger.info(f"--- Successfully tested downloaded_chapters section for story {test_story_id} ---")
+    # --- End Test downloaded_chapters ---
 
     # Simulate a cloud backup operation
     backup_status_update = {
@@ -378,7 +422,7 @@ if __name__ == '__main__':
 
     # 1. Setup progress_data with old format epub entries
     old_format_story_id = "story_with_old_epubs"
-    old_format_workspace = "_test_pm_old_format_workspace"
+    old_format_workspace = os.path.abspath("_test_pm_old_format_workspace") # Make workspace path absolute
 
     # Ensure workspace and ebook directory exist for this test
     old_format_ebook_dir = os.path.join(old_format_workspace, EBOOKS_DIR, old_format_story_id)

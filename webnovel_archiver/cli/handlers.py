@@ -35,7 +35,8 @@ def archive_story_handler(
     force_reprocessing: bool,
     cli_sentence_removal_file: Optional[str], # Renamed from sentence_removal_file
     no_sentence_removal: bool,
-    chapters_per_volume: Optional[int]
+    chapters_per_volume: Optional[int],
+    epub_contents: Optional[str] # Added new parameter
 ):
     def display_progress(message: Union[str, Dict[str, Any]]) -> None:
         if isinstance(message, str):
@@ -120,6 +121,7 @@ def archive_story_handler(
             sentence_removal_file=final_sentence_removal_file, # Pass the determined file
             no_sentence_removal=no_sentence_removal, # Pass through the direct flag
             chapters_per_volume=chapters_per_volume,
+            epub_contents=epub_contents, # Pass new parameter
             progress_callback=display_progress
         )
 

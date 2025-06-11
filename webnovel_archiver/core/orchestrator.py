@@ -1,6 +1,7 @@
 import os
 import shutil
 import datetime
+import copy # Added for deepcopy
 from typing import Dict, Any, Optional, Callable, Union # Added Callable and Union
 import requests # For specific exception types like requests.exceptions.RequestException
 
@@ -38,7 +39,8 @@ def archive_story(
     force_reprocessing: bool = False,
     sentence_removal_file: Optional[str] = None, # Will be used fully later
     no_sentence_removal: bool = False,  # Will be used fully later
-    progress_callback: Optional[ProgressCallback] = None
+    progress_callback: Optional[ProgressCallback] = None,
+    epub_contents: Optional[str] = 'all' # Added new parameter
 ) -> Optional[Dict[str, Any]]:
     """
     Orchestrates the archiving process for a given story URL.
@@ -411,8 +413,34 @@ def archive_story(
 
     _call_progress_callback({"status": "info", "message": "Starting EPUB generation..."})
     logger.info(f"Starting EPUB generation for story ID: {s_id}")
+
+    # Filter chapters for EPUB generation based on epub_contents
+    progress_data_for_epub: Dict[str, Any]
+    if epub_contents == 'active-only':
+        logger.info("EPUB generation set to 'active-only', filtering chapters.")
+        _call_progress_callback({"status": "info", "message": "Filtering chapters for EPUB: including 'active' only."})
+        progress_data_for_epub = copy.deepcopy(progress_data)
+
+        original_chapter_count = len(progress_data_for_epub.get("downloaded_chapters", []))
+        active_chapters = [
+            ch for ch in progress_data_for_epub.get("downloaded_chapters", [])
+            if isinstance(ch, dict) and ch.get("status") == "active"
+        ]
+        progress_data_for_epub["downloaded_chapters"] = active_chapters
+        filtered_count = original_chapter_count - len(active_chapters)
+        logger.info(f"Filtered out {filtered_count} non-active chapters for EPUB generation.")
+        _call_progress_callback({"status": "info", "message": f"Filtered out {filtered_count} non-active chapters. Using {len(active_chapters)} for EPUB."})
+    else:
+        logger.info("EPUB generation set to 'all', including all downloaded chapters.")
+        _call_progress_callback({"status": "info", "message": "Including all downloaded chapters in EPUB."})
+        # No need to deepcopy if we are not modifying the chapter list for EPUB generation specifically
+        # However, if EPUBGenerator modifies progress_data internally, a deepcopy might be safer.
+        # For now, assuming EPUBGenerator reads but does not modify progress_data in ways that affect the original.
+        progress_data_for_epub = progress_data
+
+
     epub_generator = EPUBGenerator(workspace_root)
-    generated_epub_files = epub_generator.generate_epub(s_id, progress_data, chapters_per_volume)
+    generated_epub_files = epub_generator.generate_epub(s_id, progress_data_for_epub, chapters_per_volume)
 
     # Initialize progress_data["last_epub_processing"] if it's not a dict
     if not isinstance(progress_data.get("last_epub_processing"), dict):

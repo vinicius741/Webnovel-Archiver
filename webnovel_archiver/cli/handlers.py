@@ -7,7 +7,7 @@ import re # Added for migration_handler
 from typing import Optional, List, Dict, Any, Union # Added Union
 
 # Import existing components
-from webnovel_archiver.core.orchestrator import archive_story as call_orchestrator_archive_story
+from webnovel_archiver.core.orchestrator import archive_story as call_orchestrator_archive_story, PROCESSED_CONTENT_DIR
 from webnovel_archiver.core.config_manager import ConfigManager, DEFAULT_WORKSPACE_PATH
 from webnovel_archiver.core.storage.progress_manager import EBOOKS_DIR as WORKSPACE_EBOOKS_DIR, ARCHIVAL_STATUS_DIR as WORKSPACE_ARCHIVAL_STATUS_DIR
 # Using 'as' to keep the constant names the same as they were used throughout the handler code.
@@ -25,9 +25,8 @@ import json # For loading progress.json (though pm.load_progress might abstract 
 
 # Import necessary constants and functions from progress_manager
 from webnovel_archiver.core.storage.progress_manager import (
-    ARCHIVAL_STATUS_DIR,
-    EBOOKS_DIR,
-    PROCESSED_CONTENT_DIR,
+    ARCHIVAL_STATUS_DIR, # Already aliased as WORKSPACE_ARCHIVAL_STATUS_DIR, consider removing direct import if not used elsewhere
+    EBOOKS_DIR, # Already aliased as WORKSPACE_EBOOKS_DIR, consider removing direct import if not used elsewhere
     load_progress, # Already available via pm alias, but explicit import can be clear
     get_progress_filepath # Already available via pm alias
 )

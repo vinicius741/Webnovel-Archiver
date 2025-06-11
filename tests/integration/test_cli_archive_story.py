@@ -10,6 +10,7 @@ from typing import Optional # Added Optional for type hints in mock signatures
 from webnovel_archiver.cli.main import archiver
 # For mocking the actual work if needed, to avoid network calls etc.
 # The target for patching should be where the function is looked up (i.e., in the handlers module)
+from webnovel_archiver.core.config_manager import ConfigManager # Corrected import
 MOCK_ORCHESTRATOR_HANDLER_PATH = "webnovel_archiver.cli.handlers.call_orchestrator_archive_story"
 # To control workspace for tests
 from webnovel_archiver.core.storage.progress_manager import DEFAULT_WORKSPACE_ROOT, ARCHIVAL_STATUS_DIR
@@ -52,7 +53,8 @@ def mock_successful_orchestrator(monkeypatch):
         force_reprocessing: bool = False,
         sentence_removal_file: Optional[str] = None,
         no_sentence_removal: bool = False,
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        epub_contents: Optional[str] = 'all' # Added for new option
     ):
         story_id = "test_story_id_123" # Simplified story_id generation
         effective_title = ebook_title_override if ebook_title_override else "Original Mock Title"
@@ -101,7 +103,8 @@ def mock_successful_orchestrator(monkeypatch):
             "chapters_per_volume_setting": chapters_per_volume,
             "last_epub_processing": {
                 "generated_epub_files": [os.path.join(workspace_root, "ebooks", story_id, effective_title + ".epub")]
-            }
+            },
+            "epub_contents_setting": epub_contents # Added for new option
         }
         # Simulate saving this progress data by the orchestrator
         with open(os.path.join(progress_path, "progress_status.json"), 'w', encoding='utf-8') as f:
@@ -124,8 +127,10 @@ def mock_successful_orchestrator(monkeypatch):
 def test_archive_story_successful_run_default_workspace(runner, mock_successful_orchestrator, temp_workspace, monkeypatch):
     """Test basic successful run using a temporary default workspace."""
     # Patch ConfigManager to use temp_workspace as default
-    mock_cm_instance = mock.Mock()
+    mock_cm_instance = mock.Mock(spec=ConfigManager) # Use spec for better mocking
     mock_cm_instance.get_workspace_path.return_value = temp_workspace
+    mock_cm_instance.get_default_sentence_removal_file.return_value = None # Ensure it returns a valid path or None
+    # get_gdrive_credentials_path and get_gdrive_token_path are not methods of ConfigManager, so remove attempts to mock them.
     mock_cm_constructor = mock.Mock(return_value=mock_cm_instance)
     monkeypatch.setattr("webnovel_archiver.cli.handlers.ConfigManager", mock_cm_constructor)
 
@@ -378,6 +383,7 @@ def test_archive_story_deletion_with_other_options(runner, mock_successful_orche
 # --- New tests for default sentence removal feature ---
 import configparser # Added for new tests
 from pathlib import Path # Added for new tests
+import logging # Added for caplog.set_level
 
 @pytest.fixture
 def setup_config_manager_for_temp_workspace(monkeypatch, temp_workspace):
@@ -481,6 +487,7 @@ def test_scenario_1_use_default_sentence_removal(
     setup_config_manager_for_temp_workspace, caplog
 ):
     story_url = "http://example.com/story-default-sr"
+    caplog.set_level(logging.INFO) # Set caplog level
     config_dir, settings_ini_path, _, live_config_parser = setup_config_manager_for_temp_workspace
 
     # Create default_rules.json
@@ -506,13 +513,14 @@ def test_scenario_1_use_default_sentence_removal(
     args, kwargs = mock_successful_orchestrator.call_args
     assert kwargs['sentence_removal_file'] == str(default_rules_path)
     assert not kwargs['no_sentence_removal']
-    assert f"Using default sentence removal file from config: {str(default_rules_path)}" in result.output # Check log in CLI output
+    assert f"Using default sentence removal file from config: {str(default_rules_path)}" in caplog.text # Check log in caplog
 
 def test_scenario_2_cli_overrides_default(
     runner, mock_successful_orchestrator, temp_workspace,
     setup_config_manager_for_temp_workspace, caplog
 ):
     story_url = "http://example.com/story-cli-overrides"
+    caplog.set_level(logging.INFO) # Set caplog level
     config_dir, settings_ini_path, _, live_config_parser = setup_config_manager_for_temp_workspace
 
     # Create default_rules.json (configured but should be overridden)
@@ -545,13 +553,14 @@ def test_scenario_2_cli_overrides_default(
     args, kwargs = mock_successful_orchestrator.call_args
     assert kwargs['sentence_removal_file'] == str(cli_rules_path)
     assert not kwargs['no_sentence_removal']
-    assert f"Using sentence removal file provided via CLI: {str(cli_rules_path)}" in result.output
+    assert f"Using sentence removal file provided via CLI: {str(cli_rules_path)}" in caplog.text # Check log in caplog
 
 def test_scenario_3_no_sentence_removal_overrides_default(
     runner, mock_successful_orchestrator, temp_workspace,
     setup_config_manager_for_temp_workspace, caplog
 ):
     story_url = "http://example.com/story-no-sr-overrides"
+    caplog.set_level(logging.INFO) # Set caplog level
     config_dir, settings_ini_path, _, live_config_parser = setup_config_manager_for_temp_workspace
 
     # Create default_rules.json (configured but should be overridden by --no-sentence-removal)
@@ -578,13 +587,14 @@ def test_scenario_3_no_sentence_removal_overrides_default(
     args, kwargs = mock_successful_orchestrator.call_args
     assert kwargs['sentence_removal_file'] is None
     assert kwargs['no_sentence_removal'] is True
-    assert "Sentence removal explicitly disabled via --no-sentence-removal flag." in result.output
+    assert "Sentence removal explicitly disabled via --no-sentence-removal flag." in caplog.text # Check log in caplog
 
 def test_scenario_4_default_file_configured_but_not_found(
     runner, mock_successful_orchestrator, temp_workspace,
     setup_config_manager_for_temp_workspace, caplog
 ):
     story_url = "http://example.com/story-default-not-found"
+    caplog.set_level(logging.INFO) # Set caplog level
     config_dir, settings_ini_path, _, live_config_parser = setup_config_manager_for_temp_workspace
 
     # Path to a non-existent default rules file
@@ -605,9 +615,88 @@ def test_scenario_4_default_file_configured_but_not_found(
     args, kwargs = mock_successful_orchestrator.call_args
     assert kwargs['sentence_removal_file'] is None
     assert not kwargs['no_sentence_removal']
-    assert f"Default sentence removal file configured at '{str(non_existent_default_rules_path)}' not found. Proceeding without sentence removal." in result.output
+    assert f"Default sentence removal file configured at '{str(non_existent_default_rules_path)}' not found. Proceeding without sentence removal." in caplog.text # Check log in caplog
 
 # Add more tests:
 # - Invalid story URL (if CLI does any pre-validation, though likely orchestrator handles this)
 # - Non-existent sentence_removal_file (click handles this with type=click.Path(exists=True))
 # - Other combinations of flags.
+
+
+def test_archive_story_epub_contents_option(runner, mock_successful_orchestrator, temp_workspace):
+    """Test the --epub-contents CLI option."""
+
+    # Test Case 1: --epub-contents active-only
+    story_url_active_only = "http://example.com/epub_active_only"
+    workspace_active_only = os.path.join(temp_workspace, "ws_active_only")
+    # No need to os.makedirs for workspace, CLI/orchestrator mock should handle it
+
+    result_active = runner.invoke(archiver, [
+        'archive-story', story_url_active_only,
+        '--output-dir', workspace_active_only,
+        '--epub-contents', 'active-only'
+    ])
+    assert result_active.exit_code == 0, f"CLI errored (active-only): {result_active.output}"
+
+    # Get the call arguments for this specific call
+    # If mock is called multiple times, call_args_list[-1] gets the last one
+    # Or, if the mock is reset/recreated per test, call_args is fine.
+    # Assuming mock_successful_orchestrator is fresh or we check the right call.
+    # For this test structure, mock is fresh per test_... function, but we make multiple invokes.
+    # So, need to check call_args_list.
+
+    # Let's clear mock before the next call to ensure we are checking the right one,
+    # or check the call_args_list. For simplicity here, let's check the last call.
+    # However, it's better practice to reset or use call_args_list.
+    # Since we have multiple calls to the same mock instance within one test function,
+    # we need to inspect call_args_list.
+
+    # Call 1 assertions
+    args_active, kwargs_active = mock_successful_orchestrator.call_args_list[0] # First call
+    assert kwargs_active['story_url'] == story_url_active_only
+    assert kwargs_active['epub_contents'] == 'active-only'
+    progress_file_active = os.path.join(workspace_active_only, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    assert os.path.exists(progress_file_active)
+    with open(progress_file_active, 'r', encoding='utf-8') as f:
+        data_active = json.load(f)
+        assert data_active['epub_contents_setting'] == 'active-only'
+
+    # Test Case 2: --epub-contents all
+    story_url_all = "http://example.com/epub_all"
+    workspace_all = os.path.join(temp_workspace, "ws_all")
+    result_all = runner.invoke(archiver, [
+        'archive-story', story_url_all,
+        '--output-dir', workspace_all,
+        '--epub-contents', 'all'
+    ])
+    assert result_all.exit_code == 0, f"CLI errored (all): {result_all.output}"
+
+    args_all, kwargs_all = mock_successful_orchestrator.call_args_list[1] # Second call
+    assert kwargs_all['story_url'] == story_url_all
+    assert kwargs_all['epub_contents'] == 'all'
+    progress_file_all = os.path.join(workspace_all, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    assert os.path.exists(progress_file_all)
+    with open(progress_file_all, 'r', encoding='utf-8') as f:
+        data_all = json.load(f)
+        assert data_all['epub_contents_setting'] == 'all'
+
+    # Test Case 3: Default behavior (no --epub-contents flag)
+    story_url_default = "http://example.com/epub_default"
+    workspace_default = os.path.join(temp_workspace, "ws_default")
+    result_default = runner.invoke(archiver, [
+        'archive-story', story_url_default,
+        '--output-dir', workspace_default
+    ])
+    assert result_default.exit_code == 0, f"CLI errored (default): {result_default.output}"
+
+    args_default, kwargs_default = mock_successful_orchestrator.call_args_list[2] # Third call
+    assert kwargs_default['story_url'] == story_url_default
+    assert kwargs_default['epub_contents'] == 'all' # Default should be 'all'
+    progress_file_default = os.path.join(workspace_default, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    assert os.path.exists(progress_file_default)
+    with open(progress_file_default, 'r', encoding='utf-8') as f:
+        data_default = json.load(f)
+        assert data_default['epub_contents_setting'] == 'all'
+
+    # Ensure the mock was called three times in total for this test
+    assert mock_successful_orchestrator.call_count == 3

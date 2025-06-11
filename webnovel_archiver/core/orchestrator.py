@@ -211,192 +211,255 @@ def archive_story(
 
                 if os.path.exists(raw_file_expected_path) and os.path.exists(processed_file_expected_path):
                     logger.info(f"Skipping chapter (already processed, files exist): {chapter_info.chapter_title} (URL: {chapter_info.chapter_url})")
-                    processed_chapters_for_this_run.append(existing_chapter_details) # Add existing valid entry
-
-                    # Update progress for last/next chapter based on this skipped chapter
-                    progress_data["last_downloaded_chapter_url"] = chapter_info.chapter_url
-                    # Ensure chapters_info_list is the source list
-                    # Need to find the index of chapter_info in chapters_info_list
-                    current_idx_in_list = -1
-                    for idx, chap_in_list in enumerate(chapters_info_list):
-                        if chap_in_list.chapter_url == chapter_info.chapter_url:
-                            current_idx_in_list = idx
-                            break
-
-                    if current_idx_in_list != -1 and current_idx_in_list < len(chapters_info_list) - 1:
-                        progress_data["next_chapter_to_download_url"] = chapters_info_list[current_idx_in_list + 1].chapter_url
-                    else:
-                        progress_data["next_chapter_to_download_url"] = None
-                    continue # Move to the next chapter in chapters_info_list
+                    # Instead of appending to processed_chapters_for_this_run directly,
+                    # we will handle this in the new reconciliation logic.
+                    # For now, this path means the chapter is considered "processed" for this run.
+                    # We need to ensure it's correctly added to updated_downloaded_chapters later.
+                    # The old logic of processed_chapters_for_this_run is being replaced.
                 else:
                     logger.info(f"Chapter {chapter_info.chapter_title} found in progress, but local files are missing. Reprocessing.")
             else:
                 logger.info(f"Chapter {chapter_info.chapter_title} found in progress, but file records are incomplete. Reprocessing.")
+        # The main loop for processing chapters will be replaced by the new logic below.
 
-        raw_html_content = None
-        try:
-            raw_html_content = fetcher.download_chapter_content(chapter_info.chapter_url)
-            # RoyalRoadFetcher's download_chapter_content now raises HTTPError for network/HTTP issues
-            # or returns "Chapter content not found." if the div is missing.
-            if raw_html_content == "Chapter content not found.":
-                logger.warning(f"Content div not found for chapter: {chapter_info.chapter_title}. Skipping.")
+    # New chapter processing logic starts here
+    updated_downloaded_chapters = []
+    current_time_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    source_chapter_urls = {ch_info.chapter_url for ch_info in chapters_info_list}
+    existing_chapter_urls_in_progress = {ch_entry["chapter_url"] for ch_entry in progress_data.get("downloaded_chapters", []) if isinstance(ch_entry, dict) and "chapter_url" in ch_entry}
+
+    # Reconcile existing chapters
+    for chapter_entry in progress_data.get("downloaded_chapters", []):
+        if not (isinstance(chapter_entry, dict) and "chapter_url" in chapter_entry):
+            logger.warning(f"Skipping malformed chapter entry in progress: {chapter_entry}")
+            continue
+
+        chapter_url = chapter_entry["chapter_url"]
+        # Ensure 'status' exists, default to 'unknown' or 'active' if not present
+        if 'status' not in chapter_entry:
+            chapter_entry['status'] = 'active' # Default for old entries
+
+        if chapter_url not in source_chapter_urls:
+            if chapter_entry["status"] == "active": # Only change if it was active
+                logger.info(f"Chapter '{chapter_entry.get('chapter_title', chapter_url)}' no longer in source list. Marking as 'archived'.")
+                chapter_entry["status"] = "archived"
                 _call_progress_callback({
-                    "status": "warning",
-                    "message": f"Content not found for chapter: {chapter_info.chapter_title}. Skipping.",
-                    "chapter_title": chapter_info.chapter_title
+                    "status": "info",
+                    "message": f"Chapter '{chapter_entry.get('chapter_title', chapter_url)}' marked as 'archived'.",
+                    "chapter_title": chapter_entry.get('chapter_title', chapter_url)
                 })
-                continue # Skip this chapter, don't add to progress for this run
-        except requests.exceptions.HTTPError as e: # Catch HTTP errors from _fetch_html_content via download_chapter_content
-            logger.error(f"Failed to download chapter: {chapter_info.chapter_title}. HTTP Error: {e}")
+
+        chapter_entry["last_checked_on"] = current_time_iso
+        updated_downloaded_chapters.append(chapter_entry)
+
+    # Process new chapters
+    total_source_chapters = len(chapters_info_list)
+    for i, chapter_info in enumerate(chapters_info_list):
+        _call_progress_callback({
+            "status": "info",
+            "message": f"Checking chapter: {chapter_info.chapter_title} ({i+1}/{total_source_chapters})",
+            "current_chapter_num": i + 1,
+            "total_chapters": total_source_chapters, # This is total source chapters, not just new ones
+            "chapter_title": chapter_info.chapter_title
+        })
+
+        if chapter_info.chapter_url is None:
+            logger.warning(f"Chapter {chapter_info.chapter_title} (Order: {chapter_info.download_order}) has no URL. Skipping.")
             _call_progress_callback({
-                "status": "error",
-                "message": f"Failed to download chapter: {chapter_info.chapter_title}. HTTP Error: {e}",
+                "status": "warning",
+                "message": f"Chapter {chapter_info.chapter_title} has no URL. Skipping.",
                 "chapter_title": chapter_info.chapter_title
             })
-            continue # Skip to the next chapter
-        except Exception as e: # Catch any other unexpected errors during download
-            logger.error(f"An unexpected error occurred while downloading chapter: {chapter_info.chapter_title}. Error: {e}")
-            _call_progress_callback({
-                "status": "error",
-                "message": f"An unexpected error occurred while downloading chapter: {chapter_info.chapter_title}. Error: {e}",
-                "chapter_title": chapter_info.chapter_title
-            })
-            continue # Skip to the next chapter
+            continue
 
-        # At this point, raw_html_content should be valid HTML string if no exception/skip
-        raw_filename = f"chapter_{str(chapter_info.download_order).zfill(5)}_{chapter_info.source_chapter_id}.html"
-        raw_file_directory = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id)
-        os.makedirs(raw_file_directory, exist_ok=True)
-        raw_filepath = os.path.join(raw_file_directory, raw_filename)
+        # If chapter is new or needs reprocessing (e.g. due to missing files, or force_reprocessing)
+        needs_processing = False
+        existing_entry_for_url = next((ch for ch in updated_downloaded_chapters if ch["chapter_url"] == chapter_info.chapter_url), None)
 
-        try:
-            with open(raw_filepath, 'w', encoding='utf-8') as f:
-                f.write(raw_html_content)
-            logger.info(f"Successfully saved raw content to: {raw_filepath}")
+        if chapter_info.chapter_url not in existing_chapter_urls_in_progress:
+            logger.info(f"New chapter detected: {chapter_info.chapter_title} (URL: {chapter_info.chapter_url})")
+            needs_processing = True
+        elif force_reprocessing:
+            logger.info(f"Force reprocessing chapter: {chapter_info.chapter_title}")
+            needs_processing = True
+            # If force reprocessing, we might want to clear old file references if they change
+            if existing_entry_for_url: # Should exist if we are here due to force_reprocessing an existing chapter
+                existing_entry_for_url.pop("local_raw_filename", None)
+                existing_entry_for_url.pop("local_processed_filename", None)
+        elif existing_entry_for_url:
+            # Check for missing files for existing (non-new) chapters if not force_reprocessing
+            raw_filename = existing_entry_for_url.get("local_raw_filename")
+            processed_filename = existing_entry_for_url.get("local_processed_filename")
+            if not raw_filename or not processed_filename or \
+               not os.path.exists(os.path.join(workspace_root, RAW_CONTENT_DIR, s_id, raw_filename)) or \
+               not os.path.exists(os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id, processed_filename)):
+                logger.info(f"Files missing for existing chapter '{chapter_info.chapter_title}'. Reprocessing.")
+                needs_processing = True
+            else:
+                logger.info(f"Chapter '{chapter_info.chapter_title}' already processed and files exist. Skipping download and processing.")
+                # Ensure 'status' is active if it was previously processed and files are okay
+                if existing_entry_for_url["status"] != "active": # e.g. if it was 'archived' but reappeared
+                     existing_entry_for_url["status"] = "active"
+                     logger.info(f"Chapter '{chapter_info.chapter_title}' status updated to 'active' as it reappeared in source.")
+                # last_checked_on was already updated for all existing chapters earlier.
+
+        if needs_processing:
+            logger.info(f"Processing chapter: {chapter_info.chapter_title} (URL: {chapter_info.chapter_url})")
             _call_progress_callback({
                 "status": "info",
-                "message": f"Successfully saved raw content for chapter: {chapter_info.chapter_title}",
+                "message": f"Processing chapter: {chapter_info.chapter_title}",
                 "chapter_title": chapter_info.chapter_title
             })
-        except IOError as e:
-            logger.error(f"Error saving raw content for {chapter_info.chapter_title} to {raw_filepath}: {e}")
-            _call_progress_callback({
-                "status": "error",
-                "message": f"Error saving raw content for chapter: {chapter_info.chapter_title}. Error: {e}",
-                "chapter_title": chapter_info.chapter_title
-            })
-            continue # If saving raw content fails, skip this chapter for progress
 
-        # Clean HTML
-        logger.info(f"Cleaning HTML for: {chapter_info.chapter_title}")
-        # Assuming RoyalRoad for now
-        cleaned_html_content = html_cleaner.clean_html(raw_html_content, source_site="royalroad") # Or other source_site
-
-        if sentence_removal_file and not no_sentence_removal:
+            raw_html_content = None
             try:
-                logger.info(f"Attempting to apply sentence removal for chapter '{chapter_info.chapter_title}' using config: {sentence_removal_file}")
-                # Instantiate SentenceRemover for each chapter if config could change per story,
-                # or instantiate once outside the loop if config is global for the run.
-                # For now, let's assume it's safe to instantiate here or it's lightweight.
-                # If SentenceRemover's init is expensive and config is fixed per run, optimize later.
-                remover = SentenceRemover(sentence_removal_file)
+                raw_html_content = fetcher.download_chapter_content(chapter_info.chapter_url)
+                if raw_html_content == "Chapter content not found.":
+                    logger.warning(f"Content div not found for chapter: {chapter_info.chapter_title}. Skipping processing.")
+                    _call_progress_callback({
+                        "status": "warning",
+                        "message": f"Content not found for chapter: {chapter_info.chapter_title}. Skipping.",
+                        "chapter_title": chapter_info.chapter_title
+                    })
+                    # If it was an existing chapter that failed now, its status might need adjustment
+                    # or it's kept as is from the reconciliation phase. For new chapters, they just don't get added.
+                    if existing_entry_for_url: # If it was an existing chapter
+                        existing_entry_for_url["last_checked_on"] = current_time_iso # Ensure it's updated
+                        # It will be added to updated_downloaded_chapters via the reconciliation loop's copy
+                        # No new entry is created or added here.
+                    continue # Skip this chapter
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"Failed to download chapter: {chapter_info.chapter_title}. HTTP Error: {e}")
+                _call_progress_callback({"status": "error", "message": f"Failed to download chapter: {chapter_info.chapter_title}. HTTP Error: {e}", "chapter_title": chapter_info.chapter_title})
+                if existing_entry_for_url: existing_entry_for_url["last_checked_on"] = current_time_iso
+                continue
+            except Exception as e:
+                logger.error(f"An unexpected error occurred while downloading chapter: {chapter_info.chapter_title}. Error: {e}")
+                _call_progress_callback({"status": "error", "message": f"An unexpected error while downloading: {e}", "chapter_title": chapter_info.chapter_title})
+                if existing_entry_for_url: existing_entry_for_url["last_checked_on"] = current_time_iso
+                continue
 
-                if remover.remove_sentences or remover.remove_patterns: # Check if remover has rules
-                    temp_cleaned_html_content = remover.remove_sentences_from_html(cleaned_html_content)
-                    if temp_cleaned_html_content != cleaned_html_content:
+            raw_filename = f"chapter_{str(chapter_info.download_order).zfill(5)}_{chapter_info.source_chapter_id}.html"
+            raw_file_directory = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id)
+            os.makedirs(raw_file_directory, exist_ok=True)
+            raw_filepath = os.path.join(raw_file_directory, raw_filename)
+
+            try:
+                with open(raw_filepath, 'w', encoding='utf-8') as f:
+                    f.write(raw_html_content)
+                logger.info(f"Saved raw content for {chapter_info.chapter_title} to {raw_filepath}")
+            except IOError as e:
+                logger.error(f"Error saving raw content for {chapter_info.chapter_title} to {raw_filepath}: {e}")
+                if existing_entry_for_url: existing_entry_for_url["last_checked_on"] = current_time_iso
+                continue
+
+            cleaned_html_content = html_cleaner.clean_html(raw_html_content, source_site="royalroad") # Adapt as needed
+
+            if sentence_removal_file and not no_sentence_removal:
+                try:
+                    remover = SentenceRemover(sentence_removal_file)
+                    if remover.remove_sentences or remover.remove_patterns:
+                        cleaned_html_content = remover.remove_sentences_from_html(cleaned_html_content)
                         logger.info(f"Sentence removal applied to chapter: {chapter_info.chapter_title}")
-                        _call_progress_callback({
-                            "status": "info",
-                            "message": f"Applied sentence removal for chapter: {chapter_info.chapter_title}",
-                            "chapter_title": chapter_info.chapter_title
-                        })
-                        cleaned_html_content = temp_cleaned_html_content
+                        progress_data["sentence_removal_config_used"] = sentence_removal_file
                     else:
                         logger.info(f"No sentences matched for removal in chapter: {chapter_info.chapter_title}")
-                    # Record config used only if remover was successfully initialized and had rules.
-                    # This assumes progress_data is for the whole story, so this might overwrite.
-                    # Consider if this status should be per-chapter or per-story.
-                    # For now, per-story: last used config.
-                    progress_data["sentence_removal_config_used"] = sentence_removal_file
-                else:
-                    logger.info(f"Sentence remover for '{sentence_removal_file}' loaded no rules. Skipping removal for chapter: {chapter_info.chapter_title}")
-                    # If it's set to a file path but that file had no rules, we might want to reflect that.
-                    # progress_data["sentence_removal_config_used"] = f"{sentence_removal_file} (no rules loaded)"
-                    # For now, if no rules, it's like no removal happened, so None or previous value is fine.
-                    # Let's set it to the file if provided, and rely on logs for "no rules loaded"
-                    progress_data["sentence_removal_config_used"] = sentence_removal_file
+                        progress_data["sentence_removal_config_used"] = sentence_removal_file # Still note config was checked
+                except Exception as e:
+                    logger.error(f"Failed to apply sentence removal for chapter '{chapter_info.chapter_title}': {e}", exc_info=True)
+                    progress_data["sentence_removal_config_used"] = f"Error with {sentence_removal_file}: {e}"
+            elif no_sentence_removal:
+                progress_data["sentence_removal_config_used"] = "Disabled via --no-sentence-removal"
 
-            except Exception as e:
-                logger.error(f"Failed to apply sentence removal for chapter '{chapter_info.chapter_title}': {e}", exc_info=True)
-                # Record error in using the config.
-                progress_data["sentence_removal_config_used"] = f"Error with {sentence_removal_file}: {e}"
-        elif no_sentence_removal:
-            logger.info("Sentence removal explicitly disabled via --no-sentence-removal.")
-            progress_data["sentence_removal_config_used"] = "Disabled via --no-sentence-removal"
-        else:
-            # sentence_removal_file is None, so no removal requested.
-            # progress_data["sentence_removal_config_used"] remains None (its default).
-            pass
 
-        processed_filename = f"chapter_{str(chapter_info.download_order).zfill(5)}_{chapter_info.source_chapter_id}_clean.html"
-        processed_file_directory = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id)
-        os.makedirs(processed_file_directory, exist_ok=True)
-        processed_filepath = os.path.join(processed_file_directory, processed_filename)
+            processed_filename = f"chapter_{str(chapter_info.download_order).zfill(5)}_{chapter_info.source_chapter_id}_clean.html"
+            processed_file_directory = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id)
+            os.makedirs(processed_file_directory, exist_ok=True)
+            processed_filepath = os.path.join(processed_file_directory, processed_filename)
 
-        try:
-            with open(processed_filepath, 'w', encoding='utf-8') as f:
-                f.write(cleaned_html_content)
-            logger.info(f"Successfully saved processed content to: {processed_filepath}")
-            _call_progress_callback({
-                "status": "info",
-                "message": f"Successfully saved processed content for chapter: {chapter_info.chapter_title}",
-                "chapter_title": chapter_info.chapter_title
-            })
-        except IOError as e:
-            logger.error(f"Error saving processed content for {chapter_info.chapter_title} to {processed_filepath}: {e}")
-            _call_progress_callback({
-                "status": "error",
-                "message": f"Error saving processed content for chapter: {chapter_info.chapter_title}. Error: {e}",
-                "chapter_title": chapter_info.chapter_title
-            })
-            # If processed saving fails, we might still want to record the raw download.
-            # For this iteration, let's make processed_filename None if saving it failed.
-            processed_filename = None
+            try:
+                with open(processed_filepath, 'w', encoding='utf-8') as f:
+                    f.write(cleaned_html_content)
+                logger.info(f"Saved processed content for {chapter_info.chapter_title} to {processed_filepath}")
+            except IOError as e:
+                logger.error(f"Error saving processed content for {chapter_info.chapter_title} to {processed_filepath}: {e}")
+                processed_filename = None # Mark as None if saving failed
 
-        # Add details of successfully processed chapter to current run's list
-        # Only add chapter to progress if raw content was successfully saved
-        # and processed content saving was attempted (even if it failed, processed_filename would be None)
-        chapter_detail_entry = {
-            "source_chapter_id": chapter_info.source_chapter_id,
-            "download_order": chapter_info.download_order,
-            "chapter_url": chapter_info.chapter_url,
-            "chapter_title": chapter_info.chapter_title,
-            "local_raw_filename": raw_filename,
-            "local_processed_filename": processed_filename,
-            "download_timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-        }
-        processed_chapters_for_this_run.append(chapter_detail_entry)
+            # Update or create chapter entry
+            if existing_entry_for_url: # If we are reprocessing an existing chapter
+                chapter_detail_entry = existing_entry_for_url
+                chapter_detail_entry["status"] = "active" # Ensure it's active after reprocessing
+                chapter_detail_entry["download_order"] = chapter_info.download_order # Update order if it changed
+                chapter_detail_entry["chapter_title"] = chapter_info.chapter_title # Update title if it changed
+                # first_seen_on remains from its original addition
+            else: # New chapter
+                chapter_detail_entry = {
+                    "source_chapter_id": chapter_info.source_chapter_id,
+                    "chapter_url": chapter_info.chapter_url,
+                    "first_seen_on": current_time_iso,
+                    # Add to updated_downloaded_chapters directly if it's truly new
+                }
+                updated_downloaded_chapters.append(chapter_detail_entry)
 
-        # Update last downloaded and next to download (simplified for linear processing)
-        # These are updated per successfully processed chapter in this run.
-        if processed_chapters_for_this_run: # If list is not empty
-            progress_data["last_downloaded_chapter_url"] = processed_chapters_for_this_run[-1]["chapter_url"]
+            # Common fields for both new and reprocessed existing chapters
+            chapter_detail_entry["download_order"] = chapter_info.download_order
+            chapter_detail_entry["chapter_title"] = chapter_info.chapter_title
+            chapter_detail_entry["local_raw_filename"] = raw_filename
+            chapter_detail_entry["local_processed_filename"] = processed_filename
+            chapter_detail_entry["download_timestamp"] = current_time_iso # Timestamp of this processing action
+            chapter_detail_entry["last_checked_on"] = current_time_iso
+            chapter_detail_entry["status"] = "active"
 
-        # Determine next chapter URL based on the original full list
-        # Need to find the index of chapter_info in chapters_info_list
-        current_chapter_index_in_full_list = -1
-        for idx, chap_in_list in enumerate(chapters_info_list):
-            if chap_in_list.chapter_url == chapter_info.chapter_url:
-                current_chapter_index_in_full_list = idx
-                break
 
-        if current_chapter_index_in_full_list != -1 and current_chapter_index_in_full_list < len(chapters_info_list) - 1:
-            progress_data["next_chapter_to_download_url"] = chapters_info_list[current_chapter_index_in_full_list + 1].chapter_url
-        else:
-            progress_data["next_chapter_to_download_url"] = None
+            # Update last/next downloaded chapter URLs (simplified)
+            # This part needs to be accurate based on the full, ordered list from source
+            current_chapter_index_in_source_list = chapters_info_list.index(chapter_info)
+            progress_data["last_downloaded_chapter_url"] = chapter_info.chapter_url # Last processed in this run
+            if current_chapter_index_in_source_list < len(chapters_info_list) - 1:
+                progress_data["next_chapter_to_download_url"] = chapters_info_list[current_chapter_index_in_source_list + 1].chapter_url
+            else:
+                progress_data["next_chapter_to_download_url"] = None
+        # else: chapter already processed and files are fine, or it's an old chapter that's now archived.
+        # Its entry in updated_downloaded_chapters (copied from existing) has already been updated (status, last_checked_on).
 
-    # Update the main downloaded_chapters list in progress_data.
-    progress_data["downloaded_chapters"] = processed_chapters_for_this_run
+    # Ensure downloaded_chapters is sorted by download_order as expected by EPUB generator
+    # The reconciliation and new chapter processing might alter order if not careful.
+    # Best to sort based on the order from the source (chapters_info_list)
+    source_url_to_order_map = {info.chapter_url: info.download_order for info in chapters_info_list}
+
+    # Create a dictionary for quick lookup of chapters in updated_downloaded_chapters by URL
+    processed_chapters_map = {ch["chapter_url"]: ch for ch in updated_downloaded_chapters}
+
+    # Build the final sorted list based on chapters_info_list from the source
+    final_sorted_chapters = []
+    for chapter_info_from_source in chapters_info_list:
+        if chapter_info_from_source.chapter_url in processed_chapters_map:
+            # If chapter from source is in our processed map, use its latest data
+            chapter_entry = processed_chapters_map[chapter_info_from_source.chapter_url]
+            # Ensure download_order and title are updated from source if they changed
+            chapter_entry["download_order"] = chapter_info_from_source.download_order
+            chapter_entry["chapter_title"] = chapter_info_from_source.chapter_title
+            final_sorted_chapters.append(chapter_entry)
+            # Remove from map to identify chapters in progress not in source later
+            del processed_chapters_map[chapter_info_from_source.chapter_url]
+
+    # Add any remaining chapters from processed_chapters_map (these are chapters in progress but no longer in source, already marked as 'archived')
+    # These should already be in final_sorted_chapters if they were handled by the reconciliation loop and picked up from updated_downloaded_chapters.
+    # However, to be safe and ensure they are included if they were somehow missed by the source iteration:
+    for archived_chapter_url, archived_chapter_entry in processed_chapters_map.items():
+        if archived_chapter_entry.get("status") == "archived":
+            # It's important to decide where these should go in the sort order.
+            # Original download_order is probably best.
+            final_sorted_chapters.append(archived_chapter_entry)
+            logger.info(f"Ensuring archived chapter '{archived_chapter_entry.get('chapter_title', archived_chapter_url)}' is in the final list.")
+
+    # Sort the final list by 'download_order' to ensure consistency
+    final_sorted_chapters.sort(key=lambda ch: ch.get("download_order", float('inf')))
+
+
+    progress_data["downloaded_chapters"] = final_sorted_chapters
+    # progress_data["downloaded_chapters"] = updated_downloaded_chapters
+    # The old processed_chapters_for_this_run is no longer used.
 
     # 5. EPUB Generation
     if ebook_title_override:

@@ -798,18 +798,25 @@ def handle_restore_from_epubs():
             with zipfile.ZipFile(epub_path, 'r') as epub_archive:
                 all_files_in_epub = epub_archive.namelist()
 
+                excluded_structural_files = ['nav.xhtml', 'toc.xhtml', 'cover.xhtml', 'titlepage.xhtml', 'copyright.xhtml', 'landmarks.xhtml', 'loitoc.xhtml']
+
                 chapter_patterns = [
-                    (lambda f: f.lower().startswith('oebps/chapter') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OEBPS/chapter*.xhtml/html"),
-                    (lambda f: f.lower().startswith('ops/chapter') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OPS/chapter*.xhtml/html"),
-                    (lambda f: f.lower().startswith('oebps/item') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OEBPS/item*.xhtml/html"),
-                    (lambda f: f.lower().startswith('ops/item') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OPS/item*.xhtml/html"),
-                    (lambda f: f.lower().startswith('oebps/page') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OEBPS/page*.xhtml/html"),
-                    (lambda f: f.lower().startswith('ops/page') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "OPS/page*.xhtml/html"),
-                    (lambda f: f.lower().startswith('xhtml/') and f.lower().endswith('.xhtml'), "xhtml/*.xhtml"),
-                    (lambda f: f.lower().startswith('html/') and f.lower().endswith('.html'), "html/*.html"),
-                    (lambda f: (f.lower().startswith('oebps/') or f.lower().startswith('ops/')) and f.lower().endswith('.xhtml'), "OEBPS/*.xhtml or OPS/*.xhtml"),
-                    (lambda f: (f.lower().startswith('oebps/') or f.lower().startswith('ops/')) and f.lower().endswith('.html'), "OEBPS/*.html or OPS/*.html"),
-                    (lambda f: not f.lower().startswith('meta-inf/') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')), "Non-META-INF *.xhtml/html (last resort)"),
+                    # More specific patterns first
+                    (lambda f: f.lower().startswith('oebps/chapter') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')) and os.path.basename(f.lower()) not in excluded_structural_files, "OEBPS/chapter*.xhtml/html (excluding structural)"),
+                    (lambda f: f.lower().startswith('ops/chapter') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')) and os.path.basename(f.lower()) not in excluded_structural_files, "OPS/chapter*.xhtml/html (excluding structural)"),
+                    (lambda f: f.lower().startswith('oebps/item') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')) and os.path.basename(f.lower()) not in excluded_structural_files, "OEBPS/item*.xhtml/html (excluding structural)"),
+                    (lambda f: f.lower().startswith('ops/item') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')) and os.path.basename(f.lower()) not in excluded_structural_files, "OPS/item*.xhtml/html (excluding structural)"),
+                    (lambda f: f.lower().startswith('oebps/page') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')) and os.path.basename(f.lower()) not in excluded_structural_files, "OEBPS/page*.xhtml/html (excluding structural)"),
+                    (lambda f: f.lower().startswith('ops/page') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')) and os.path.basename(f.lower()) not in excluded_structural_files, "OPS/page*.xhtml/html (excluding structural)"),
+                    (lambda f: f.lower().startswith('xhtml/') and f.lower().endswith('.xhtml') and os.path.basename(f.lower()) not in excluded_structural_files, "xhtml/*.xhtml (excluding structural)"),
+                    (lambda f: f.lower().startswith('html/') and f.lower().endswith('.html') and os.path.basename(f.lower()) not in excluded_structural_files, "html/*.html (excluding structural)"),
+
+                    # Broader patterns that are more likely to catch structural files, so exclusion is important
+                    (lambda f: (f.lower().startswith('oebps/') or f.lower().startswith('ops/')) and f.lower().endswith('.xhtml') and os.path.basename(f.lower()) not in excluded_structural_files, "OEBPS/*.xhtml or OPS/*.xhtml (excluding structural)"),
+                    (lambda f: (f.lower().startswith('oebps/') or f.lower().startswith('ops/')) and f.lower().endswith('.html') and os.path.basename(f.lower()) not in excluded_structural_files, "OEBPS/*.html or OPS/*.html (excluding structural)"),
+
+                    # Last resort pattern with robust exclusion
+                    (lambda f: not f.lower().startswith('meta-inf/') and (f.lower().endswith('.xhtml') or f.lower().endswith('.html')) and os.path.basename(f.lower()) not in excluded_structural_files, "Non-META-INF *.xhtml/html (excluding structural, last resort)"),
                 ]
 
                 chapter_files_in_epub = []

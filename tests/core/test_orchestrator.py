@@ -279,13 +279,24 @@ class TestArchiveStory(unittest.TestCase):
             }]
         }
         self.patchers['load_progress'].return_value = copy.deepcopy(initial_progress)
-        # Files for existing chapter 1 exist, new chapter 2 files do not.
-        self.patchers['os.path.exists'].side_effect = lambda path: \
-            ("ch1_raw.html" in path or "ch1_proc.html" in path) or \
-            not ("chapter_00002" in path) # True for existing, False for new chapter files to trigger download
 
-        # Fetcher returns both chapters (one old, one new)
+        # Files for existing chapter 1 exist, new chapter 2 files do not.
+        # The filename for new chapters is chapter_{order_zfill}_{source_id}.html
+        # New chapter (ch2) will be assigned download_order 2 by orchestrator (max_existing_order 1 + 1)
+        def side_effect_os_path_exists_new_chap(path):
+            if "ch1_raw.html" in path or "ch1_proc.html" in path: # Existing ch1
+                return True
+            # For new chapter 2, files based on assigned download_order 2 and source_id 'c2'
+            if f"chapter_{str(2).zfill(5)}_{new_chapter_info_obj.source_chapter_id}" in path:
+                return False # New files for ch2 do not exist
+            return False # Default for any other unexpected paths
+        self.patchers['os.path.exists'].side_effect = side_effect_os_path_exists_new_chap
+
+        # Fetcher returns both chapters. existing_chapter_info_obj.download_order is 1 (from initial setup).
+        # new_chapter_info_obj.download_order is 2 (as set by fetcher, but orchestrator will re-evaluate for new assignment).
         self.mock_fetcher_instance.get_chapter_urls.return_value = [existing_chapter_info_obj, new_chapter_info_obj]
+        self.mock_fetcher_instance.download_chapter_content.return_value = "Raw Content for New Chapter 2"
+
 
         # Act
         archive_story(
@@ -305,6 +316,7 @@ class TestArchiveStory(unittest.TestCase):
 
         # Chapter 1 (existing)
         self.assertEqual(ch1_entry["status"], "active")
+        self.assertEqual(ch1_entry["download_order"], 1) # Preserved download_order
         self.assertEqual(ch1_entry["first_seen_on"], OLD_TIME_STR) # Preserved
         self.assertEqual(ch1_entry["last_checked_on"], self.FROZEN_TIME_STR) # Updated
         self.assertEqual(ch1_entry["download_timestamp"], OLD_TIME_STR) # Preserved, not re-downloaded
@@ -312,10 +324,14 @@ class TestArchiveStory(unittest.TestCase):
 
         # Chapter 2 (new)
         self.assertEqual(ch2_entry["status"], "active")
+        # New chapter gets download_order = max_existing_order (1) + 1 = 2
+        self.assertEqual(ch2_entry["download_order"], 2)
         self.assertEqual(ch2_entry["first_seen_on"], self.FROZEN_TIME_STR) # New
         self.assertEqual(ch2_entry["last_checked_on"], self.FROZEN_TIME_STR) # New
         self.assertEqual(ch2_entry["download_timestamp"], self.FROZEN_TIME_STR) # New
-        self.assertTrue(ch2_entry["local_raw_filename"].startswith(f"chapter_{str(new_chapter_info_obj.download_order).zfill(5)}"))
+        # Filename based on assigned download_order 2 and source_id 'c2'
+        self.assertTrue(ch2_entry["local_raw_filename"].startswith(f"chapter_{str(2).zfill(5)}_{new_chapter_info_obj.source_chapter_id}"))
+
 
         # Ensure download_chapter_content was called only for the new chapter
         self.mock_fetcher_instance.download_chapter_content.assert_called_once_with(new_chapter_info_obj.chapter_url)
@@ -327,41 +343,41 @@ class TestArchiveStory(unittest.TestCase):
         OLD_TIME_STR_CH2 = "2022-12-31T11:00:00Z" # To be removed
         OLD_TIME_STR_CH3 = "2022-12-31T12:00:00Z"
 
-        chapter_infos_initial = [
-            ChapterInfo(chapter_url="https://test.com/ch1", chapter_title="Chapter 1", download_order=1, source_chapter_id="c1id"),
-            ChapterInfo(chapter_url="https://test.com/ch2", chapter_title="Chapter 2", download_order=2, source_chapter_id="c2id"), # This one will be removed from source
-            ChapterInfo(chapter_url="https://test.com/ch3", chapter_title="Chapter 3", download_order=3, source_chapter_id="c3id"),
-        ]
-        # self.mock_metadata.estimated_total_chapters_source = len(chapter_infos_initial) # Not strictly needed for this test's focus
-
+        # Define ChapterInfo objects for initial state and what fetcher returns
+        ch_info1_obj = ChapterInfo(chapter_url="https://test.com/ch1", chapter_title="Chapter 1", download_order=1, source_chapter_id="c1id")
+        # ch_info2_obj is only in initial_progress, not returned by fetcher later
+        ch_info3_obj = ChapterInfo(chapter_url="https://test.com/ch3", chapter_title="Chapter 3", download_order=3, source_chapter_id="c3id") # Fetcher might re-order this to 2 if it re-evaluates order
 
         initial_progress = {
             "story_id": self.story_id,
             "downloaded_chapters": [
                 {
-                    "source_chapter_id": "c1id", "chapter_url": "https://test.com/ch1", "chapter_title": "Chapter 1", "download_order": 1,
-                    "local_raw_filename": "c1_raw.html", "local_processed_filename": "c1_proc.html", "status": "active",
-                    "first_seen_on": OLD_TIME_STR_CH1, "last_checked_on": OLD_TIME_STR_CH1, "download_timestamp": OLD_TIME_STR_CH1
+                    "source_chapter_id": "c1id", "chapter_url": "https://test.com/ch1", "chapter_title": "Chapter 1 Initial",
+                    "download_order": 1, "local_raw_filename": "c1_raw.html", "local_processed_filename": "c1_proc.html",
+                    "status": "active", "first_seen_on": OLD_TIME_STR_CH1, "last_checked_on": OLD_TIME_STR_CH1, "download_timestamp": OLD_TIME_STR_CH1
                 },
                 {
-                    "source_chapter_id": "c2id", "chapter_url": "https://test.com/ch2", "chapter_title": "Chapter 2", "download_order": 2,
-                    "local_raw_filename": "c2_raw.html", "local_processed_filename": "c2_proc.html", "status": "active",
-                    "first_seen_on": OLD_TIME_STR_CH2, "last_checked_on": OLD_TIME_STR_CH2, "download_timestamp": OLD_TIME_STR_CH2
+                    "source_chapter_id": "c2id", "chapter_url": "https://test.com/ch2", "chapter_title": "Chapter 2 To Archive",
+                    "download_order": 2, "local_raw_filename": "c2_raw.html", "local_processed_filename": "c2_proc.html",
+                    "status": "active", "first_seen_on": OLD_TIME_STR_CH2, "last_checked_on": OLD_TIME_STR_CH2, "download_timestamp": OLD_TIME_STR_CH2
                 },
                 {
-                    "source_chapter_id": "c3id", "chapter_url": "https://test.com/ch3", "chapter_title": "Chapter 3", "download_order": 3,
-                    "local_raw_filename": "c3_raw.html", "local_processed_filename": "c3_proc.html", "status": "active",
-                    "first_seen_on": OLD_TIME_STR_CH3, "last_checked_on": OLD_TIME_STR_CH3, "download_timestamp": OLD_TIME_STR_CH3
+                    "source_chapter_id": "c3id", "chapter_url": "https://test.com/ch3", "chapter_title": "Chapter 3 Initial",
+                    "download_order": 3, "local_raw_filename": "c3_raw.html", "local_processed_filename": "c3_proc.html",
+                    "status": "active", "first_seen_on": OLD_TIME_STR_CH3, "last_checked_on": OLD_TIME_STR_CH3, "download_timestamp": OLD_TIME_STR_CH3
                 }
             ]
         }
         self.patchers['load_progress'].return_value = copy.deepcopy(initial_progress)
         self.patchers['os.path.exists'].return_value = True # All files exist, no reprocessing
 
-        # Fetcher returns only chapter 1 and 3 (chapter 2 removed)
-        chapters_from_source_after_removal = [chapter_infos_initial[0], chapter_infos_initial[2]]
+        # Fetcher returns only chapter 1 and 3 (chapter 2 removed).
+        # Titles might be updated by fetcher. Fetcher also provides its current view of download_order.
+        ch_info1_from_fetcher = ChapterInfo(chapter_url="https://test.com/ch1", chapter_title="Chapter 1 Updated", download_order=1, source_chapter_id="c1id")
+        ch_info3_from_fetcher = ChapterInfo(chapter_url="https://test.com/ch3", chapter_title="Chapter 3 Updated", download_order=2, source_chapter_id="c3id") # Now order 2 from fetcher
+
+        chapters_from_source_after_removal = [ch_info1_from_fetcher, ch_info3_from_fetcher]
         self.mock_fetcher_instance.get_chapter_urls.return_value = chapters_from_source_after_removal
-        # self.mock_metadata.estimated_total_chapters_source = len(chapters_from_source_after_removal)
 
 
         # Act
@@ -377,24 +393,35 @@ class TestArchiveStory(unittest.TestCase):
 
         self.assertEqual(len(saved_data["downloaded_chapters"]), 3) # All 3 chapters should still be in progress
 
-        ch1_entry = next(ch for ch in saved_data["downloaded_chapters"] if ch["chapter_url"] == "https://test.com/ch1")
-        ch2_entry = next(ch for ch in saved_data["downloaded_chapters"] if ch["chapter_url"] == "https://test.com/ch2")
-        ch3_entry = next(ch for ch in saved_data["downloaded_chapters"] if ch["chapter_url"] == "https://test.com/ch3")
+        final_chapters_map = {ch["chapter_url"]: ch for ch in saved_data["downloaded_chapters"]}
 
-        # Chapter 1 (still active)
+        ch1_entry = final_chapters_map["https://test.com/ch1"]
+        ch2_entry = final_chapters_map["https://test.com/ch2"] # The archived chapter
+        ch3_entry = final_chapters_map["https://test.com/ch3"]
+
+        # Chapter 1 (still active, title updated)
         self.assertEqual(ch1_entry["status"], "active")
+        self.assertEqual(ch1_entry["download_order"], 1) # Preserved
+        self.assertEqual(ch1_entry["chapter_title"], "Chapter 1 Updated") # Updated from fetcher
         self.assertEqual(ch1_entry["first_seen_on"], OLD_TIME_STR_CH1) # Preserved
         self.assertEqual(ch1_entry["last_checked_on"], self.FROZEN_TIME_STR) # Updated
+        self.assertEqual(ch1_entry["download_timestamp"], OLD_TIME_STR_CH1) # Not re-downloaded
 
         # Chapter 2 (removed from source, now archived)
         self.assertEqual(ch2_entry["status"], "archived")
+        self.assertEqual(ch2_entry["download_order"], 2) # Preserved
+        self.assertEqual(ch2_entry["chapter_title"], "Chapter 2 To Archive") # Original title
         self.assertEqual(ch2_entry["first_seen_on"], OLD_TIME_STR_CH2) # Preserved
         self.assertEqual(ch2_entry["last_checked_on"], self.FROZEN_TIME_STR) # Updated
 
-        # Chapter 3 (still active)
+        # Chapter 3 (still active, title updated)
         self.assertEqual(ch3_entry["status"], "active")
+        self.assertEqual(ch3_entry["download_order"], 3) # Preserved (original download_order, not fetcher's new order for it)
+        self.assertEqual(ch3_entry["chapter_title"], "Chapter 3 Updated") # Updated from fetcher
         self.assertEqual(ch3_entry["first_seen_on"], OLD_TIME_STR_CH3) # Preserved
         self.assertEqual(ch3_entry["last_checked_on"], self.FROZEN_TIME_STR) # Updated
+        self.assertEqual(ch3_entry["download_timestamp"], OLD_TIME_STR_CH3) # Not re-downloaded
+
 
         self.mock_fetcher_instance.download_chapter_content.assert_not_called() # No downloads as files exist
 
@@ -466,6 +493,103 @@ class TestArchiveStory(unittest.TestCase):
 
         self.mock_fetcher_instance.download_chapter_content.assert_not_called() # No downloads
 
+    def test_archived_and_new_chapters_maintain_unique_download_order(self):
+        """
+        Tests that when a chapter is removed (archived) and a new one is added,
+        download_orders are preserved for existing/archived chapters, and new chapters get a new, unique order.
+        """
+        # Arrange
+        OLD_TIME_CH1 = "2022-12-01T10:00:00Z"
+        OLD_TIME_CH2 = "2022-12-01T11:00:00Z" # For the chapter that will be archived
+
+        # Initial state: Two chapters exist and were processed
+        ch_info1_initial_obj = ChapterInfo(source_chapter_id="src1", chapter_url="url1", chapter_title="Chapter 1 Initial", download_order=1)
+        ch_info2_to_be_archived_obj = ChapterInfo(source_chapter_id="src2", chapter_url="url2", chapter_title="Chapter 2 To Archive", download_order=2)
+
+        initial_progress = {
+            "story_id": self.story_id,
+            "downloaded_chapters": [
+                {
+                    "source_chapter_id": "src1", "chapter_url": "url1", "chapter_title": "Chapter 1 Initial",
+                    "download_order": 1, "status": "active", "local_raw_filename": "ch_00001_src1.html",
+                    "local_processed_filename": "ch_00001_src1_clean.html",
+                    "first_seen_on": OLD_TIME_CH1, "last_checked_on": OLD_TIME_CH1, "download_timestamp": OLD_TIME_CH1
+                },
+                {
+                    "source_chapter_id": "src2", "chapter_url": "url2", "chapter_title": "Chapter 2 To Archive",
+                    "download_order": 2, "status": "active", "local_raw_filename": "ch_00002_src2.html",
+                    "local_processed_filename": "ch_00002_src2_clean.html",
+                    "first_seen_on": OLD_TIME_CH2, "last_checked_on": OLD_TIME_CH2, "download_timestamp": OLD_TIME_CH2
+                }
+            ],
+            "last_downloaded_chapter_url": "url2",
+            "next_chapter_to_download_url": None
+        }
+        self.patchers['load_progress'].return_value = copy.deepcopy(initial_progress)
+
+        # Simulate changes: ch2 removed, ch3 (new) added. Fetcher returns ch1 and ch3.
+        # Fetcher assigns download_order based on its current view of the source.
+        ch_info1_from_fetcher = ChapterInfo(source_chapter_id="src1", chapter_url="url1", chapter_title="Chapter 1 Updated Title", download_order=1)
+        ch_info3_new_from_fetcher = ChapterInfo(source_chapter_id="src3", chapter_url="url3", chapter_title="Chapter 3 New", download_order=2) # Fetcher sees this as the 2nd chapter now
+
+        self.mock_fetcher_instance.get_chapter_urls.return_value = [ch_info1_from_fetcher, ch_info3_new_from_fetcher]
+
+        # Configure os.path.exists: True for ch1's files, False for ch3_new's files to trigger download
+        # The new chapter's filename will be based on its *assigned* download_order (3) by the orchestrator.
+        def side_effect_os_path_exists(path):
+            if "ch_00001_src1" in path: return True
+            if f"chapter_{str(3).zfill(5)}_src3" in path: return False # Expect new chapter to try order 3
+            return False
+        self.patchers['os.path.exists'].side_effect = side_effect_os_path_exists
+
+        self.mock_fetcher_instance.download_chapter_content.return_value = "Raw Content for New Chapter 3"
+
+        # Act
+        archive_story(
+            story_url=self.test_story_url,
+            workspace_root=self.test_workspace_root,
+            progress_callback=self.mock_progress_callback
+        )
+
+        # Assert
+        self.patchers['save_progress'].assert_called_once()
+        final_progress_data = self.patchers['save_progress'].call_args[0][1]
+        self.assertEqual(len(final_progress_data["downloaded_chapters"]), 3)
+
+        final_chapters_map = {ch["chapter_url"]: ch for ch in final_progress_data["downloaded_chapters"]}
+
+        # Chapter 1 (existing, active, title updated)
+        self.assertIn("url1", final_chapters_map)
+        ch1_final = final_chapters_map["url1"]
+        self.assertEqual(ch1_final["download_order"], 1) # Preserved
+        self.assertEqual(ch1_final["status"], "active")
+        self.assertEqual(ch1_final["chapter_title"], "Chapter 1 Updated Title")
+        self.assertEqual(ch1_final["first_seen_on"], OLD_TIME_CH1) # Preserved
+        self.assertEqual(ch1_final["last_checked_on"], self.FROZEN_TIME_STR) # Updated
+        self.assertEqual(ch1_final["download_timestamp"], OLD_TIME_CH1) # Preserved (not re-downloaded)
+
+        # Chapter 2 (removed from source, now archived)
+        self.assertIn("url2", final_chapters_map)
+        ch2_final = final_chapters_map["url2"]
+        self.assertEqual(ch2_final["download_order"], 2) # Preserved
+        self.assertEqual(ch2_final["status"], "archived")
+        self.assertEqual(ch2_final["chapter_title"], "Chapter 2 To Archive") # Original title preserved
+        self.assertEqual(ch2_final["first_seen_on"], OLD_TIME_CH2) # Preserved
+        self.assertEqual(ch2_final["last_checked_on"], self.FROZEN_TIME_STR) # Updated
+
+        # Chapter 3 (new, active)
+        self.assertIn("url3", final_chapters_map)
+        ch3_final = final_chapters_map["url3"]
+        self.assertEqual(ch3_final["download_order"], 3) # New, unique: max_existing_order (2) + 1
+        self.assertEqual(ch3_final["status"], "active")
+        self.assertEqual(ch3_final["chapter_title"], "Chapter 3 New")
+        self.assertEqual(ch3_final["first_seen_on"], self.FROZEN_TIME_STR) # Newly set
+        self.assertEqual(ch3_final["last_checked_on"], self.FROZEN_TIME_STR) # Newly set
+        self.assertEqual(ch3_final["download_timestamp"], self.FROZEN_TIME_STR) # Newly set
+        self.assertTrue(ch3_final["local_raw_filename"].startswith(f"chapter_{str(3).zfill(5)}_src3"))
+
+        # Check download call for only the new chapter
+        self.mock_fetcher_instance.download_chapter_content.assert_called_once_with("url3")
 
     def test_archived_chapter_reappears_becomes_active(self):
         # Arrange

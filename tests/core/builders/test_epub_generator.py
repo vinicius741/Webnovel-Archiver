@@ -39,7 +39,7 @@ class TestEPUBGenerator(unittest.TestCase):
         if os.path.exists(self.test_workspace):
             shutil.rmtree(self.test_workspace)
 
-    def _create_dummy_html_file(self, filename_prefix: str, chapter_order: int, title: str, content: str) -> dict:
+    def _create_dummy_html_file(self, filename_prefix: str, chapter_order: int, title: str, content: str, status: str = "active") -> dict:
         """Helper to create a dummy HTML file and return its chapter_info."""
         html_filename = f"{filename_prefix}_{chapter_order}.html"
         filepath = os.path.join(self.processed_content_dir, html_filename)
@@ -49,7 +49,8 @@ class TestEPUBGenerator(unittest.TestCase):
             "title": title,
             "local_processed_filename": html_filename,
             "download_order": chapter_order,
-            "source_chapter_id": f"src_{chapter_order}" # Dummy source ID
+            "source_chapter_id": f"src_{chapter_order}", # Dummy source ID
+            "status": status
         }
 
     def test_generate_single_epub_success(self):
@@ -274,3 +275,84 @@ class TestEPUBGenerator(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+    def test_generate_epub_with_archived_chapters(self):
+        chap1_info = self._create_dummy_html_file(
+            "chap", 1, "Chapter 1 Title", "<h1>Chapter 1</h1><p>Active content.</p>", status="active"
+        )
+        chap2_info = self._create_dummy_html_file(
+            "chap", 2, "Chapter 2 Title", "<h1>Chapter 2</h1><p>Archived content.</p>", status="archived"
+        )
+        chap3_info = self._create_dummy_html_file(
+            "chap", 3, "Chapter 3 Title", "<h1>Chapter 3</h1><p>More active content.</p>", status="active"
+        )
+        self.sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info, chap3_info]
+
+        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+
+        self.assertEqual(len(generated_files), 1, "Should generate one EPUB file.")
+        epub_filepath = generated_files[0]
+        self.assertTrue(os.path.exists(epub_filepath))
+
+        book = epub.read_epub(epub_filepath)
+        all_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        content_chapters = [item for item in all_items if item.get_name() != 'nav.xhtml']
+        self.assertEqual(len(content_chapters), 3, "EPUB should contain three content chapters.")
+
+        toc_titles = {item.title: item for item in book.toc} # Use dict for easier lookup
+
+        self.assertIn("Chapter 1 Title", toc_titles)
+        self.assertIn("[Archived] Chapter 2 Title", toc_titles)
+        self.assertIn("Chapter 3 Title", toc_titles)
+
+        # Check H1 tags in content
+        # Order of content_chapters should match download_order
+        # Chapter 1
+        epub_chap1_content = content_chapters[0].get_content().decode('utf-8')
+        self.assertIn("<h1>Chapter 1 Title</h1>", epub_chap1_content) # Original title in H1
+        self.assertNotIn("[Archived]", epub_chap1_content)
+
+        # Chapter 2
+        epub_chap2_content = content_chapters[1].get_content().decode('utf-8')
+        self.assertIn("<h1>[Archived] Chapter 2 Title</h1>", epub_chap2_content) # Archived title in H1
+
+        # Chapter 3
+        epub_chap3_content = content_chapters[2].get_content().decode('utf-8')
+        self.assertIn("<h1>Chapter 3 Title</h1>", epub_chap3_content) # Original title in H1
+        self.assertNotIn("[Archived]", epub_chap3_content)
+
+
+    def test_generate_epub_active_only_chapters(self):
+        chap1_info = self._create_dummy_html_file(
+            "chap", 1, "Active Chapter 1", "<p>Content 1</p>", status="active"
+        )
+        chap2_info = self._create_dummy_html_file(
+            "chap", 2, "Active Chapter 2", "<p>Content 2</p>", status="active"
+        )
+        self.sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info]
+
+        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+
+        self.assertEqual(len(generated_files), 1)
+        epub_filepath = generated_files[0]
+        book = epub.read_epub(epub_filepath)
+
+        all_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+        content_chapters = [item for item in all_items if item.get_name() != 'nav.xhtml']
+        self.assertEqual(len(content_chapters), 2)
+
+        toc_titles = [item.title for item in book.toc]
+        self.assertIn("Active Chapter 1", toc_titles)
+        self.assertNotIn("[Archived] Active Chapter 1", toc_titles)
+        self.assertIn("Active Chapter 2", toc_titles)
+        self.assertNotIn("[Archived] Active Chapter 2", toc_titles)
+
+        # Check H1 tags
+        epub_chap1_content = content_chapters[0].get_content().decode('utf-8')
+        self.assertIn("<h1>Active Chapter 1</h1>", epub_chap1_content)
+        self.assertNotIn("[Archived]", epub_chap1_content)
+
+        epub_chap2_content = content_chapters[1].get_content().decode('utf-8')
+        self.assertIn("<h1>Active Chapter 2</h1>", epub_chap2_content)
+        self.assertNotIn("[Archived]", epub_chap2_content)

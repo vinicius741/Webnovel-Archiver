@@ -68,7 +68,10 @@ class EPUBGenerator:
             toc = []
 
             for chapter_info in volume_chapters:
+                chapter_status = chapter_info.get("status")
                 chapter_title = chapter_info.get("title", f"Chapter {chapter_info.get('download_order', 'N/A')}")
+                if chapter_status == 'archived':
+                    chapter_title = f"[Archived] {chapter_title}"
                 local_filename = chapter_info.get("local_processed_filename")
 
                 if not local_filename:

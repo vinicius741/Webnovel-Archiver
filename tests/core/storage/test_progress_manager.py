@@ -3,6 +3,8 @@ import os
 import json
 import shutil
 import time # For timestamp-based ID testing
+import datetime # Added for timestamp manipulation
+from unittest.mock import patch # Added for mocking
 from webnovel_archiver.core.storage.progress_manager import (
     generate_story_id,
     load_progress,
@@ -211,13 +213,20 @@ class TestProgressManager(unittest.TestCase):
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(old_format_data, f, indent=2)
 
+        # Set a specific modification time for the file BEFORE loading it for migration test
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        expected_mtime_unix = now_dt.timestamp()
+        expected_iso_timestamp = now_dt.isoformat()
+        os.utime(filepath, (expected_mtime_unix, expected_mtime_unix))
+        # time.sleep(0.001) # Optional: ensure mtime is distinct if file system resolution is low, though utime should be precise.
+
         loaded_data = load_progress(story_id, workspace_root=TEST_WORKSPACE_ROOT)
 
         self.assertTrue(len(loaded_data["downloaded_chapters"]) == 1)
         first_chapter = loaded_data["downloaded_chapters"][0]
         self.assertEqual(first_chapter.get("status"), "active")
-        self.assertEqual(first_chapter.get("first_seen_on"), "N/A")
-        self.assertEqual(first_chapter.get("last_checked_on"), "N/A")
+        self.assertEqual(first_chapter.get("first_seen_on"), expected_iso_timestamp)
+        self.assertEqual(first_chapter.get("last_checked_on"), expected_iso_timestamp)
         self.assertEqual(first_chapter.get("source_chapter_id"), "chap1") # Original data preserved
 
         backup_filepath = filepath + ".bak"
@@ -355,6 +364,50 @@ class TestProgressManager(unittest.TestCase):
 
         # No backup file should be created as no migration from an existing file happened
         self.assertFalse(os.path.exists(backup_filepath))
+
+    def test_load_progress_migration_os_error_getmtime(self):
+        story_id = "test_story_migration_oserror"
+        progress_dir = os.path.join(TEST_WORKSPACE_ROOT, "archival_status", story_id)
+        os.makedirs(progress_dir, exist_ok=True)
+        filepath = os.path.join(progress_dir, "progress_status.json")
+
+        old_format_data = {
+            "story_id": story_id,
+            "original_title": "Test Story for OSError Migration",
+            "version": "1.0",
+            "downloaded_chapters": [
+                {
+                    "source_chapter_id": "chap_err",
+                    "download_order": 1,
+                    "chapter_url": "http://example.com/chap_err",
+                    "chapter_title": "Chapter Error",
+                }
+            ]
+        }
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(old_format_data, f, indent=2)
+
+        # Patch os.path.getmtime within the progress_manager module
+        with patch('webnovel_archiver.core.storage.progress_manager.os.path.getmtime', side_effect=OSError("Simulated OSError")) as mock_getmtime:
+            # Use assertLogs to capture warnings from the logger in progress_manager
+            with self.assertLogs('webnovel_archiver.core.storage.progress_manager', level='WARNING') as cm:
+                loaded_data = load_progress(story_id, workspace_root=TEST_WORKSPACE_ROOT)
+
+        # Verify os.path.getmtime was called
+        mock_getmtime.assert_called_once_with(filepath)
+
+        # Verify the log message
+        self.assertIn(f"Could not retrieve modification time for progress file {filepath} during migration. Using 'N/A' for timestamps. Error: Simulated OSError", cm.output[0])
+
+        self.assertTrue(len(loaded_data["downloaded_chapters"]) == 1)
+        first_chapter = loaded_data["downloaded_chapters"][0]
+        self.assertEqual(first_chapter.get("status"), "active")
+        self.assertEqual(first_chapter.get("first_seen_on"), "N/A") # Should fallback to N/A
+        self.assertEqual(first_chapter.get("last_checked_on"), "N/A") # Should fallback to N/A
+        self.assertEqual(first_chapter.get("source_chapter_id"), "chap_err")
+
+        backup_filepath = filepath + ".bak"
+        self.assertTrue(os.path.exists(backup_filepath)) # Backup should still occur
 
 
 if __name__ == '__main__':

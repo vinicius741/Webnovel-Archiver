@@ -114,6 +114,14 @@ def load_progress(story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -
             if migration_required:
                 logger.info(f"Migrating progress file for story '{story_id}' at {filepath} to new format with status fields in chapters.")
 
+                # Get file modification time for chapter timestamps
+                file_mod_time_iso = "N/A"
+                try:
+                    mtime = os.path.getmtime(filepath)
+                    file_mod_time_iso = datetime.datetime.fromtimestamp(mtime, datetime.timezone.utc).isoformat()
+                except OSError as e:
+                    logger.warning(f"Could not retrieve modification time for progress file {filepath} during migration. Using 'N/A' for timestamps. Error: {e}")
+
                 backup_filepath = filepath + ".bak"
                 try:
                     import shutil # Import here for focused change, though top-level is conventional
@@ -129,8 +137,8 @@ def load_progress(story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -
                         if isinstance(chapter, dict): # Process only if chapter is a dictionary
                             chapter_copy = chapter.copy()
                             chapter_copy["status"] = "active"
-                            chapter_copy["first_seen_on"] = "N/A"
-                            chapter_copy["last_checked_on"] = "N/A"
+                            chapter_copy["first_seen_on"] = file_mod_time_iso
+                            chapter_copy["last_checked_on"] = file_mod_time_iso
                             migrated_chapters_list.append(chapter_copy)
                         else:
                             logger.warning(f"Skipping non-dict chapter entry during migration for story '{story_id}' in {filepath}: {chapter}")

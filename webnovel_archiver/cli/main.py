@@ -18,7 +18,21 @@ def archiver():
 @click.option('--no-sentence-removal', is_flag=True, default=False, help='Disable sentence removal even if a file is provided.')
 @click.option('--chapters-per-volume', default=None, type=int, help='Number of chapters per EPUB volume. Default is all in one volume.')
 @click.option('--epub-contents', default='all', type=click.Choice(['all', 'active-only'], case_sensitive=False), help='Determines what to include in the EPUB: "all" (default) includes active and archived chapters; "active-only" mirrors the source website.')
-def archive_story(story_url: str, output_dir: Optional[str], ebook_title_override: Optional[str], keep_temp_files: bool, force_reprocessing: bool, sentence_removal_file: Optional[str], no_sentence_removal: bool, chapters_per_volume: Optional[int], epub_contents: str):
+@click.option('--resume-from-url', default=None, type=str, help='URL of the chapter to resume processing from.')
+@click.option('--chapter-limit-for-run', default=None, type=int, help='Maximum number of chapters to download/process in this run.')
+def archive_story(
+    story_url: str,
+    output_dir: Optional[str],
+    ebook_title_override: Optional[str],
+    keep_temp_files: bool,
+    force_reprocessing: bool,
+    sentence_removal_file: Optional[str],
+    no_sentence_removal: bool,
+    chapters_per_volume: Optional[int],
+    epub_contents: str,
+    resume_from_url: Optional[str],
+    chapter_limit_for_run: Optional[int]
+):
     """Archives a webnovel from a given URL with specified options."""
     archive_story_handler(
         story_url=story_url,
@@ -29,7 +43,9 @@ def archive_story(story_url: str, output_dir: Optional[str], ebook_title_overrid
         cli_sentence_removal_file=sentence_removal_file, # Changed to cli_sentence_removal_file
         no_sentence_removal=no_sentence_removal,
         chapters_per_volume=chapters_per_volume,
-        epub_contents=epub_contents
+        epub_contents=epub_contents,
+        resume_from_url=resume_from_url,
+        chapter_limit_for_run=chapter_limit_for_run
     )
 
 # New cloud-backup command

@@ -41,7 +41,9 @@ def archive_story(
     sentence_removal_file: Optional[str] = None, # Will be used fully later
     no_sentence_removal: bool = False,  # Will be used fully later
     progress_callback: Optional[ProgressCallback] = None,
-    epub_contents: Optional[str] = 'all' # Added new parameter
+    epub_contents: Optional[str] = 'all', # Added new parameter
+    resume_from_url: Optional[str] = None,
+    chapter_limit_for_run: Optional[int] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Orchestrates the archiving process for a given story URL.

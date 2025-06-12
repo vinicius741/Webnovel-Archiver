@@ -267,6 +267,7 @@ def cloud_backup_handler(
 
     processed_stories_count = 0
     for current_story_id in story_ids_to_process:
+        any_epub_uploaded_for_this_story = False # Initialize EPUB upload flag
         an_upload_occurred = False # Initialize flag for each story
         click.echo(f"Processing story: {current_story_id}")
 
@@ -372,6 +373,8 @@ def cloud_backup_handler(
                         'last_backed_up_timestamp': uploaded_file_meta.get('modifiedTime') or datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         'status': 'uploaded'
                     })
+                    if upload_name.endswith('.epub'):
+                        any_epub_uploaded_for_this_story = True
                 except FileNotFoundError:
                     click.echo(f"Error: Local file {local_path} vanished before upload. Skipping.", err=True)
                 except ConnectionError as e:
@@ -384,15 +387,28 @@ def cloud_backup_handler(
                     backup_files_results.append({ 'local_path': local_path, 'cloud_file_name': upload_name, 'status': 'failed', 'error': str(e) })
 
         # Check if any file was actually uploaded for the current story
+        # This an_upload_occurred is still relevant for determining if *any* operation happened that might
+        # justify updating last_successful_backup_timestamp if all ops were good.
+        # However, the decision to SAVE progress.json will hinge on EPUBs or progress.json itself being uploaded.
         if backup_files_results: # Only iterate if there are results
             for result in backup_files_results:
                 if result.get('status') == 'uploaded':
-                    an_upload_occurred = True
+                    an_upload_occurred = True # This remains true if any file (incl progress.json) uploaded
+                    # any_epub_uploaded_for_this_story is set during the upload loop
                     break
 
-        if an_upload_occurred: # Only update progress if an upload happened
-            click.echo(f"An upload occurred for story {current_story_id}. Updating progress file.") # Added for clarity
+        progress_json_itself_uploaded_this_run = False
+        for result in backup_files_results:
+            if result.get('cloud_file_name') == "progress_status.json" and result.get('status') == 'uploaded':
+                progress_json_itself_uploaded_this_run = True
+                break
+
+        # Condition for saving progress_status.json is now based on EPUB upload or progress.json itself being uploaded
+        if any_epub_uploaded_for_this_story or progress_json_itself_uploaded_this_run:
+            click.echo(f"Updating progress file for story {current_story_id} as EPUBs or progress.json itself were uploaded.")
             current_utc_time_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            # all_ops_successful_or_skipped determines if last_successful_backup_timestamp can be updated to now.
+            # This should consider all files processed in this run, not just EPUBs.
             all_ops_successful_or_skipped = all(f.get('status') in ['uploaded', 'skipped_up_to_date'] for f in backup_files_results)
             existing_backup_status = pm.get_cloud_backup_status(progress_data)
 
@@ -423,11 +439,13 @@ def cloud_backup_handler(
             except Exception as e:
                 click.echo(f"Error updating and saving progress file for story {current_story_id}: {e}", err=True)
                 logger.error(f"Failed to update/save progress_status.json for {current_story_id} after uploads: {e}", exc_info=True)
-        elif backup_files_results: # Files were processed (skipped/failed), but no new uploads
-            click.echo(f"No new files were uploaded for story {current_story_id}. Progress file not updated with new backup timestamps for individual files.")
-            # Optionally, one might still want to update 'last_backup_attempt_timestamp' even if no files were uploaded.
-            # For now, sticking to the requirement of only saving if an upload occurred.
-            # If a general update is desired, the logic for cloud_backup_update_data would need adjustment here.
+        elif backup_files_results: # Files were processed (skipped/failed), but no new EPUBs nor progress.json itself were uploaded
+            click.echo(f"No EPUBs nor progress.json itself were uploaded for story {current_story_id}. Progress file not saved with new timestamps.")
+            # Note: cloud_backup_update_data (which populates backed_up_files in progress_data)
+            # is not constructed or applied if this branch is hit. This means skipped/failed non-EPUBs
+            # when no EPUBs/progress.json were uploaded won't have their attempt details saved in progress.json.
+            # This seems consistent with the requirement to only save if EPUBs or progress.json were uploaded.
+            # If last_backup_attempt_timestamp should always be updated, that logic would need to be outside this conditional block.
 
         processed_stories_count +=1
         click.echo(f"Finished processing story: {current_story_id}\n")

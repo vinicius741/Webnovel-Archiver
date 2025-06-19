@@ -65,13 +65,39 @@ class ConfigManager:
 
 
     def get_workspace_path(self) -> str:
-        """Returns the workspace path from the config or a default value."""
+        """
+        Returns the workspace path.
+        Priority:
+        1. WNA_WORKSPACE_ROOT environment variable.
+        2. Path from config file (settings.ini).
+        3. Default workspace path.
+        """
+        env_workspace_path = os.getenv('WNA_WORKSPACE_ROOT')
+        if env_workspace_path:
+            logger.info(f"Using workspace path from WNA_WORKSPACE_ROOT environment variable: {env_workspace_path}")
+            return os.path.abspath(env_workspace_path)
+
         # Ensure that returned path is absolute or resolved correctly if relative
-        path = self.config.get('General', 'workspace_path', fallback=DEFAULT_WORKSPACE_PATH)
-        if not os.path.isabs(path):
-            # Assuming workspace_path in config is relative to project root
-            return os.path.join(PROJECT_ROOT, path)
-        return path
+        path_from_config = self.config.get('General', 'workspace_path', fallback=DEFAULT_WORKSPACE_PATH)
+
+        # Log which path is being used if not from env var
+        if path_from_config == DEFAULT_WORKSPACE_PATH and not os.path.exists(self.config_file_path):
+            logger.info(f"Using default workspace path (config file not found or 'workspace_path' not set): {DEFAULT_WORKSPACE_PATH}")
+        elif self.config.has_option('General', 'workspace_path'):
+             logger.info(f"Using workspace path from config file '{self.config_file_path}': {path_from_config}")
+        else: # Fallback to default, but config file might exist and just miss the option
+            logger.info(f"Using default workspace path (option not in config): {DEFAULT_WORKSPACE_PATH}")
+
+
+        if not os.path.isabs(path_from_config):
+            # Assuming workspace_path in config is relative to project root if not absolute
+            # However, DEFAULT_WORKSPACE_PATH is already absolute.
+            # This logic mainly applies if user sets a relative path in settings.ini
+            resolved_path = os.path.join(PROJECT_ROOT, path_from_config)
+            logger.debug(f"Resolved relative path from config '{path_from_config}' to '{resolved_path}' (relative to project root '{PROJECT_ROOT}')")
+            return os.path.abspath(resolved_path) # Ensure it's absolute
+
+        return os.path.abspath(path_from_config) # Ensure it's absolute
 
     def get_setting(self, section: str, option: str, fallback=None) -> Optional[str]:
         """Gets a specific setting from the configuration."""

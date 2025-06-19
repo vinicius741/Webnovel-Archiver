@@ -4,6 +4,7 @@ import datetime
 import sys
 import re
 import html # For escaping HTML content
+import webbrowser # Added to open the report in a browser
 
 # Adjust path to import sibling modules
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -689,6 +690,12 @@ def main():
                 f.write(final_html)
             logger.info(f"Successfully wrote HTML report to: {report_html_path}")
             print(f"HTML report generated: {report_html_path}")
+            try:
+                webbrowser.open_new_tab(f"file:///{os.path.abspath(report_html_path)}")
+                logger.info(f"Attempted to open HTML report in browser: {report_html_path}")
+            except Exception as e_browser:
+                logger.error(f"Failed to open report in browser: {e_browser}", exc_info=True)
+                print(f"Note: Could not open report in browser. Error: {e_browser}")
         except IOError as e: # More specific exception for file I/O
             logger.error(f"Failed to write HTML report due to IOError {report_html_path}: {e}", exc_info=True)
             print(f"Error: Could not write HTML report to {report_html_path}. Check logs for details.")

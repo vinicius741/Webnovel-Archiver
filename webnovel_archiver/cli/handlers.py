@@ -283,20 +283,67 @@ def cloud_backup_handler(
             click.echo(f"Error: Failed to load progress data for story {current_story_id}. Skipping.", err=True)
             continue
 
+        # Determine if this story needs backup
+        story_requires_backup = False
+        last_archived_ts_str = progress_data.get("last_archived_timestamp")
+        cloud_backup_status = pm.get_cloud_backup_status(progress_data) # Use getter to ensure structure
+        last_successful_backup_ts_str = cloud_backup_status.get("last_successful_backup_timestamp")
+
+        if force_full_upload:
+            story_requires_backup = True
+            click.echo(f"Story {current_story_id}: Forced full upload.")
+            logger.info(f"Story {current_story_id}: Forced full upload.")
+        elif not last_successful_backup_ts_str:
+            story_requires_backup = True
+            click.echo(f"Story {current_story_id}: No previous successful backup found. Requires backup.")
+            logger.info(f"Story {current_story_id}: No previous successful backup. Queued for backup.")
+        elif last_archived_ts_str:
+            try:
+                # Ensure timestamps are comparable (e.g., datetime objects)
+                # ISO format strings can be compared directly if they are consistently formatted (which they should be)
+                if last_archived_ts_str > last_successful_backup_ts_str:
+                    story_requires_backup = True
+                    click.echo(f"Story {current_story_id}: Archived more recently ({last_archived_ts_str}) than last backup ({last_successful_backup_ts_str}). Requires backup.")
+                    logger.info(f"Story {current_story_id}: Archived ({last_archived_ts_str}) after last backup ({last_successful_backup_ts_str}). Queued for backup.")
+                else:
+                    click.echo(f"Story {current_story_id}: Last archive ({last_archived_ts_str}) is not newer than last backup ({last_successful_backup_ts_str}). Skipping backup.")
+                    logger.info(f"Story {current_story_id}: Last archive ({last_archived_ts_str}) not newer than last backup ({last_successful_backup_ts_str}). Skipping.")
+            except TypeError as te: # Handles cases where one might be None or not string, though checks above should prevent
+                logger.error(f"Story {current_story_id}: Timestamp comparison error - last_archived: {last_archived_ts_str}, last_backup: {last_successful_backup_ts_str}. Error: {te}. Assuming backup is needed.", exc_info=True)
+                click.echo(f"Warning: Timestamp comparison error for story {current_story_id}. Proceeding with backup as a precaution.", err=True)
+                story_requires_backup = True # Err on the side of caution
+        else:
+            # No last_archived_timestamp, but there was a last_successful_backup.
+            # This implies it was backed up but never "archived" with the new timestamp system.
+            # Or it's an old record. To be safe, or by policy, we might decide to back it up.
+            # For now, let's assume if last_archived_timestamp is missing, it doesn't trigger a new backup
+            # unless force_full_upload or no last_successful_backup_ts_str.
+            click.echo(f"Story {current_story_id}: Has a last backup timestamp ({last_successful_backup_ts_str}) but no last_archived_timestamp. Skipping unless forced.")
+            logger.info(f"Story {current_story_id}: Has last backup ({last_successful_backup_ts_str}) but no last_archived_timestamp. Skipping.")
+
+
+        if not story_requires_backup:
+            # We still count it as "processed" in terms of the loop, but no backup actions are taken.
+            # No need to update progress file if no backup actions taken.
+            processed_stories_count +=1 # Count it as looked at
+            click.echo(f"Finished processing story (skipped backup): {current_story_id}\n")
+            continue
+
+
+        # --- Proceed with backup for the story if story_requires_backup is True ---
+        click.echo(f"Story {current_story_id}: Preparing for cloud backup.")
+
         # cloud_base_folder_id is now created before the loop.
-        # We must have it to proceed for this story.
         if not cloud_base_folder_id:
-            # This case should ideally be prevented by the initial check, but as a safeguard:
             click.echo(click.style(f"Critical Error: Base cloud folder ID not available for story {current_story_id}. Skipping.", fg="red"), err=True)
-            logger.error(f"Critical: cloud_base_folder_id is None when processing story {current_story_id}. This should not happen.")
+            logger.error(f"Critical: cloud_base_folder_id is None when processing story {current_story_id}.")
             continue
 
         story_cloud_folder_id: Optional[str] = None
         try:
-            # Create story-specific folder inside the base backup folder
             story_cloud_folder_id = sync_service.create_folder_if_not_exists(current_story_id, parent_folder_id=cloud_base_folder_id)
             if not story_cloud_folder_id:
-                click.echo(click.style(f"Error: Failed to create or retrieve cloud folder for story '{current_story_id}' inside '{base_backup_folder_name}'. Skipping story.", fg="red"), err=True)
+                click.echo(click.style(f"Error: Failed to create or retrieve cloud folder for story '{current_story_id}'. Skipping story.", fg="red"), err=True)
                 logger.error(f"Failed to create/retrieve story folder for {current_story_id} under parent {cloud_base_folder_id}.")
                 continue
             click.echo(f"Ensured cloud folder structure: '{base_backup_folder_name}/{current_story_id}' (Story Folder ID: {story_cloud_folder_id})")
@@ -306,9 +353,7 @@ def cloud_backup_handler(
             continue
 
         files_to_upload_info: List[Dict[str, str]] = []
-        # Add progress_status.json itself, using its specific path
         files_to_upload_info.append({'local_path': progress_file_path, 'name': "progress_status.json"})
-
         epub_file_entries = pm.get_epub_file_details(progress_data, current_story_id, workspace_root)
 
         if not epub_file_entries:
@@ -317,55 +362,55 @@ def cloud_backup_handler(
         for epub_entry in epub_file_entries:
             epub_filename = epub_entry.get('name')
             epub_local_abs_path = epub_entry.get('path')
-
             if not epub_filename or not epub_local_abs_path:
                 logger.warning(f"Skipping EPUB entry with missing name or path in {current_story_id}: {epub_entry}")
                 continue
-
             if not os.path.exists(epub_local_abs_path):
-                click.echo(f"Warning: EPUB file {epub_local_abs_path} not found for story {current_story_id}. Skipping.", err=True)
-                logger.warning(f"EPUB file {epub_local_abs_path} not found, skipping upload.")
+                click.echo(f"Warning: EPUB file {epub_local_abs_path} not found for story {current_story_id}. Skipping this EPUB.", err=True)
+                logger.warning(f"EPUB file {epub_local_abs_path} not found, skipping upload for this EPUB.")
                 continue
             files_to_upload_info.append({'local_path': epub_local_abs_path, 'name': epub_filename})
 
         backup_files_results: List[Dict[str, Any]] = []
+        actual_files_uploaded_this_story = False # Track if any file (EPUB or progress.json) is actually uploaded
 
         for file_info_to_upload in files_to_upload_info:
             local_path = file_info_to_upload['local_path']
             upload_name = file_info_to_upload['name']
+            file_should_be_uploaded_due_to_overwrite_or_missing_remote = True # Default to true
 
-            should_upload = True
-            if not force_full_upload:
+            if not force_full_upload: # If not forcing, check remote state
                 try:
                     remote_metadata = sync_service.get_file_metadata(file_name=upload_name, folder_id=story_cloud_folder_id)
                     if remote_metadata and remote_metadata.get('modifiedTime'):
                         if not sync_service.is_remote_older(local_path, remote_metadata['modifiedTime']):
-                            should_upload = False
+                            file_should_be_uploaded_due_to_overwrite_or_missing_remote = False
                             click.echo(f"Skipping '{upload_name}': Remote file is not older than local.")
                             logger.info(f"Skipping upload of {upload_name} for story {current_story_id} as remote is not older.")
                             backup_files_results.append({
                                 'local_path': local_path,
                                 'cloud_file_name': upload_name,
                                 'cloud_file_id': remote_metadata.get('id'),
-                                'last_backed_up_timestamp': remote_metadata.get('modifiedTime'),
+                                'last_backed_up_timestamp': remote_metadata.get('modifiedTime'), # Use remote's mod time as "last backed up"
                                 'status': 'skipped_up_to_date'
                             })
                         else:
                              click.echo(f"Local file '{upload_name}' is newer. Uploading...")
-                    else:
+                    else: # Remote file not found or no timestamp
                         click.echo(f"Remote file '{upload_name}' not found or no timestamp. Uploading...")
                 except ConnectionError as e:
                     click.echo(f"Warning: Could not get remote metadata for '{upload_name}': {e}. Will attempt upload.", err=True)
                     logger.warning(f"Could not get remote metadata for {upload_name} (story {current_story_id}): {e}")
-                except Exception as e:
+                except Exception as e: # Other errors during metadata check
                     click.echo(f"Warning: Error checking remote status for '{upload_name}': {e}. Will attempt upload.", err=True)
                     logger.warning(f"Error checking remote status for {upload_name} (story {current_story_id}): {e}", exc_info=True)
 
-            if should_upload:
+            if file_should_be_uploaded_due_to_overwrite_or_missing_remote:
                 try:
                     click.echo(f"Uploading '{upload_name}' for story {current_story_id}...")
                     uploaded_file_meta = sync_service.upload_file(local_path, story_cloud_folder_id, remote_file_name=upload_name)
                     click.echo(f"Successfully uploaded '{uploaded_file_meta.get('name')}' (ID: {uploaded_file_meta.get('id')}).")
+                    actual_files_uploaded_this_story = True # Mark that an upload occurred
                     backup_files_results.append({
                         'local_path': local_path,
                         'cloud_file_name': uploaded_file_meta.get('name'),
@@ -373,10 +418,12 @@ def cloud_backup_handler(
                         'last_backed_up_timestamp': uploaded_file_meta.get('modifiedTime') or datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         'status': 'uploaded'
                     })
-                    if upload_name.endswith('.epub'):
-                        any_epub_uploaded_for_this_story = True
+                    if upload_name.endswith('.epub'): # This flag was used for deciding to save progress.json
+                        any_epub_uploaded_for_this_story = True # Still useful for specific logging/conditions if needed
                 except FileNotFoundError:
-                    click.echo(f"Error: Local file {local_path} vanished before upload. Skipping.", err=True)
+                    click.echo(f"Error: Local file {local_path} vanished before upload. Skipping this file.", err=True)
+                    logger.error(f"Local file {local_path} not found for upload (story {current_story_id}).")
+                    backup_files_results.append({ 'local_path': local_path, 'cloud_file_name': upload_name, 'status': 'failed', 'error': 'Local file not found' })
                 except ConnectionError as e:
                     click.echo(f"Error uploading '{upload_name}' for story {current_story_id}: {e}", err=True)
                     logger.error(f"Upload failed for {local_path} to story {current_story_id} folder: {e}")
@@ -386,50 +433,45 @@ def cloud_backup_handler(
                     logger.error(f"Unexpected error uploading {local_path} for story {current_story_id}: {e}", exc_info=True)
                     backup_files_results.append({ 'local_path': local_path, 'cloud_file_name': upload_name, 'status': 'failed', 'error': str(e) })
 
-        # Check if any file was actually uploaded for the current story
-        # This an_upload_occurred is still relevant for determining if *any* operation happened that might
-        # justify updating last_successful_backup_timestamp if all ops were good.
-        # However, the decision to SAVE progress.json will hinge on EPUBs or progress.json itself being uploaded.
-        if backup_files_results: # Only iterate if there are results
-            for result in backup_files_results:
-                if result.get('status') == 'uploaded':
-                    an_upload_occurred = True # This remains true if any file (incl progress.json) uploaded
-                    # any_epub_uploaded_for_this_story is set during the upload loop
-                    break
-
-        progress_json_itself_uploaded_this_run = False
-        for result in backup_files_results:
-            if result.get('cloud_file_name') == "progress_status.json" and result.get('status') == 'uploaded':
-                progress_json_itself_uploaded_this_run = True
-                break
-
-        # Condition for saving progress_status.json is now based on EPUB upload or progress.json itself being uploaded
-        if any_epub_uploaded_for_this_story or progress_json_itself_uploaded_this_run:
-            click.echo(f"Updating progress file for story {current_story_id} as EPUBs or progress.json itself were uploaded.")
+        # Update progress_status.json for this story if any file operation (upload/skip/fail) occurred.
+        # The decision to backup the story overall was made earlier. Now we record the outcome.
+        if backup_files_results: # If there were any file operations attempted
+            click.echo(f"Updating progress file for story {current_story_id} with backup operation results.")
             current_utc_time_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            # all_ops_successful_or_skipped determines if last_successful_backup_timestamp can be updated to now.
-            # This should consider all files processed in this run, not just EPUBs.
-            all_ops_successful_or_skipped = all(f.get('status') in ['uploaded', 'skipped_up_to_date'] for f in backup_files_results)
-            existing_backup_status = pm.get_cloud_backup_status(progress_data)
 
-            latest_op_time = None
-            if all_ops_successful_or_skipped and backup_files_results:
-                valid_timestamps = [
+            # Determine if this specific backup attempt for the story was "successful" overall
+            # Successful means all attempted files were either uploaded or skipped (already up-to-date)
+            all_attempted_ops_successful_or_skipped = all(
+                f.get('status') in ['uploaded', 'skipped_up_to_date'] for f in backup_files_results
+            )
+
+            # Update last_successful_backup_timestamp only if this attempt was successful overall
+            # and at least one file was actually uploaded (not just skipped or all failed)
+            new_last_successful_ts = last_successful_backup_ts_str # Default to existing
+            if all_attempted_ops_successful_or_skipped and actual_files_uploaded_this_story :
+                # If multiple files uploaded, use the latest modifiedTime from the successful uploads.
+                # If only skips, or if uploaded files don't have modifiedTime, use current time.
+                successful_upload_timestamps = [
                     f['last_backed_up_timestamp'] for f in backup_files_results
-                    if f.get('last_backed_up_timestamp') and f.get('status') in ['uploaded', 'skipped_up_to_date']
+                    if f.get('status') == 'uploaded' and f.get('last_backed_up_timestamp')
                 ]
-                if valid_timestamps: latest_op_time = max(valid_timestamps)
-                else: latest_op_time = current_utc_time_iso
+                if successful_upload_timestamps:
+                    new_last_successful_ts = max(successful_upload_timestamps)
+                else: # No successful uploads with timestamps (e.g. only skips, or API error giving timestamp)
+                    new_last_successful_ts = current_utc_time_iso # Fallback to current time for this successful backup operation
+                click.echo(f"Story {current_story_id}: Backup attempt successful. Updating last_successful_backup_timestamp to {new_last_successful_ts}.")
+                logger.info(f"Story {current_story_id}: Backup successful. New last_successful_backup_timestamp: {new_last_successful_ts}.")
+
 
             cloud_backup_update_data = {
                 'last_backup_attempt_timestamp': current_utc_time_iso,
-                'last_successful_backup_timestamp': latest_op_time if all_ops_successful_or_skipped else existing_backup_status.get('last_successful_backup_timestamp'),
+                'last_successful_backup_timestamp': new_last_successful_ts,
                 'service': cloud_service_name.lower(),
                 'base_cloud_folder_name': base_backup_folder_name,
                 'story_cloud_folder_name': current_story_id,
                 'cloud_base_folder_id': cloud_base_folder_id,
                 'story_cloud_folder_id': story_cloud_folder_id,
-                'backed_up_files': backup_files_results
+                'backed_up_files': backup_files_results # Store results of all attempted files
             }
 
             try:
@@ -437,15 +479,12 @@ def cloud_backup_handler(
                 pm.save_progress(current_story_id, progress_data, workspace_root)
                 click.echo(f"Successfully updated and saved local progress status for story {current_story_id}.")
             except Exception as e:
-                click.echo(f"Error updating and saving progress file for story {current_story_id}: {e}", err=True)
-                logger.error(f"Failed to update/save progress_status.json for {current_story_id} after uploads: {e}", exc_info=True)
-        elif backup_files_results: # Files were processed (skipped/failed), but no new EPUBs nor progress.json itself were uploaded
-            click.echo(f"No EPUBs nor progress.json itself were uploaded for story {current_story_id}. Progress file not saved with new timestamps.")
-            # Note: cloud_backup_update_data (which populates backed_up_files in progress_data)
-            # is not constructed or applied if this branch is hit. This means skipped/failed non-EPUBs
-            # when no EPUBs/progress.json were uploaded won't have their attempt details saved in progress.json.
-            # This seems consistent with the requirement to only save if EPUBs or progress.json were uploaded.
-            # If last_backup_attempt_timestamp should always be updated, that logic would need to be outside this conditional block.
+                click.echo(f"Error updating/saving progress file for story {current_story_id}: {e}", err=True)
+                logger.error(f"Failed to update/save progress_status.json for {current_story_id} after backup ops: {e}", exc_info=True)
+        else: # No files were even attempted (e.g. no EPUBs and progress.json somehow skipped)
+             click.echo(f"No file operations (upload/skip/fail) were performed for story {current_story_id}. Progress file not updated for backup status.")
+             logger.info(f"No file operations for story {current_story_id}. Progress file not updated with backup status.")
+
 
         processed_stories_count +=1
         click.echo(f"Finished processing story: {current_story_id}\n")

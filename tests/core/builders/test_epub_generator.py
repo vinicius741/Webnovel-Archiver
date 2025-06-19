@@ -9,8 +9,41 @@ from webnovel_archiver.core.builders.epub_generator import EPUBGenerator
 from webnovel_archiver.utils.logger import get_logger # For potential direct use or if generator uses it
 
 # Disable logging for tests to keep output clean, or configure for test-specific output
+import unittest.mock # Ensure unittest.mock is imported for patching
 # import logging
 # logging.getLogger('webnovel_archiver').setLevel(logging.CRITICAL)
+
+# Mock requests.get for cover download
+class MockResponse: # Already defined, no change
+    def __init__(self, content, status_code, headers=None):
+        self.content = content
+        self.raw = content
+        self.status_code = status_code
+        self.headers = headers if headers else {'content-type': 'image/jpeg'}
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise Exception("HTTP Error")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+def mock_requests_get(url, stream=False):
+    if "valid_cover.jpg" in url:
+        # Simulate a successful image download
+        image_content = b"dummy_image_bytes" # Simulate image data
+        return MockResponse(image_content, 200, {'content-type': 'image/jpeg'})
+    elif "valid_cover.png" in url:
+        image_content = b"dummy_png_bytes"
+        return MockResponse(image_content, 200, {'content-type': 'image/png'})
+    elif "download_fails" in url:
+        raise requests.exceptions.RequestException("Simulated download failure")
+    elif "http_error" in url:
+        return MockResponse(None, 404)
+    return MockResponse(None, 404) # Default to 404 for unknown URLs
 
 
 class TestEPUBGenerator(unittest.TestCase):
@@ -32,12 +65,20 @@ class TestEPUBGenerator(unittest.TestCase):
             "effective_title": "My Awesome Story", # Changed "title" to "effective_title"
             "author": "Test Author",
             "story_id": self.story_id,
-            "downloaded_chapters": []
+            "downloaded_chapters": [],
+            "synopsis": None, # Ensure it's part of the base sample data
+            "cover_image_url": None # Ensure it's part of the base sample data
         }
+
+        # Patch requests.get for cover download tests
+        self.patcher = unittest.mock.patch('requests.get', side_effect=mock_requests_get)
+        self.mock_get = self.patcher.start()
+
 
     def tearDown(self):
         if os.path.exists(self.test_workspace):
             shutil.rmtree(self.test_workspace)
+        self.patcher.stop() # Stop the patcher
 
     def _create_dummy_html_file(self, filename_prefix: str, chapter_order: int, title: str, content: str, status: str = "active") -> dict:
         """Helper to create a dummy HTML file and return its chapter_info."""
@@ -356,3 +397,194 @@ if __name__ == '__main__':
         epub_chap2_content = content_chapters[1].get_content().decode('utf-8')
         self.assertIn("<h1>Active Chapter 2</h1>", epub_chap2_content)
         self.assertNotIn("[Archived]", epub_chap2_content)
+
+
+    def test_generate_epub_with_synopsis(self):
+        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>Content 1</p>")
+        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
+        self.sample_progress_data["synopsis"] = "This is a test synopsis."
+
+        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        self.assertEqual(len(generated_files), 1)
+        epub_filepath = generated_files[0]
+        book = epub.read_epub(epub_filepath)
+
+        # Check for synopsis in TOC
+        toc_links = {link.title: link for link in book.toc}
+        self.assertIn("Synopsis", toc_links, "Synopsis should be in TOC.")
+
+        # Check for synopsis in spine (order)
+        # Spine items are EpubItem objects, check their file_name
+        spine_file_names = [item.file_name for item in book.spine]
+        self.assertIn("synopsis.xhtml", spine_file_names, "Synopsis xhtml should be in spine.")
+        nav_index = spine_file_names.index("nav.xhtml") # nav.xhtml is from ebooklib
+        synopsis_index = spine_file_names.index("synopsis.xhtml")
+        chapter_index = spine_file_names.index("chap_1.xhtml")
+
+        self.assertTrue(nav_index < synopsis_index < chapter_index, "Synopsis should be after nav and before chapters in spine.")
+
+        # Check synopsis content
+        synopsis_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if item.get_name() == "synopsis.xhtml"), None)
+        self.assertIsNotNone(synopsis_item, "Synopsis XHTML item not found.")
+        synopsis_content = synopsis_item.get_content().decode('utf-8')
+        self.assertIn("<h1>Synopsis</h1>", synopsis_content)
+        self.assertIn("<p>This is a test synopsis.</p>", synopsis_content)
+
+
+    def test_generate_epub_with_cover_image(self):
+        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>Content 1</p>")
+        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
+        self.sample_progress_data["cover_image_url"] = "http://example.com/valid_cover.jpg" # Mocked to succeed
+
+        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        self.assertEqual(len(generated_files), 1)
+        epub_filepath = generated_files[0]
+        book = epub.read_epub(epub_filepath)
+
+        # Check cover metadata
+        cover_meta = book.get_metadata('OPF', 'cover')
+        self.assertTrue(len(cover_meta) > 0, "Cover metadata should exist.")
+        # ebooklib < 0.18 uses ('OPF', 'cover'), id='cover-image', content='cover.jpg'
+        # ebooklib >= 0.18 might use other forms or rely on guide items.
+        # A more robust check is to look for the cover image item itself.
+
+        cover_image_item = book.get_item_with_id('cover') # Default ID by set_cover if not specified
+        if not cover_image_item: # try common filename if ID 'cover' is not used
+            cover_image_item = book.get_item_with_href('cover.jpg') # if filename is cover.jpg
+
+        self.assertIsNotNone(cover_image_item, "Cover image item not found in EPUB.")
+        self.assertEqual(cover_image_item.get_media_type(), 'image/jpeg')
+
+        # Check if cover.xhtml (created by set_cover create_page=True) exists
+        # Note: The prompt did not explicitly ask for create_page=True to be tested,
+        # but the implementation uses it.
+        cover_xhtml_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if 'cover' in item.get_name().lower() and item.get_name().endswith('.xhtml')), None)
+        self.assertIsNotNone(cover_xhtml_item, "cover.xhtml page was not created by set_cover.")
+
+        # Check temp cover directory is cleaned up
+        temp_cover_dir = os.path.join(self.ebooks_dir, self.epub_generator.temp_cover_dir_name)
+        self.assertFalse(os.path.exists(temp_cover_dir), "Temporary cover directory should be cleaned up.")
+
+
+    def test_generate_epub_with_synopsis_and_cover(self):
+        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
+        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
+        self.sample_progress_data["synopsis"] = "A great story indeed."
+        self.sample_progress_data["cover_image_url"] = "http://example.com/valid_cover.png" # Use PNG
+
+        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        self.assertEqual(len(generated_files), 1)
+        book = epub.read_epub(generated_files[0])
+
+        # Synopsis checks
+        self.assertIn("Synopsis", [link.title for link in book.toc])
+        synopsis_item = next(item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if item.get_name() == "synopsis.xhtml")
+        self.assertIn("<h1>Synopsis</h1>", synopsis_item.get_content().decode('utf-8'))
+        self.assertIn("<p>A great story indeed.</p>", synopsis_item.get_content().decode('utf-8'))
+
+        # Cover checks
+        cover_image_item = book.get_item_with_id('cover')
+        if not cover_image_item:
+             cover_image_item = book.get_item_with_href('cover.png')
+        self.assertIsNotNone(cover_image_item)
+        self.assertEqual(cover_image_item.get_media_type(), 'image/png')
+        cover_xhtml_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if 'cover' in item.get_name().lower() and item.get_name().endswith('.xhtml')), None)
+        self.assertIsNotNone(cover_xhtml_item, "cover.xhtml page was not created by set_cover.")
+
+
+        # Spine order: nav, (optional cover.xhtml), synopsis, chapter
+        spine_file_names = [item.file_name for item in book.spine]
+        nav_idx = spine_file_names.index('nav.xhtml')
+        # cover_xhtml_idx = spine_file_names.index('cover.xhtml') # If set_cover creates it AND it's added to spine
+        synopsis_idx = spine_file_names.index('synopsis.xhtml')
+        chap_idx = spine_file_names.index('chap_1.xhtml')
+
+        self.assertTrue(nav_idx < synopsis_idx < chap_idx)
+        # If cover.xhtml is part of spine: self.assertTrue(nav_idx < cover_xhtml_idx < synopsis_idx < chap_idx)
+        # Current implementation does not add cover.xhtml to spine explicitly, relies on set_cover behavior.
+
+        temp_cover_dir = os.path.join(self.ebooks_dir, self.epub_generator.temp_cover_dir_name)
+        self.assertFalse(os.path.exists(temp_cover_dir), "Temp cover dir should be gone.")
+
+
+    def test_cover_download_failure_http_error(self):
+        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
+        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
+        self.sample_progress_data["cover_image_url"] = "http://example.com/http_error" # Mocked to cause HTTP error
+
+        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        self.assertEqual(len(generated_files), 1)
+        book = epub.read_epub(generated_files[0])
+
+        # No cover should be set
+        self.assertIsNone(book.get_item_with_id('cover'))
+        self.assertIsNone(book.get_item_with_href('cover.jpg')) # Or any other cover name
+        cover_xhtml_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if 'cover' in item.get_name().lower() and item.get_name().endswith('.xhtml')), None)
+        self.assertIsNone(cover_xhtml_item, "cover.xhtml page should not have been created on download failure.")
+
+        temp_cover_dir = os.path.join(self.ebooks_dir, self.epub_generator.temp_cover_dir_name, "cover.jpg") # specific file
+        self.assertFalse(os.path.exists(temp_cover_dir), "Temporary cover file should not exist on download failure.")
+
+
+    def test_cover_download_failure_request_exception(self):
+        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
+        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
+        self.sample_progress_data["cover_image_url"] = "http://example.com/download_fails" # Mocked to raise RequestException
+
+        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        self.assertEqual(len(generated_files), 1) # EPUB should still be generated
+        book = epub.read_epub(generated_files[0])
+
+        self.assertIsNone(book.get_item_with_id('cover'))
+        cover_xhtml_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if 'cover' in item.get_name().lower() and item.get_name().endswith('.xhtml')), None)
+        self.assertIsNone(cover_xhtml_item, "cover.xhtml page should not have been created on request exception.")
+
+
+    def test_no_synopsis_no_cover(self):
+        """Test basic EPUB generation when synopsis and cover_image_url are None (default)."""
+        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
+        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
+        # "synopsis" and "cover_image_url" are already None in self.sample_progress_data by default setUp
+
+        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        self.assertEqual(len(generated_files), 1)
+        book = epub.read_epub(generated_files[0])
+
+        # No synopsis page
+        self.assertNotIn("Synopsis", [link.title for link in book.toc])
+        synopsis_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if item.get_name() == "synopsis.xhtml"), None)
+        self.assertIsNone(synopsis_item)
+
+        # No cover
+        self.assertIsNone(book.get_item_with_id('cover'))
+        cover_xhtml_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if 'cover' in item.get_name().lower() and item.get_name().endswith('.xhtml')), None)
+        self.assertIsNone(cover_xhtml_item)
+
+        # Spine should just have nav and chapter
+        spine_file_names = [item.file_name for item in book.spine]
+        self.assertEqual(spine_file_names, ['nav.xhtml', 'chap_1.xhtml'])
+
+
+    def test_epub_generation_continues_if_cover_save_fails(self):
+        # This test requires mocking open() to simulate an IOError during cover saving
+        # This is a bit more involved.
+        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
+        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
+        self.sample_progress_data["cover_image_url"] = "http://example.com/valid_cover.jpg"
+
+        original_open = open
+        def mock_open_failure(*args, **kwargs):
+            if 'cover.jpg' in args[0] and 'wb' in args[1]: # Target the cover image write
+                raise IOError("Simulated failed to save cover")
+            return original_open(*args, **kwargs)
+
+        with unittest.mock.patch('builtins.open', side_effect=mock_open_failure):
+            with unittest.mock.patch('os.makedirs'): # Mock makedirs as it might be called before open
+                generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+
+        self.assertEqual(len(generated_files), 1, "EPUB should still be generated even if cover saving fails.")
+        book = epub.read_epub(generated_files[0])
+        self.assertIsNone(book.get_item_with_id('cover'), "Cover should not be set if saving failed.")
+        # Check that the temporary cover directory is cleaned up or doesn't exist
+        temp_cover_file = os.path.join(self.ebooks_dir, self.epub_generator.temp_cover_dir_name, "cover.jpg")
+        self.assertFalse(os.path.exists(temp_cover_file), "Temp cover file should not exist if save failed.")

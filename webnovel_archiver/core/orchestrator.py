@@ -526,8 +526,10 @@ def archive_story(
     # 6. Save Final Progress
     logger.info("Saving final progress status...")
     try:
+        # Update last_archived_timestamp before final save
+        progress_data["last_archived_timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         save_progress(s_id, progress_data, workspace_root)
-        logger.info(f"Progress saved to {os.path.join(workspace_root, ARCHIVAL_STATUS_DIR, s_id, 'progress_status.json')}")
+        logger.info(f"Progress saved (including last_archived_timestamp) to {os.path.join(workspace_root, ARCHIVAL_STATUS_DIR, s_id, 'progress_status.json')}")
     except Exception as e:
         logger.error(f"Error saving progress for story ID {s_id}: {e}")
 

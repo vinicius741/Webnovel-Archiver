@@ -73,7 +73,8 @@ def _get_new_progress_structure(story_id: str, story_url: Optional[str] = None) 
             #   'error': "error message if failed"
             # }
         },
-        "last_updated_timestamp": None # Added last_updated_timestamp
+        "last_updated_timestamp": None, # Added last_updated_timestamp
+        "last_archived_timestamp": None # Added last_archived_timestamp for cloud backup logic
     }
 
 def load_progress(story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> Dict[str, Any]:
@@ -151,16 +152,27 @@ def load_progress(story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -
                                f"Expected {PROGRESS_FILE_VERSION}, found {data.get('version')}. "
                                "Data might be read/written unexpectedly. Consider migration.")
 
-            for key in new_structure.keys(): # new_structure was defined at the start of the function
+            # Ensure all keys from the new_structure are present in the loaded data
+            for key, default_value in new_structure.items():
                 if key not in data:
-                    data[key] = new_structure[key]
+                    logger.info(f"Adding missing key '{key}' with default value to progress data for story {story_id}.")
+                    data[key] = default_value
+                # Ensure sub-dictionaries like cloud_backup_status also have all their keys
+                elif isinstance(default_value, dict) and isinstance(data.get(key), dict):
+                    for sub_key, sub_default_value in default_value.items():
+                        if sub_key not in data[key]:
+                            logger.info(f"Adding missing sub-key '{key}.{sub_key}' with default value to progress data for story {story_id}.")
+                            data[key][sub_key] = sub_default_value
 
-            if "cloud_backup_status" not in data or not isinstance(data["cloud_backup_status"], dict):
-                 data["cloud_backup_status"] = new_structure["cloud_backup_status"]
-            else:
-                for sub_key in new_structure["cloud_backup_status"].keys():
-                    if sub_key not in data["cloud_backup_status"]:
-                        data["cloud_backup_status"][sub_key] = new_structure["cloud_backup_status"][sub_key]
+
+            # This specific check for cloud_backup_status structure might be redundant now with the generic loop above,
+            # but keeping it for explicitness or if more complex logic was intended.
+            # if "cloud_backup_status" not in data or not isinstance(data["cloud_backup_status"], dict):
+            #      data["cloud_backup_status"] = new_structure["cloud_backup_status"]
+            # else:
+            #     for sub_key in new_structure["cloud_backup_status"].keys():
+            #         if sub_key not in data["cloud_backup_status"]:
+            #             data["cloud_backup_status"][sub_key] = new_structure["cloud_backup_status"][sub_key]
 
             return data
         except json.JSONDecodeError:

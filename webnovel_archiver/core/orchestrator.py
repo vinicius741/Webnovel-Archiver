@@ -422,44 +422,60 @@ def archive_story(
         # else: chapter already processed and files are fine, or it's an old chapter that's now archived.
         # Its entry in updated_downloaded_chapters (copied from existing) has already been updated (status, last_checked_on).
 
-    # Ensure downloaded_chapters is sorted by download_order as expected by EPUB generator
-    # The reconciliation and new chapter processing might alter order if not careful.
-    # Best to sort based on the order from the source (chapters_info_list)
-    source_url_to_order_map = {info.chapter_url: info.download_order for info in chapters_info_list}
+    # Consolidate and re-order chapters for progress data
+    # Step 1: Create a map of all chapters currently in updated_downloaded_chapters (which reflects the latest state after processing)
+    # for efficient lookup and modification.
+    current_progress_chapters_map = {ch_entry["chapter_url"]: ch_entry for ch_entry in updated_downloaded_chapters}
 
-    # Create a dictionary for quick lookup of chapters in updated_downloaded_chapters by URL
-    processed_chapters_map = {ch["chapter_url"]: ch for ch in updated_downloaded_chapters}
+    # Step 2: Build the new definitive chapter list.
+    definitive_chapters_list = []
 
-    # Build the final sorted list based on chapters_info_list from the source
-    final_sorted_chapters = []
-    for chapter_info_from_source in chapters_info_list:
-        if chapter_info_from_source.chapter_url in processed_chapters_map:
-            # If chapter from source is in our processed map, use its latest data
-            chapter_entry = processed_chapters_map[chapter_info_from_source.chapter_url]
-            # Ensure download_order and title are updated from source if they changed
-            chapter_entry["download_order"] = chapter_info_from_source.download_order
-            chapter_entry["chapter_title"] = chapter_info_from_source.chapter_title
-            final_sorted_chapters.append(chapter_entry)
-            # Remove from map to identify chapters in progress not in source later
-            del processed_chapters_map[chapter_info_from_source.chapter_url]
+    # Add chapters that are currently on the source, in the order they appear on the source.
+    # Their details (like title, source_chapter_id) should be up-to-date from 'updated_downloaded_chapters'.
+    for source_chapter_info in chapters_info_list:
+        chapter_to_add = None
+        if source_chapter_info.chapter_url in current_progress_chapters_map:
+            # This chapter from the source exists in our processed list.
+            chapter_to_add = current_progress_chapters_map.pop(source_chapter_info.chapter_url) # Remove from map as it's placed
+            # Ensure its status is 'active' as it's currently in the source list.
+            chapter_to_add["status"] = "active"
+            # Update title and source_chapter_id from the latest fetch, in case they changed on the source.
+            chapter_to_add["chapter_title"] = source_chapter_info.chapter_title
+            chapter_to_add["source_chapter_id"] = source_chapter_info.source_chapter_id
+        else:
+            # This implies a chapter is in the source list but was NOT in updated_downloaded_chapters.
+            # This should ideally not happen if the main processing loop correctly added all new/reprocessed chapters
+            # to updated_downloaded_chapters. This is a safeguard or indicates a potential prior logic gap.
+            logger.error(f"CRITICAL LOGIC FLAW: Chapter '{source_chapter_info.chapter_title}' (URL: {source_chapter_info.chapter_url}) "
+                         f"from source was not found in 'updated_downloaded_chapters'. This chapter will be missing "
+                         f"from the final EPUB and progress data unless handled. This indicates an issue in the main "
+                         f"chapter processing loop where new or reprocessed chapters are added/updated in 'updated_downloaded_chapters'.")
+            # For now, we skip adding it as we don't have its full details (like local file paths).
+            continue
 
-    # Add any remaining chapters from processed_chapters_map (these are chapters in progress but no longer in source, already marked as 'archived')
-    # These should already be in final_sorted_chapters if they were handled by the reconciliation loop and picked up from updated_downloaded_chapters.
-    # However, to be safe and ensure they are included if they were somehow missed by the source iteration:
-    for archived_chapter_url, archived_chapter_entry in processed_chapters_map.items():
-        if archived_chapter_entry.get("status") == "archived":
-            # It's important to decide where these should go in the sort order.
-            # Original download_order is probably best.
-            final_sorted_chapters.append(archived_chapter_entry)
-            logger.info(f"Ensuring archived chapter '{archived_chapter_entry.get('chapter_title', archived_chapter_url)}' is in the final list.")
+        if chapter_to_add:
+            definitive_chapters_list.append(chapter_to_add)
 
-    # Sort the final list by 'download_order' to ensure consistency
-    final_sorted_chapters.sort(key=lambda ch: ch.get("download_order", float('inf')))
+    # Step 3: Add remaining chapters from current_progress_chapters_map.
+    # These are chapters that were in 'updated_downloaded_chapters' but are no longer on the source
+    # (i.e., they should be marked 'archived').
+    # They are added after the active chapters. We sort them by their original 'download_order'
+    # (or another field like 'first_seen_on' if 'download_order' is unreliable for archived items)
+    # to maintain their relative order as much as possible.
+    archived_chapters_to_add = sorted(current_progress_chapters_map.values(), key=lambda ch: (ch.get("download_order", float('inf')), ch.get("first_seen_on", "")))
+    for archived_chapter in archived_chapters_to_add:
+        archived_chapter["status"] = "archived" # Ensure status is correctly set
+        definitive_chapters_list.append(archived_chapter)
+        logger.info(f"Appending archived chapter '{archived_chapter.get('chapter_title', archived_chapter['chapter_url'])}' to the definitive list.")
 
+    # Step 4: Re-assign 'download_order' sequentially to the entire definitive_chapters_list.
+    # This ensures unique, sequential ordering for EPUB generation and for storage in progress.json.
+    for i, chapter_entry in enumerate(definitive_chapters_list):
+        chapter_entry["download_order"] = i + 1
+        logger.debug(f"Final order assignment: {chapter_entry['download_order']} -> {chapter_entry.get('chapter_title', chapter_entry['chapter_url'])} (Status: {chapter_entry['status']})")
 
-    progress_data["downloaded_chapters"] = final_sorted_chapters
-    # progress_data["downloaded_chapters"] = updated_downloaded_chapters
-    # The old processed_chapters_for_this_run is no longer used.
+    progress_data["downloaded_chapters"] = definitive_chapters_list
+    # The old `processed_chapters_for_this_run` variable is no longer used for this assignment.
 
     # 5. EPUB Generation
     if ebook_title_override:

@@ -25,7 +25,7 @@ import json # For loading progress.json (though pm.load_progress might abstract 
 
 # Import necessary constants and functions from progress_manager
 from webnovel_archiver.core.storage.progress_manager import (
-    ARCHIVAL_STATUS_DIR, # Already aliased as WORKSPACE_ARCHIVAL_STATUS_DIR, consider removing direct import if not used elsewhere
+    ARCHIVAL_STATUS_DIR,  # Already aliased as WORKSPACE_ARCHIVAL_STATUS_DIR, consider removing direct import if not used elsewhere
     EBOOKS_DIR, # Already aliased as WORKSPACE_EBOOKS_DIR, consider removing direct import if not used elsewhere
     load_progress, # Already available via pm alias, but explicit import can be clear
     get_progress_filepath # Already available via pm alias
@@ -33,6 +33,8 @@ from webnovel_archiver.core.storage.progress_manager import (
 # ConfigManager and DEFAULT_WORKSPACE_PATH are already imported
 # click and get_logger are already imported above.
 
+# Import the new context classes
+from .contexts import ArchiveStoryContext, CloudBackupContext, MigrationContext
 
 logger = get_logger(__name__)
 
@@ -50,93 +52,70 @@ def archive_story_handler(
     chapters_per_volume: Optional[int],
     epub_contents: Optional[str] # Added new parameter
 ):
+    # display_progress callback remains in the handler as it's UI related
     def display_progress(message: Union[str, Dict[str, Any]]) -> None:
         if isinstance(message, str):
             click.echo(message)
         elif isinstance(message, dict):
-            # Customizable formatting based on expected dictionary structure
             status = message.get("status", "info")
             msg = message.get("message", "No message content.")
-
-            # More detailed formatting for specific messages if needed
             if "Processing chapter" in msg and "current_chapter_num" in message and "total_chapters" in message:
-                # Example: "Processing chapter: Chapter Title (1/10)" is already part of msg from orchestrator
                 formatted_message = f"[{status.upper()}] {msg}"
             elif "Successfully fetched metadata" in msg:
-                formatted_message = f"[{status.upper()}] {msg}" # msg already contains title
-            elif "Found" in msg and "chapters" in msg:
-                formatted_message = f"[{status.upper()}] {msg}" # msg already contains count
-            else:
-                # Generic formatting for other dict messages
                 formatted_message = f"[{status.upper()}] {msg}"
-
-            # Add more specific formatting based on other keys if necessary
-            # For example, if there's a progress percentage or specific data points:
-            # if "progress_percent" in message:
-            #    formatted_message += f" ({message['progress_percent']}%)"
-
+            elif "Found" in msg and "chapters" in msg:
+                formatted_message = f"[{status.upper()}] {msg}"
+            else:
+                formatted_message = f"[{status.upper()}] {msg}"
             click.echo(formatted_message)
         else:
             click.echo(str(message))
 
-    click.echo(f"Received story URL: {story_url}")
-    if output_dir:
-        workspace_root = output_dir
-        click.echo(f"Using provided output directory: {workspace_root}")
+    # 1. Instantiate Context
+    context = ArchiveStoryContext(
+        story_url=story_url,
+        output_dir=output_dir,
+        ebook_title_override=ebook_title_override,
+        keep_temp_files=keep_temp_files,
+        force_reprocessing=force_reprocessing,
+        cli_sentence_removal_file=cli_sentence_removal_file,
+        no_sentence_removal=no_sentence_removal,
+        chapters_per_volume=chapters_per_volume,
+        epub_contents=epub_contents
+    )
+
+    # Report any initial context setup warnings (e.g., file not found, using defaults)
+    for msg in context.error_messages: # error_messages now also includes warnings
+        click.echo(click.style(msg, fg="yellow"), err=True) # Print warnings to stderr
+
+    if not context.is_valid():
+        # is_valid() should populate error_messages for critical errors
+        for msg in context.error_messages: # Re-iterate if new messages were added by is_valid
+            if "Error:" in msg: # Only print critical errors here
+                 click.echo(click.style(msg, fg="red"), err=True)
+        logger.error(f"ArchiveStoryContext validation failed. Errors: {context.error_messages}")
+        return # Exit if context is not valid
+
+    click.echo(f"Received story URL: {context.story_url}")
+    click.echo(f"Workspace directory: {context.workspace_root}")
+    if context.sentence_removal_file:
+        click.echo(f"Using sentence removal file: {context.sentence_removal_file}")
+    elif context.no_sentence_removal:
+        click.echo("Sentence removal explicitly disabled.")
     else:
-        try:
-            config_manager = ConfigManager()
-            workspace_root = config_manager.get_workspace_path()
-            click.echo(f"Using workspace directory from config: {workspace_root}")
-        except Exception as e:
-            logger.error(f"Failed to initialize ConfigManager or get workspace path: {e}")
-            workspace_root = DEFAULT_WORKSPACE_PATH
-            click.echo(f"Warning: Using default workspace path due to error: {workspace_root}", err=True)
+        click.echo("No sentence removal file specified or found; proceeding without it.")
 
-    # click.echo("Starting archival process...") # Removed, orchestrator callback will handle this
-    logger.info(f"CLI handler initiated archival for {story_url} to workspace {workspace_root}")
-
-    # Determine the final sentence removal file
-    final_sentence_removal_file: Optional[str] = None
-    config_manager_for_sr = ConfigManager() # Initialize once if needed for defaults
-
-    if no_sentence_removal:
-        logger.info("Sentence removal explicitly disabled via --no-sentence-removal flag.")
-        final_sentence_removal_file = None
-    elif cli_sentence_removal_file:
-        if os.path.exists(cli_sentence_removal_file):
-            logger.info(f"Using sentence removal file provided via CLI: {cli_sentence_removal_file}")
-            final_sentence_removal_file = cli_sentence_removal_file
-        else:
-            logger.warning(f"Sentence removal file provided via CLI not found: {cli_sentence_removal_file}. Proceeding without sentence removal.")
-            final_sentence_removal_file = None
-    else:
-        default_sr_file_path = config_manager_for_sr.get_default_sentence_removal_file()
-        if default_sr_file_path:
-            if os.path.exists(default_sr_file_path):
-                logger.info(f"Using default sentence removal file from config: {default_sr_file_path}")
-                final_sentence_removal_file = default_sr_file_path
-            else:
-                logger.warning(f"Default sentence removal file configured at '{default_sr_file_path}' not found. Proceeding without sentence removal.")
-                final_sentence_removal_file = None
-        else:
-            logger.info("No sentence removal file provided via CLI and no default configured. Proceeding without sentence removal.")
-            final_sentence_removal_file = None
+    logger.info(f"CLI handler initiated archival for {context.story_url} to workspace {context.workspace_root}")
 
     try:
+        # 2. Call Orchestrator with prepared context
+        orchestrator_kwargs = context.get_orchestrator_kwargs()
         summary = call_orchestrator_archive_story(
-            story_url=story_url,
-            workspace_root=workspace_root,
-            ebook_title_override=ebook_title_override,
-            keep_temp_files=keep_temp_files,
-            force_reprocessing=force_reprocessing,
-            sentence_removal_file=final_sentence_removal_file, # Pass the determined file
-            no_sentence_removal=no_sentence_removal, # Pass through the direct flag
-            chapters_per_volume=chapters_per_volume,
-            epub_contents=epub_contents, # Pass new parameter
-            progress_callback=display_progress
+            **orchestrator_kwargs,
+            progress_callback=display_progress # Add callback separately
         )
 
+        # 3. Report results
         if summary:
             click.echo(click.style("✓ Archival process completed successfully!", fg="green"))
             click.echo(f"  Title: {summary['title']}")
@@ -180,95 +159,48 @@ def cloud_backup_handler(
     """Handles the logic for the 'cloud-backup' CLI command."""
     click.echo(f"Cloud backup initiated. Story ID: {story_id if story_id else 'All stories'}. Service: {cloud_service_name}.")
 
-    try:
-        config_manager = ConfigManager()
-        workspace_root = config_manager.get_workspace_path()
-    except Exception as e:
-        logger.error(f"Failed to initialize ConfigManager or get workspace path: {e}")
-        click.echo(f"Error: Could not determine workspace path. {e}", err=True)
+    context = CloudBackupContext(
+        story_id_option=story_id,
+        cloud_service_name=cloud_service_name,
+        force_full_upload=force_full_upload,
+        gdrive_credentials_path=gdrive_credentials_path,
+        gdrive_token_path=gdrive_token_path
+    )
+
+    for msg in context.warning_messages:
+        click.echo(click.style(msg, fg="yellow"), err=True)
+
+    if not context.is_valid():
+        for msg in context.error_messages:
+            click.echo(click.style(msg, fg="red"), err=True)
+        logger.error(f"CloudBackupContext validation failed. Errors: {context.error_messages}")
         return
 
-    archival_status_dir = os.path.join(workspace_root, WORKSPACE_ARCHIVAL_STATUS_DIR)
-    ebooks_base_dir = os.path.join(workspace_root, WORKSPACE_EBOOKS_DIR) # Renamed for clarity
+    # Use context properties from here
+    sync_service = context.sync_service # Already initialized and validated
+    workspace_root = context.workspace_root
+    # archival_status_dir = context.archival_status_dir # Used by context internally for story_ids
+    # ebooks_base_dir = context.ebooks_base_dir # Used by context internally
+    story_ids_to_process = context.story_ids_to_process
+    cloud_base_folder_id = context.cloud_base_folder_id
+    base_backup_folder_name = context.base_backup_folder_name # For messaging
 
-    if not os.path.isdir(archival_status_dir):
-        click.echo(f"Error: Archival status directory not found: {archival_status_dir}", err=True)
-        return
-    if not os.path.isdir(ebooks_base_dir): # Check base ebooks dir
-        click.echo(f"Error: Ebooks directory not found: {ebooks_base_dir}", err=True)
-        return
-
-    sync_service: Optional[BaseSyncService] = None
-    if cloud_service_name.lower() == 'gdrive':
-        try:
-            if not os.path.exists(gdrive_credentials_path) and not os.path.exists(gdrive_token_path) :
-                 click.echo(f"Warning: Google Drive credentials ('{gdrive_credentials_path}') or token ('{gdrive_token_path}') not found. Authentication may fail or require interaction.", err=True)
-            sync_service = GDriveSync(credentials_path=gdrive_credentials_path, token_path=gdrive_token_path)
-            click.echo("Google Drive sync service initialized.")
-        except FileNotFoundError as e:
-            click.echo(f"Error: GDrive credentials file '{gdrive_credentials_path}' not found. Please provide it using --credentials-file or ensure it's in the default location.", err=True)
-            logger.error(f"GDrive credentials file not found: {gdrive_credentials_path}")
-            return
-        except ConnectionError as e:
-            click.echo(f"Error: Could not connect to Google Drive: {e}", err=True)
-            logger.error(f"GDrive connection error: {e}")
-            return
-        except Exception as e:
-            click.echo(f"Error initializing Google Drive service: {e}", err=True)
-            logger.error(f"GDrive initialization error: {e}", exc_info=True)
-            return
+    if not story_ids_to_process and not context.story_id_option : # No specific story and none found
+        click.echo("No stories found to back up.")
+        # Check for HTML report upload even if no stories are processed
+        # This part is moved to the end of the function to run regardless of story processing outcome.
+    elif not story_ids_to_process and context.story_id_option:
+        # This case implies story_id_option was given, but it was invalid and error was already printed by context.
+        # No further message needed here, as context.is_valid() would have caught it or _prepare_story_ids_to_process added error.
+        pass # Error already handled by context reporting
     else:
-        click.echo(f"Error: Cloud service '{cloud_service_name}' is not supported.", err=True)
-        return
+        click.echo(f"Found {len(story_ids_to_process)} stories to potentially back up: {', '.join(story_ids_to_process)}")
 
-    if not sync_service:
-        click.echo("Error: Sync service could not be initialized.", err=True)
-        return
-
-    story_ids_to_process: List[str] = []
-    # This will store the ID of the main "Webnovel Archiver Backups" folder in the cloud.
-    cloud_base_folder_id: Optional[str] = None
-    base_backup_folder_name = "Webnovel Archiver Backups" # Define folder name once
-
-    # Attempt to create the base backup folder before processing any stories.
-    try:
-        click.echo(f"Ensuring base cloud backup folder '{base_backup_folder_name}' exists...")
-        cloud_base_folder_id = sync_service.create_folder_if_not_exists(base_backup_folder_name, parent_folder_id=None)
-        if not cloud_base_folder_id:
-            click.echo(click.style(f"Error: Failed to create or retrieve base cloud folder '{base_backup_folder_name}'. Cannot proceed with backup.", fg="red"), err=True)
-            logger.error(f"Failed to create/retrieve base cloud folder '{base_backup_folder_name}'. Aborting cloud backup.")
-            return
-        click.echo(f"Base cloud folder '{base_backup_folder_name}' ensured (ID: {cloud_base_folder_id}).")
-    except ConnectionError as e:
-        click.echo(click.style(f"Error: Connection error while creating base cloud folder '{base_backup_folder_name}': {e}. Cannot proceed.", fg="red"), err=True)
-        logger.error(f"Connection error creating base cloud folder '{base_backup_folder_name}': {e}")
-        return
-    except Exception as e: # Catch any other unexpected errors during base folder creation
-        click.echo(click.style(f"Error: Unexpected error while creating base cloud folder '{base_backup_folder_name}': {e}. Cannot proceed.", fg="red"), err=True)
-        logger.error(f"Unexpected error creating base cloud folder '{base_backup_folder_name}': {e}", exc_info=True)
-        return
-
-    if story_id:
-        # Verify this story_id exists
-        if not os.path.isdir(os.path.join(archival_status_dir, story_id)):
-            click.echo(f"Error: No archival status found for story ID '{story_id}' in {archival_status_dir}.", err=True)
-            return
-        story_ids_to_process.append(story_id)
-    else:
-        try:
-            story_ids_to_process = [d for d in os.listdir(archival_status_dir) if os.path.isdir(os.path.join(archival_status_dir, d))]
-            if not story_ids_to_process:
-                click.echo("No stories found in the archival status directory to back up.")
-                return
-            click.echo(f"Found {len(story_ids_to_process)} stories to potentially back up: {', '.join(story_ids_to_process)}")
-        except OSError as e:
-            click.echo(f"Error listing stories in {archival_status_dir}: {e}", err=True)
-            return
 
     processed_stories_count = 0
     for current_story_id in story_ids_to_process:
         any_epub_uploaded_for_this_story = False # Initialize EPUB upload flag
-        an_upload_occurred = False # Initialize flag for each story
+        # an_upload_occurred = False # Renamed to actual_files_uploaded_this_story for clarity
         click.echo(f"Processing story: {current_story_id}")
 
         progress_file_path = pm.get_progress_filepath(current_story_id, workspace_root)
@@ -286,10 +218,10 @@ def cloud_backup_handler(
         # Determine if this story needs backup
         story_requires_backup = False
         last_archived_ts_str = progress_data.get("last_archived_timestamp")
-        cloud_backup_status = pm.get_cloud_backup_status(progress_data) # Use getter to ensure structure
+        cloud_backup_status = pm.get_cloud_backup_status(progress_data)
         last_successful_backup_ts_str = cloud_backup_status.get("last_successful_backup_timestamp")
 
-        if force_full_upload:
+        if context.force_full_upload: # Use context.force_full_upload
             story_requires_backup = True
             click.echo(f"Story {current_story_id}: Forced full upload.")
             logger.info(f"Story {current_story_id}: Forced full upload.")
@@ -299,8 +231,6 @@ def cloud_backup_handler(
             logger.info(f"Story {current_story_id}: No previous successful backup. Queued for backup.")
         elif last_archived_ts_str:
             try:
-                # Ensure timestamps are comparable (e.g., datetime objects)
-                # ISO format strings can be compared directly if they are consistently formatted (which they should be)
                 if last_archived_ts_str > last_successful_backup_ts_str:
                     story_requires_backup = True
                     click.echo(f"Story {current_story_id}: Archived more recently ({last_archived_ts_str}) than last backup ({last_successful_backup_ts_str}). Requires backup.")
@@ -308,33 +238,23 @@ def cloud_backup_handler(
                 else:
                     click.echo(f"Story {current_story_id}: Last archive ({last_archived_ts_str}) is not newer than last backup ({last_successful_backup_ts_str}). Skipping backup.")
                     logger.info(f"Story {current_story_id}: Last archive ({last_archived_ts_str}) not newer than last backup ({last_successful_backup_ts_str}). Skipping.")
-            except TypeError as te: # Handles cases where one might be None or not string, though checks above should prevent
+            except TypeError as te:
                 logger.error(f"Story {current_story_id}: Timestamp comparison error - last_archived: {last_archived_ts_str}, last_backup: {last_successful_backup_ts_str}. Error: {te}. Assuming backup is needed.", exc_info=True)
                 click.echo(f"Warning: Timestamp comparison error for story {current_story_id}. Proceeding with backup as a precaution.", err=True)
-                story_requires_backup = True # Err on the side of caution
+                story_requires_backup = True
         else:
-            # No last_archived_timestamp, but there was a last_successful_backup.
-            # This implies it was backed up but never "archived" with the new timestamp system.
-            # Or it's an old record. To be safe, or by policy, we might decide to back it up.
-            # For now, let's assume if last_archived_timestamp is missing, it doesn't trigger a new backup
-            # unless force_full_upload or no last_successful_backup_ts_str.
             click.echo(f"Story {current_story_id}: Has a last backup timestamp ({last_successful_backup_ts_str}) but no last_archived_timestamp. Skipping unless forced.")
             logger.info(f"Story {current_story_id}: Has last backup ({last_successful_backup_ts_str}) but no last_archived_timestamp. Skipping.")
 
 
         if not story_requires_backup:
-            # We still count it as "processed" in terms of the loop, but no backup actions are taken.
-            # No need to update progress file if no backup actions taken.
-            processed_stories_count +=1 # Count it as looked at
+            processed_stories_count +=1
             click.echo(f"Finished processing story (skipped backup): {current_story_id}\n")
             continue
 
-
-        # --- Proceed with backup for the story if story_requires_backup is True ---
         click.echo(f"Story {current_story_id}: Preparing for cloud backup.")
 
-        # cloud_base_folder_id is now created before the loop.
-        if not cloud_base_folder_id:
+        if not cloud_base_folder_id: # Should be caught by context.is_valid, but defensive
             click.echo(click.style(f"Critical Error: Base cloud folder ID not available for story {current_story_id}. Skipping.", fg="red"), err=True)
             logger.error(f"Critical: cloud_base_folder_id is None when processing story {current_story_id}.")
             continue
@@ -354,6 +274,7 @@ def cloud_backup_handler(
 
         files_to_upload_info: List[Dict[str, str]] = []
         files_to_upload_info.append({'local_path': progress_file_path, 'name': "progress_status.json"})
+        # workspace_root is from context
         epub_file_entries = pm.get_epub_file_details(progress_data, current_story_id, workspace_root)
 
         if not epub_file_entries:
@@ -372,14 +293,14 @@ def cloud_backup_handler(
             files_to_upload_info.append({'local_path': epub_local_abs_path, 'name': epub_filename})
 
         backup_files_results: List[Dict[str, Any]] = []
-        actual_files_uploaded_this_story = False # Track if any file (EPUB or progress.json) is actually uploaded
+        actual_files_uploaded_this_story = False
 
         for file_info_to_upload in files_to_upload_info:
             local_path = file_info_to_upload['local_path']
             upload_name = file_info_to_upload['name']
-            file_should_be_uploaded_due_to_overwrite_or_missing_remote = True # Default to true
+            file_should_be_uploaded_due_to_overwrite_or_missing_remote = True
 
-            if not force_full_upload: # If not forcing, check remote state
+            if not context.force_full_upload: # Use context.force_full_upload
                 try:
                     remote_metadata = sync_service.get_file_metadata(file_name=upload_name, folder_id=story_cloud_folder_id)
                     if remote_metadata and remote_metadata.get('modifiedTime'):
@@ -391,17 +312,17 @@ def cloud_backup_handler(
                                 'local_path': local_path,
                                 'cloud_file_name': upload_name,
                                 'cloud_file_id': remote_metadata.get('id'),
-                                'last_backed_up_timestamp': remote_metadata.get('modifiedTime'), # Use remote's mod time as "last backed up"
+                                'last_backed_up_timestamp': remote_metadata.get('modifiedTime'),
                                 'status': 'skipped_up_to_date'
                             })
                         else:
                              click.echo(f"Local file '{upload_name}' is newer. Uploading...")
-                    else: # Remote file not found or no timestamp
+                    else:
                         click.echo(f"Remote file '{upload_name}' not found or no timestamp. Uploading...")
                 except ConnectionError as e:
                     click.echo(f"Warning: Could not get remote metadata for '{upload_name}': {e}. Will attempt upload.", err=True)
                     logger.warning(f"Could not get remote metadata for {upload_name} (story {current_story_id}): {e}")
-                except Exception as e: # Other errors during metadata check
+                except Exception as e:
                     click.echo(f"Warning: Error checking remote status for '{upload_name}': {e}. Will attempt upload.", err=True)
                     logger.warning(f"Error checking remote status for {upload_name} (story {current_story_id}): {e}", exc_info=True)
 
@@ -410,7 +331,7 @@ def cloud_backup_handler(
                     click.echo(f"Uploading '{upload_name}' for story {current_story_id}...")
                     uploaded_file_meta = sync_service.upload_file(local_path, story_cloud_folder_id, remote_file_name=upload_name)
                     click.echo(f"Successfully uploaded '{uploaded_file_meta.get('name')}' (ID: {uploaded_file_meta.get('id')}).")
-                    actual_files_uploaded_this_story = True # Mark that an upload occurred
+                    actual_files_uploaded_this_story = True
                     backup_files_results.append({
                         'local_path': local_path,
                         'cloud_file_name': uploaded_file_meta.get('name'),
@@ -418,8 +339,8 @@ def cloud_backup_handler(
                         'last_backed_up_timestamp': uploaded_file_meta.get('modifiedTime') or datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         'status': 'uploaded'
                     })
-                    if upload_name.endswith('.epub'): # This flag was used for deciding to save progress.json
-                        any_epub_uploaded_for_this_story = True # Still useful for specific logging/conditions if needed
+                    if upload_name.endswith('.epub'):
+                        any_epub_uploaded_for_this_story = True
                 except FileNotFoundError:
                     click.echo(f"Error: Local file {local_path} vanished before upload. Skipping this file.", err=True)
                     logger.error(f"Local file {local_path} not found for upload (story {current_story_id}).")
@@ -433,84 +354,76 @@ def cloud_backup_handler(
                     logger.error(f"Unexpected error uploading {local_path} for story {current_story_id}: {e}", exc_info=True)
                     backup_files_results.append({ 'local_path': local_path, 'cloud_file_name': upload_name, 'status': 'failed', 'error': str(e) })
 
-        # Update progress_status.json for this story if any file operation (upload/skip/fail) occurred.
-        # The decision to backup the story overall was made earlier. Now we record the outcome.
-        if backup_files_results: # If there were any file operations attempted
+        if backup_files_results:
             click.echo(f"Updating progress file for story {current_story_id} with backup operation results.")
             current_utc_time_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-
-            # Determine if this specific backup attempt for the story was "successful" overall
-            # Successful means all attempted files were either uploaded or skipped (already up-to-date)
             all_attempted_ops_successful_or_skipped = all(
                 f.get('status') in ['uploaded', 'skipped_up_to_date'] for f in backup_files_results
             )
-
-            # Update last_successful_backup_timestamp only if this attempt was successful overall
-            # and at least one file was actually uploaded (not just skipped or all failed)
-            new_last_successful_ts = last_successful_backup_ts_str # Default to existing
+            new_last_successful_ts = last_successful_backup_ts_str
             if all_attempted_ops_successful_or_skipped and actual_files_uploaded_this_story :
-                # If multiple files uploaded, use the latest modifiedTime from the successful uploads.
-                # If only skips, or if uploaded files don't have modifiedTime, use current time.
                 successful_upload_timestamps = [
                     f['last_backed_up_timestamp'] for f in backup_files_results
                     if f.get('status') == 'uploaded' and f.get('last_backed_up_timestamp')
                 ]
                 if successful_upload_timestamps:
                     new_last_successful_ts = max(successful_upload_timestamps)
-                else: # No successful uploads with timestamps (e.g. only skips, or API error giving timestamp)
-                    new_last_successful_ts = current_utc_time_iso # Fallback to current time for this successful backup operation
+                else:
+                    new_last_successful_ts = current_utc_time_iso
                 click.echo(f"Story {current_story_id}: Backup attempt successful. Updating last_successful_backup_timestamp to {new_last_successful_ts}.")
                 logger.info(f"Story {current_story_id}: Backup successful. New last_successful_backup_timestamp: {new_last_successful_ts}.")
-
 
             cloud_backup_update_data = {
                 'last_backup_attempt_timestamp': current_utc_time_iso,
                 'last_successful_backup_timestamp': new_last_successful_ts,
-                'service': cloud_service_name.lower(),
+                'service': context.cloud_service_name.lower(), # Use context
                 'base_cloud_folder_name': base_backup_folder_name,
                 'story_cloud_folder_name': current_story_id,
                 'cloud_base_folder_id': cloud_base_folder_id,
                 'story_cloud_folder_id': story_cloud_folder_id,
-                'backed_up_files': backup_files_results # Store results of all attempted files
+                'backed_up_files': backup_files_results
             }
-
             try:
                 pm.update_cloud_backup_status(progress_data, cloud_backup_update_data)
-                pm.save_progress(current_story_id, progress_data, workspace_root)
+                pm.save_progress(current_story_id, progress_data, workspace_root) # workspace_root from context
                 click.echo(f"Successfully updated and saved local progress status for story {current_story_id}.")
             except Exception as e:
                 click.echo(f"Error updating/saving progress file for story {current_story_id}: {e}", err=True)
                 logger.error(f"Failed to update/save progress_status.json for {current_story_id} after backup ops: {e}", exc_info=True)
-        else: # No files were even attempted (e.g. no EPUBs and progress.json somehow skipped)
+        else:
              click.echo(f"No file operations (upload/skip/fail) were performed for story {current_story_id}. Progress file not updated for backup status.")
              logger.info(f"No file operations for story {current_story_id}. Progress file not updated with backup status.")
-
 
         processed_stories_count +=1
         click.echo(f"Finished processing story: {current_story_id}\n")
 
     if processed_stories_count > 0:
         click.echo(f"Cloud backup process completed for {processed_stories_count} story/stories.")
-    elif not story_ids_to_process:
-        pass # No stories were found to process initially
-    else:
-        # This case means stories were found, but none were actually processed (e.g. all skipped due to errors or missing files)
-        click.echo("Cloud backup process completed, but no stories were actually backed up.")
+    elif not story_ids_to_process and context.story_id_option: # Specific story ID was given but it was invalid (already handled by context)
+        pass
+    elif not story_ids_to_process: # No stories found and no specific ID given
+        # Message "No stories found to back up." was already printed if applicable.
+        # If we reach here and story_ids_to_process is empty, it means no stories were found, or an initial error occurred.
+        # The initial "No stories found..." message covers the former.
+        # If context was invalid, we wouldn't reach this loop.
+        # This path is primarily for when no stories are found.
+        pass
+    else: # stories_ids_to_process was not empty, but processed_stories_count is 0 (e.g. all skipped due to errors)
+        click.echo("Cloud backup process completed, but no stories were actually backed up in this run (check individual story logs).")
 
-    # --- HTML Report Upload Logic ---
-    report_path = os.path.join(workspace_root, "reports", "archive_report.html")
+
+    # --- HTML Report Upload Logic --- (Moved to run after story loop)
+    report_path = os.path.join(workspace_root, "reports", "archive_report.html") # workspace_root from context
     logger.info(f"Checking for HTML report at: {report_path}")
 
     if os.path.exists(report_path):
         click.echo("HTML report found. Attempting to upload...")
         logger.info("Attempting to upload HTML report...")
 
-        # cloud_base_folder_id should have been created at the beginning.
-        # If it wasn't (e.g., initial connection error), then we can't upload the report to the specific base folder.
-        if not cloud_base_folder_id:
+        if not cloud_base_folder_id: # cloud_base_folder_id from context
             click.echo(click.style(f"Warning: Base cloud folder ID ('{base_backup_folder_name}') not available. Cannot upload HTML report to it. This might be due to earlier errors.", fg="yellow"), err=True)
             logger.warning(f"HTML report upload skipped: cloud_base_folder_id is not set (base folder: '{base_backup_folder_name}').")
-        elif sync_service: # cloud_base_folder_id exists and sync_service is available
+        elif sync_service: # sync_service from context
             try:
                 logger.info(f"Uploading report '{report_path}' to cloud folder ID '{cloud_base_folder_id}'.")
                 uploaded_report_meta = sync_service.upload_file(
@@ -521,7 +434,6 @@ def cloud_backup_handler(
                 click.echo(click.style(f"✓ Successfully uploaded HTML report: {uploaded_report_meta.get('name')}", fg="green"))
                 logger.info(f"HTML report uploaded successfully: {uploaded_report_meta.get('name')} (ID: {uploaded_report_meta.get('id')})")
             except FileNotFoundError:
-                # This specific check might be redundant if os.path.exists passed, but good for robustness
                 click.echo(click.style(f"Error: Report file {report_path} not found at time of upload. Skipping.", fg="red"), err=True)
                 logger.error(f"Report file {report_path} not found during upload attempt.")
             except ConnectionError as e:
@@ -530,13 +442,11 @@ def cloud_backup_handler(
             except Exception as e:
                 click.echo(click.style(f"An unexpected error occurred during HTML report upload: {e}", fg="red"), err=True)
                 logger.error(f"Unexpected error during HTML report upload: {e}", exc_info=True)
-        # Removed 'elif sync_service:' as the logic is now: if cloud_base_folder_id is None, it's skipped.
-        # If it exists, the 'try' block above is attempted.
-
     else:
         click.echo(f"HTML report not found at {report_path}, skipping upload.")
         logger.info(f"HTML report not found at {report_path}, skipping upload.")
     # --- End of HTML Report Upload Logic ---
+
 
 # Migration Handler
 # Note: logger is already defined at the top of this file.
@@ -553,100 +463,66 @@ def migration_handler(
     """Handles the logic for the 'migrate' CLI command."""
     click.echo(f"Migration process initiated. Type: {migration_type}, Story ID: {story_id if story_id else 'All stories'}")
 
-    if migration_type.lower() != 'royalroad-legacy-id':
-        click.echo(f"Error: Migration type '{migration_type}' is not supported. Currently, only 'royalroad-legacy-id' is available.", err=True)
-        logger.error(f"Unsupported migration type requested: {migration_type}")
+    context = MigrationContext(
+        story_id_option=story_id,
+        migration_type=migration_type
+    )
+
+    # Display warnings from context setup (e.g., specific story ID format mismatch if not critical error)
+    for msg in context.warning_messages:
+        click.echo(click.style(msg, fg="yellow"), err=True)
+
+    if not context.is_valid():
+        for msg in context.error_messages: # These are critical errors
+            click.echo(click.style(msg, fg="red"), err=True)
+        logger.error(f"MigrationContext validation failed. Errors: {context.error_messages}")
         return
 
-    try:
-        config_manager = ConfigManager()
-        workspace_root = config_manager.get_workspace_path()
-    except Exception as e:
-        logger.error(f"Failed to initialize ConfigManager or get workspace path: {e}")
-        click.echo(f"Error: Could not determine workspace path. {e}", err=True)
+    legacy_story_ids_to_process = context.legacy_story_ids_to_process
+    workspace_root = context.workspace_root # For progress_manager calls
+
+    if not legacy_story_ids_to_process:
+        # Context would have added a warning if no stories found via scan.
+        # If a specific story_id was given and it was invalid (leading to empty list),
+        # context.is_valid() or warning_messages should have covered it.
+        if not context.story_id_option : # General scan found nothing
+             click.echo("No legacy stories found matching the criteria for migration.")
+        # If context.story_id_option was set, messages about it not being found or invalid format were already shown.
         return
 
-    archival_status_base_dir = os.path.join(workspace_root, WORKSPACE_ARCHIVAL_STATUS_DIR)
-    ebooks_base_dir = os.path.join(workspace_root, WORKSPACE_EBOOKS_DIR)
-    # Define other potential directories if they are standard and need migration
-    # For example:
-    # raw_content_base_dir = os.path.join(workspace_root, "raw_content")
-    # processed_content_base_dir = os.path.join(workspace_root, "processed_content")
+    if context.story_id_option: # Specific story ID was provided and found
+        click.echo(f"Preparing to migrate specified story ID: {context.story_id_option}")
+    else: # Scan mode
+        click.echo(f"Found {len(legacy_story_ids_to_process)} potential legacy stories to process: {', '.join(legacy_story_ids_to_process)}")
 
-    if not os.path.isdir(archival_status_base_dir):
-        click.echo(f"Error: Archival status directory not found: {archival_status_base_dir}. Nothing to migrate.", err=True)
-        logger.error(f"Archival status directory {archival_status_base_dir} not found.")
-        return
-
-    legacy_story_ids_to_process: List[str] = []
-    if story_id:
-        # Check if the provided story_id looks like a legacy one before proceeding
-        if not re.match(r"^\d+-[\w-]+$", story_id): # Simple regex: starts with digits, hyphen, then chars/hyphens
-            click.echo(f"Provided story ID '{story_id}' does not match the expected legacy RoyalRoad format (e.g., '12345-some-title'). Skipping.", err=True)
-            logger.warning(f"Skipping migration for explicitly provided ID '{story_id}' as it doesn't match legacy format.")
-            return
-        legacy_story_ids_to_process.append(story_id)
-    else:
-        try:
-            # Scan all directories in archival_status_base_dir
-            for item_name in os.listdir(archival_status_base_dir):
-                item_path = os.path.join(archival_status_base_dir, item_name)
-                if os.path.isdir(item_path):
-                    # Check if item_name matches the legacy RoyalRoad format
-                    # Regex: starts with one or more digits, followed by a hyphen,
-                    # followed by one or more word characters (alphanumeric/underscore) or hyphens.
-                    if re.match(r"^\d+-[\w-]+$", item_name):
-                        legacy_story_ids_to_process.append(item_name)
-
-            if not legacy_story_ids_to_process:
-                click.echo("No legacy RoyalRoad stories found to migrate in the scan.")
-                logger.info("No legacy RoyalRoad story IDs found matching pattern during scan.")
-                return
-            click.echo(f"Found {len(legacy_story_ids_to_process)} potential legacy RoyalRoad stories to process: {', '.join(legacy_story_ids_to_process)}")
-        except OSError as e:
-            click.echo(f"Error listing stories in {archival_status_base_dir}: {e}", err=True)
-            logger.error(f"OSError while listing legacy stories in {archival_status_base_dir}: {e}")
-            return
 
     migrated_count = 0
     for legacy_id in legacy_story_ids_to_process:
         click.echo(f"Processing legacy story ID: {legacy_id}")
 
         # Double check it's not already in the new format (e.g. "royalroad-12345")
-        if legacy_id.startswith("royalroad-"):
-            click.echo(f"Skipping '{legacy_id}': Already appears to be in the new format.")
+        # This check is simple and can remain, or be part of context's _prepare if desired.
+        if legacy_id.startswith(f"{context.migration_type.split('-')[0]}-"): # e.g. "royalroad-"
+            click.echo(f"Skipping '{legacy_id}': Already appears to be in the new format for this migration type.")
             logger.info(f"Skipping migration for '{legacy_id}' as it seems to be in the new format.")
             continue
 
-        numerical_id_match = re.match(r"^(\d+)-", legacy_id)
-        if not numerical_id_match:
-            click.echo(f"Warning: Could not extract numerical ID from '{legacy_id}'. Skipping.", err=True)
-            logger.warning(f"Could not extract numerical ID from legacy ID '{legacy_id}'.")
-            continue
-
-        numerical_id = numerical_id_match.group(1)
-        new_story_id = f"royalroad-{numerical_id}"
+        new_story_id = context.get_new_story_id(legacy_id)
+        if not new_story_id:
+            # context.get_new_story_id would log and add warning if extraction failed
+            click.echo(f"Warning: Could not determine new story ID for '{legacy_id}'. Skipping.", err=True)
+            continue # Skip this legacy_id
 
         click.echo(f"  Attempting to migrate '{legacy_id}' to '{new_story_id}'...")
 
-        # Define paths for various directories
-        # Store them as (old_path, new_path) tuples
-        dirs_to_migrate = [
-            (os.path.join(archival_status_base_dir, legacy_id), os.path.join(archival_status_base_dir, new_story_id)),
-            (os.path.join(ebooks_base_dir, legacy_id), os.path.join(ebooks_base_dir, new_story_id)),
-            # Add other dirs here if they follow the same <base_dir>/<story_id> pattern
-            # (os.path.join(workspace_root, "raw_content", legacy_id), os.path.join(workspace_root, "raw_content", new_story_id)),
-            # (os.path.join(workspace_root, "processed_content", legacy_id), os.path.join(workspace_root, "processed_content", new_story_id)),
-        ]
-
+        dirs_to_migrate = context.get_paths_to_migrate(legacy_id, new_story_id)
         all_renames_successful_for_story = True
+
         for old_dir_path, new_dir_path in dirs_to_migrate:
             if os.path.isdir(old_dir_path):
                 if os.path.exists(new_dir_path):
                     click.echo(f"  Warning: Target directory '{new_dir_path}' already exists. Skipping rename for this path. Manual check may be required.", err=True)
                     logger.warning(f"Target directory '{new_dir_path}' already exists for legacy ID '{legacy_id}'. Skipping rename of '{old_dir_path}'.")
-                    # This specific path rename failed/skipped, but we might continue with others for the story.
-                    # Depending on desired atomicity, could set all_renames_successful_for_story = False
                     continue
                 try:
                     shutil.move(old_dir_path, new_dir_path)
@@ -656,34 +532,31 @@ def migration_handler(
                     click.echo(f"  Error renaming directory '{old_dir_path}' to '{new_dir_path}': {e}", err=True)
                     logger.error(f"Error renaming directory '{old_dir_path}' to '{new_dir_path}': {e}", exc_info=True)
                     all_renames_successful_for_story = False
-                    # If one rename fails, we might want to stop or attempt to revert,
-                    # but simple approach is to report and continue.
-            elif os.path.exists(old_dir_path): # It's a file, not a directory, something is wrong.
+            elif os.path.exists(old_dir_path):
                 click.echo(f"  Warning: Expected a directory but found a file at '{old_dir_path}'. Skipping.", err=True)
                 logger.warning(f"Expected directory, found file at '{old_dir_path}' for story '{legacy_id}'.")
-            # else:
-                # click.echo(f"  Directory '{old_dir_path}' not found, no action needed for this path.")
-                # logger.debug(f"Directory '{old_dir_path}' not found for story '{legacy_id}', skipping rename for this path.")
 
         json_update_ok = False
         if all_renames_successful_for_story:
+            # workspace_root from context
             progress_json_path_in_new_dir = pm.get_progress_filepath(new_story_id, workspace_root)
 
             if os.path.exists(progress_json_path_in_new_dir):
                 try:
+                    # workspace_root from context
                     progress_data = pm.load_progress(new_story_id, workspace_root)
-
-                    if progress_data.get('story_id') == new_story_id:
+                    if not progress_data: # Defensive check
+                        click.echo(f"  Error: Failed to load progress data from '{progress_json_path_in_new_dir}'. Cannot update story_id.", err=True)
+                        logger.error(f"Failed to load progress data from {progress_json_path_in_new_dir} for new ID {new_story_id}.")
+                    elif progress_data.get('story_id') == new_story_id:
                         click.echo(f"  INFO: Story ID in '{progress_json_path_in_new_dir}' is already '{new_story_id}'. No update needed.")
                         logger.info(f"Story ID in progress file {progress_json_path_in_new_dir} is already correct.")
                         json_update_ok = True
                     else:
                         old_json_story_id = progress_data.get('story_id')
                         progress_data['story_id'] = new_story_id
-                        # Future: Consider updating story_url if it contains the old ID/slug.
-                        # This is complex due to various URL structures and potential for unintended changes.
-                        # For now, only story_id field is updated.
 
+                        # workspace_root from context
                         pm.save_progress(new_story_id, progress_data, workspace_root)
                         click.echo(f"  Successfully updated story_id from '{old_json_story_id}' to '{new_story_id}' in '{progress_json_path_in_new_dir}'.")
                         logger.info(f"Updated story_id in {progress_json_path_in_new_dir} from '{old_json_story_id}' to '{new_story_id}'.")
@@ -692,11 +565,9 @@ def migration_handler(
                     click.echo(f"  Error updating story_id in '{progress_json_path_in_new_dir}': {e}", err=True)
                     logger.error(f"Failed to update story_id in {progress_json_path_in_new_dir} for new ID {new_story_id}: {e}", exc_info=True)
                     click.echo(f"  WARNING: Directories for {legacy_id} renamed to {new_story_id}, but failed to update internal story_id in progress file. Manual correction needed.", err=True)
-                    json_update_ok = False # Explicitly set
             else:
                 click.echo(f"  Warning: Progress file '{progress_json_path_in_new_dir}' not found after directory rename. Cannot update story_id.", err=True)
                 logger.warning(f"Progress file {progress_json_path_in_new_dir} not found for new story ID {new_story_id} after rename. Cannot update internal story_id.")
-                json_update_ok = False # Cannot update JSON if not found
 
         if all_renames_successful_for_story and json_update_ok:
             migrated_count += 1
@@ -707,12 +578,14 @@ def migration_handler(
 
     if migrated_count > 0:
         click.echo(f"\nSuccessfully completed full migration for {migrated_count} story/stories.")
-    elif not legacy_story_ids_to_process and not story_id:
-        click.echo("No legacy RoyalRoad stories requiring migration were found.")
-    elif story_id and not migrated_count:
-         click.echo(f"Migration for story ID '{story_id}' was not completed or it was not a legacy RoyalRoad ID. Check previous messages.")
-    else:
-        click.echo("Migration process finished. No stories were fully migrated.")
+    elif not legacy_story_ids_to_process and not context.story_id_option : # Scan found nothing
+        # Message already printed by "No legacy stories found..."
+        pass
+    elif context.story_id_option and not migrated_count: # Specific story ID given, but it wasn't migrated (e.g. invalid format, not found, or failed)
+         click.echo(f"Migration for story ID '{context.story_id_option}' was not completed. Check previous messages for details (e.g., if it was invalid, not found, or failed during processing).")
+    elif not migrated_count and legacy_story_ids_to_process : # Scan found stories, but none were successfully migrated
+        click.echo("Migration process finished. No stories were fully migrated in this run (check logs for individual story issues).")
+    # Implicit: if legacy_story_ids_to_process was empty AND story_id_option was None, initial message handles it.
 
 def generate_report_handler():
     """Handles the logic for the 'generate-report' CLI command."""

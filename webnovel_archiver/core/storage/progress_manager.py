@@ -6,17 +6,20 @@ from typing import Dict, Optional, List, Any
 from urllib.parse import urlparse
 
 from webnovel_archiver.utils.logger import get_logger # Added logger
+from webnovel_archiver.core.path_manager import PathManager # Added PathManager
 
 logger = get_logger(__name__) # Added logger
 
 # Define constants for directory names
-DEFAULT_WORKSPACE_ROOT = "workspace"
-ARCHIVAL_STATUS_DIR = "archival_status"
-EBOOKS_DIR = "ebooks" # Added for constructing epub paths
+# DEFAULT_WORKSPACE_ROOT = "workspace" # Removed
+# ARCHIVAL_STATUS_DIR = "archival_status" # Removed
+# EBOOKS_DIR = "ebooks" # Removed
 PROGRESS_FILE_VERSION = "1.1" # Version for the progress file structure
 
-def get_progress_filepath(story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> str:
-    return os.path.join(workspace_root, ARCHIVAL_STATUS_DIR, story_id, "progress_status.json")
+def get_progress_filepath(story_id: str, workspace_root: str) -> str: # Removed DEFAULT_WORKSPACE_ROOT default
+    # workspace_root must be provided
+    pm = PathManager(workspace_root, story_id)
+    return pm.get_progress_filepath()
 
 def _get_new_progress_structure(story_id: str, story_url: Optional[str] = None) -> Dict[str, Any]:
     """Returns a new, empty structure for progress_status.json."""
@@ -77,7 +80,7 @@ def _get_new_progress_structure(story_id: str, story_url: Optional[str] = None) 
         "last_archived_timestamp": None # Added last_archived_timestamp for cloud backup logic
     }
 
-def load_progress(story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> Dict[str, Any]:
+def load_progress(story_id: str, workspace_root: str) -> Dict[str, Any]: # Removed DEFAULT_WORKSPACE_ROOT default
     """
     Loads progress_status.json for a story_id.
     If it doesn't exist or is corrupted, returns a new structure.
@@ -186,8 +189,9 @@ def load_progress(story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -
         return new_structure
 
 
-def save_progress(story_id: str, progress_data: Dict[str, Any], workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> None:
+def save_progress(story_id: str, progress_data: Dict[str, Any], workspace_root: str) -> None: # Removed DEFAULT_WORKSPACE_ROOT default
     """Saves the progress_data to progress_status.json for a story_id."""
+    # workspace_root must be provided
     filepath = get_progress_filepath(story_id, workspace_root)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
@@ -241,12 +245,17 @@ def generate_story_id(url: Optional[str] = None, title: Optional[str] = None) ->
     return s_id.strip('-_')
 
 # --- Methods for EPUB files ---
-def add_epub_file_to_progress(progress_data: Dict[str, Any], file_name: str, file_path: str, story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> None:
+def add_epub_file_to_progress(progress_data: Dict[str, Any], file_name: str, file_path: str, story_id: str, workspace_root: str) -> None: # Removed DEFAULT_WORKSPACE_ROOT default
     """Adds an EPUB file to the progress data. Ensures path is absolute."""
+    # workspace_root must be provided
+    pm = PathManager(workspace_root, story_id)
+    ebook_dir = pm.get_ebooks_story_dir()
+
     if not os.path.isabs(file_path):
-        ebook_dir = os.path.join(workspace_root, EBOOKS_DIR, story_id)
         logger.warning(f"EPUB file path '{file_path}' for '{file_name}' was not absolute. Converting based on ebook_dir: {ebook_dir}")
-        file_path = os.path.join(ebook_dir, file_path)
+        # PathManager's get_epub_filepath would be ideal if we always construct from filename,
+        # but here file_path might already be a relative path we want to make absolute.
+        file_path = os.path.join(ebook_dir, os.path.basename(file_path)) # Use basename to ensure it's just the file in the target dir
 
     epub_files_list = progress_data["last_epub_processing"].get("generated_epub_files", [])
     if not any(ep_file['path'] == file_path for ep_file in epub_files_list):
@@ -254,14 +263,18 @@ def add_epub_file_to_progress(progress_data: Dict[str, Any], file_name: str, fil
         progress_data["last_epub_processing"]["generated_epub_files"] = epub_files_list
         logger.debug(f"EPUB file '{file_name}' added for story {story_id}")
 
-def get_epub_file_details(progress_data: Dict[str, Any], story_id: str, workspace_root: str = DEFAULT_WORKSPACE_ROOT) -> List[Dict[str, str]]:
+def get_epub_file_details(progress_data: Dict[str, Any], story_id: str, workspace_root: str) -> List[Dict[str, str]]: # Removed DEFAULT_WORKSPACE_ROOT default
     """
     Retrieves a list of EPUB file details (name, absolute path) from progress data.
     Handles both old (string list) and new (list of dicts) formats for generated_epub_files.
     """
+    # workspace_root must be provided
+    pm = PathManager(workspace_root, story_id)
+    ebook_dir = pm.get_ebooks_story_dir()
+
     epub_file_entries = progress_data.get("last_epub_processing", {}).get("generated_epub_files", [])
     resolved_epub_files = []
-    ebook_dir = os.path.join(workspace_root, EBOOKS_DIR, story_id) # EBOOKS_DIR is 'ebooks'
+    # ebook_dir = os.path.join(workspace_root, EBOOKS_DIR, story_id) # EBOOKS_DIR is 'ebooks' # Replaced by PathManager
 
     if not os.path.isdir(ebook_dir):
         logger.warning(f"Ebook directory {ebook_dir} for story {story_id} not found. Cannot resolve relative EPUB paths.")
@@ -358,11 +371,12 @@ if __name__ == '__main__':
     rr_url = "https://www.royalroad.com/fiction/117255/rend-a-tale-of-something"
     test_story_id = generate_story_id(url=rr_url)
     test_workspace = os.path.abspath("_test_pm_workspace") # Make workspace path absolute
+    pm_for_test = PathManager(test_workspace, test_story_id) # PathManager for test setup
 
     logger.info(f"Test Story ID: {test_story_id}, Workspace: {test_workspace}")
 
     # Clean up any previous test file for this ID
-    test_filepath = get_progress_filepath(test_story_id, test_workspace)
+    test_filepath = pm_for_test.get_progress_filepath() # Use PathManager
     if os.path.exists(test_filepath):
         os.remove(test_filepath)
 
@@ -372,12 +386,13 @@ if __name__ == '__main__':
             os.rmdir(story_status_dir)
 
     # Create ebook dir for test
-    ebook_dir_for_test = os.path.join(test_workspace, EBOOKS_DIR, test_story_id)
+    # ebook_dir_for_test = os.path.join(test_workspace, EBOOKS_DIR, test_story_id) # Replaced by PathManager
+    ebook_dir_for_test = pm_for_test.get_ebooks_story_dir()
     os.makedirs(ebook_dir_for_test, exist_ok=True)
 
 
     # Load (should create new)
-    progress = load_progress(test_story_id, workspace_root=test_workspace)
+    progress = load_progress(test_story_id, workspace_root=test_workspace) # workspace_root is required
     progress["story_url"] = rr_url # Set story_url for new progress
     logger.info(f"Initial progress for {test_story_id}: {json.dumps(progress, indent=2)}")
 
@@ -476,12 +491,13 @@ if __name__ == '__main__':
     if os.path.exists(epub1_abs_path): os.remove(epub1_abs_path)
     if os.path.exists(test_filepath): os.remove(test_filepath)
     if os.path.exists(ebook_dir_for_test) and not os.listdir(ebook_dir_for_test): os.rmdir(ebook_dir_for_test)
-    story_archival_dir = os.path.join(test_workspace, ARCHIVAL_STATUS_DIR, test_story_id)
+    # story_archival_dir = os.path.join(test_workspace, ARCHIVAL_STATUS_DIR, test_story_id) # Replaced
+    story_archival_dir = pm_for_test.get_archival_status_story_dir()
     if os.path.exists(story_archival_dir) and not os.listdir(story_archival_dir): os.rmdir(story_archival_dir)
 
     # Clean up parent directories if they are empty and created by this test
-    for parent_dir_name in [EBOOKS_DIR, ARCHIVAL_STATUS_DIR]:
-        parent_path = os.path.join(test_workspace, parent_dir_name)
+    for dir_type_name in [PathManager.EBOOKS_DIR_NAME, PathManager.ARCHIVAL_STATUS_DIR_NAME]:
+        parent_path = pm_for_test.get_base_directory(dir_type_name) # Use PathManager
         if os.path.exists(parent_path) and not os.listdir(parent_path):
             os.rmdir(parent_path)
     if os.path.exists(test_workspace) and not os.listdir(test_workspace):
@@ -555,11 +571,12 @@ if __name__ == '__main__':
     # so no progress file to remove for old_format_story_id
     if os.path.exists(old_format_ebook_dir) and not os.listdir(old_format_ebook_dir): os.rmdir(old_format_ebook_dir)
 
-    old_format_story_archival_dir = os.path.join(old_format_workspace, ARCHIVAL_STATUS_DIR, old_format_story_id)
+    # old_format_story_archival_dir = os.path.join(old_format_workspace, ARCHIVAL_STATUS_DIR, old_format_story_id) # Replaced
+    old_format_story_archival_dir = old_format_pm.get_archival_status_story_dir()
     if os.path.exists(old_format_story_archival_dir) and not os.listdir(old_format_story_archival_dir): os.rmdir(old_format_story_archival_dir)
 
-    for parent_dir_name in [EBOOKS_DIR, ARCHIVAL_STATUS_DIR]:
-        parent_path = os.path.join(old_format_workspace, parent_dir_name)
+    for dir_type_name in [PathManager.EBOOKS_DIR_NAME, PathManager.ARCHIVAL_STATUS_DIR_NAME]:
+        parent_path = old_format_pm.get_base_directory(dir_type_name) # Use PathManager
         if os.path.exists(parent_path) and not os.listdir(parent_path):
             os.rmdir(parent_path)
     if os.path.exists(old_format_workspace) and not os.listdir(old_format_workspace):

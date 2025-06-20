@@ -6,27 +6,32 @@ import requests # Added for downloading cover image
 import shutil # Added for saving cover image
 from typing import Optional, List, Dict, Any
 from webnovel_archiver.utils.logger import get_logger
+from webnovel_archiver.core.path_manager import PathManager # Added PathManager
 
 logger = get_logger(__name__)
 
 class EPUBGenerator:
-    def __init__(self, workspace_root: str):
-        self.workspace_root = workspace_root
-        self.ebooks_dir_name = "ebooks"
-        self.processed_content_dir_name = "processed_content"
-        self.temp_cover_dir_name = "temp_cover_images" # For storing downloaded covers temporarily
+    def __init__(self, path_manager: PathManager):
+        self.pm = path_manager
+        # self.workspace_root = workspace_root # Removed
+        # self.ebooks_dir_name = "ebooks" # Removed
+        # self.processed_content_dir_name = "processed_content" # Removed
+        # self.temp_cover_dir_name = "temp_cover_images" # Removed
 
-    def _download_cover_image(self, story_id: str, cover_url: str) -> Optional[str]:
+    def _download_cover_image(self, cover_url: str) -> Optional[str]: # story_id removed, available from self.pm
         """Downloads the cover image and returns the local path."""
         if not cover_url:
             return None
+
+        story_id = self.pm.get_story_id() # Get story_id from PathManager
 
         try:
             response = requests.get(cover_url, stream=True)
             response.raise_for_status()
 
             # Ensure the temp directory for covers exists
-            temp_cover_path = os.path.join(self.workspace_root, self.ebooks_dir_name, story_id, self.temp_cover_dir_name)
+            # temp_cover_path = os.path.join(self.workspace_root, self.ebooks_dir_name, story_id, self.temp_cover_dir_name) # Replaced
+            temp_cover_path = self.pm.get_temp_cover_story_dir()
             os.makedirs(temp_cover_path, exist_ok=True)
 
             # Determine file extension
@@ -40,21 +45,26 @@ class EPUBGenerator:
                 logger.warning(f"Could not determine cover image type for {story_id} from content-type '{content_type}'. Assuming JPG.")
 
             local_filename = f"cover{ext}"
-            file_path = os.path.join(temp_cover_path, local_filename)
+            # file_path = os.path.join(temp_cover_path, local_filename) # Replaced
+            file_path = self.pm.get_cover_image_filepath(local_filename)
 
             with open(file_path, 'wb') as f:
                 shutil.copyfileobj(response.raw, f)
-            logger.info(f"Cover image downloaded for story {story_id} to {file_path}")
+            logger.info(f"Cover image downloaded for story {self.pm.get_story_id()} to {file_path}")
             return file_path
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to download cover image for story {story_id} from {cover_url}: {e}")
+            logger.error(f"Failed to download cover image for story {self.pm.get_story_id()} from {cover_url}: {e}")
             return None
-        except IOError as e:
-            logger.error(f"Failed to save cover image for story {story_id} to {file_path}: {e}")
+        except IOError as e: # file_path might not be defined if os.makedirs failed, though unlikely here
+            logger.error(f"Failed to save cover image for story {self.pm.get_story_id()} to {local_filename} in {temp_cover_path}: {e}") # Log temp_cover_path and local_filename
             return None
 
 
-    def generate_epub(self, story_id: str, progress_data: Dict[Any, Any], chapters_per_volume: Optional[int] = None) -> List[str]:
+    def generate_epub(self, progress_data: Dict[Any, Any], chapters_per_volume: Optional[int] = None) -> List[str]:
+        # story_id is available via self.pm.get_story_id()
+        # workspace_root is available via self.pm.get_workspace_root()
+        story_id = self.pm.get_story_id()
+
         story_title = progress_data.get("effective_title", "Unknown Title")
         author_name = progress_data.get("author", "Unknown Author")
         synopsis = progress_data.get("synopsis")
@@ -66,10 +76,12 @@ class EPUBGenerator:
             logger.warning(f"No chapters downloaded for story {story_id}. Cannot generate EPUB.")
             return []
 
-        ebooks_base_path = os.path.join(self.workspace_root, self.ebooks_dir_name, story_id)
+        # ebooks_base_path = os.path.join(self.workspace_root, self.ebooks_dir_name, story_id) # Replaced
+        ebooks_base_path = self.pm.get_ebooks_story_dir()
         os.makedirs(ebooks_base_path, exist_ok=True)
 
-        processed_content_path = os.path.join(self.workspace_root, self.processed_content_dir_name, story_id)
+        # processed_content_path = os.path.join(self.workspace_root, self.processed_content_dir_name, story_id) # Replaced
+        processed_content_path = self.pm.get_processed_content_story_dir()
 
         generated_epub_files = []
 
@@ -108,7 +120,7 @@ class EPUBGenerator:
             # Download and set cover image
             local_cover_path = None
             if cover_image_url:
-                local_cover_path = self._download_cover_image(story_id, cover_image_url)
+                local_cover_path = self._download_cover_image(cover_image_url) # story_id removed
                 if local_cover_path:
                     try:
                         with open(local_cover_path, 'rb') as f:
@@ -156,16 +168,17 @@ class EPUBGenerator:
                     logger.error(f"Missing 'local_processed_filename' for chapter {chapter_info.get('download_order')} in story {story_id}. Skipping.")
                     continue
 
-                html_file_path = os.path.join(processed_content_path, local_filename)
+                # html_file_path = os.path.join(processed_content_path, local_filename) # Replaced
+                html_file_path = self.pm.get_processed_content_chapter_filepath(local_filename)
 
                 try:
                     with open(html_file_path, 'r', encoding='utf-8') as f:
                         html_content = f.read()
                 except FileNotFoundError:
-                    logger.error(f"Processed HTML file not found: {html_file_path} for story {story_id}. Skipping chapter.")
+                    logger.error(f"Processed HTML file not found: {html_file_path} for story {self.pm.get_story_id()}. Skipping chapter.")
                     continue
                 except Exception as e:
-                    logger.error(f"Error reading HTML file {html_file_path} for story {story_id}: {e}. Skipping chapter.")
+                    logger.error(f"Error reading HTML file {html_file_path} for story {self.pm.get_story_id()}: {e}. Skipping chapter.")
                     continue
 
                 epub_chapter = epub.EpubHtml(
@@ -232,14 +245,15 @@ class EPUBGenerator:
             else:
                 epub_filename = f"{sanitized_story_title}.epub"
 
-            epub_filepath = os.path.join(ebooks_base_path, epub_filename)
+            # epub_filepath = os.path.join(ebooks_base_path, epub_filename) # Replaced
+            epub_filepath = self.pm.get_epub_filepath(epub_filename)
 
             try:
                 epub.write_epub(epub_filepath, book, {})
                 generated_epub_files.append(epub_filepath)
                 logger.info(f"Successfully generated EPUB: {epub_filepath}")
             except Exception as e:
-                logger.error(f"Failed to write EPUB file {epub_filepath} for story {story_id}: {e}")
+                logger.error(f"Failed to write EPUB file {epub_filepath} for story {self.pm.get_story_id()}: {e}")
             finally:
                 # Clean up downloaded cover image after EPUB generation for this volume
                 if local_cover_path and os.path.exists(local_cover_path):

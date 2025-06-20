@@ -13,16 +13,17 @@ from .builders.epub_generator import EPUBGenerator # Added EPUBGenerator import
 from .storage.progress_manager import (
     generate_story_id,
     load_progress,
-    save_progress,
-    DEFAULT_WORKSPACE_ROOT, # For constructing paths if needed for simulation
-    ARCHIVAL_STATUS_DIR
+    save_progress
+    # DEFAULT_WORKSPACE_ROOT, # Removed
+    # ARCHIVAL_STATUS_DIR # Removed
 )
 from .parsers.html_cleaner import HTMLCleaner
 from .modifiers.sentence_remover import SentenceRemover
+from .path_manager import PathManager # Added PathManager
 
 # Define directories for simulated content saving (relative to workspace_root)
-RAW_CONTENT_DIR = "raw_content"
-PROCESSED_CONTENT_DIR = "processed_content"
+# RAW_CONTENT_DIR = "raw_content" # Removed
+# PROCESSED_CONTENT_DIR = "processed_content" # Removed
 
 # Define ProgressCallback type
 ProgressCallback = Callable[[Union[str, Dict[str, Any]]], None]
@@ -30,9 +31,9 @@ ProgressCallback = Callable[[Union[str, Dict[str, Any]]], None]
 # Initialize logger for this module
 logger = get_logger(__name__)
 
-def archive_story(
+def archive_story( # Removed DEFAULT_WORKSPACE_ROOT default for workspace_root
     story_url: str,
-    workspace_root: str = DEFAULT_WORKSPACE_ROOT,
+    workspace_root: str,
     chapters_per_volume: Optional[int] = None,
     ebook_title_override: Optional[str] = None,
     keep_temp_files: bool = False,
@@ -103,7 +104,10 @@ def archive_story(
     metadata.story_id = s_id
     logger.info(f"Generated story ID: {s_id}")
 
-    progress_data = load_progress(s_id, workspace_root)
+    # Instantiate PathManager
+    pm = PathManager(workspace_root, s_id)
+
+    progress_data = load_progress(s_id, workspace_root) # workspace_root is now required
 
     # Update progress_data with fetched metadata (if not already there or to refresh)
     progress_data["story_id"] = s_id
@@ -206,8 +210,8 @@ def archive_story(
             processed_filename = existing_chapter_details.get("local_processed_filename")
 
             if raw_filename and processed_filename:
-                raw_file_expected_path = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id, raw_filename)
-                processed_file_expected_path = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id, processed_filename)
+                raw_file_expected_path = pm.get_raw_content_chapter_filepath(raw_filename)
+                processed_file_expected_path = pm.get_processed_content_chapter_filepath(processed_filename)
 
                 if os.path.exists(raw_file_expected_path) and os.path.exists(processed_file_expected_path):
                     logger.info(f"Skipping chapter (already processed, files exist): {chapter_info.chapter_title} (URL: {chapter_info.chapter_url})")
@@ -291,8 +295,8 @@ def archive_story(
             raw_filename = existing_entry_for_url.get("local_raw_filename")
             processed_filename = existing_entry_for_url.get("local_processed_filename")
             if not raw_filename or not processed_filename or \
-               not os.path.exists(os.path.join(workspace_root, RAW_CONTENT_DIR, s_id, raw_filename)) or \
-               not os.path.exists(os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id, processed_filename)):
+               not os.path.exists(pm.get_raw_content_chapter_filepath(raw_filename)) or \
+               not os.path.exists(pm.get_processed_content_chapter_filepath(processed_filename)):
                 logger.info(f"Files missing for existing chapter '{chapter_info.chapter_title}'. Reprocessing.")
                 needs_processing = True
             else:
@@ -340,9 +344,11 @@ def archive_story(
                 continue
 
             raw_filename = f"chapter_{str(chapter_info.download_order).zfill(5)}_{chapter_info.source_chapter_id}.html"
-            raw_file_directory = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id)
+            # raw_file_directory = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id) # Replaced
+            raw_file_directory = pm.get_raw_content_story_dir()
             os.makedirs(raw_file_directory, exist_ok=True)
-            raw_filepath = os.path.join(raw_file_directory, raw_filename)
+            # raw_filepath = os.path.join(raw_file_directory, raw_filename) # Replaced
+            raw_filepath = pm.get_raw_content_chapter_filepath(raw_filename)
 
             try:
                 with open(raw_filepath, 'w', encoding='utf-8') as f:
@@ -373,9 +379,11 @@ def archive_story(
 
 
             processed_filename = f"chapter_{str(chapter_info.download_order).zfill(5)}_{chapter_info.source_chapter_id}_clean.html"
-            processed_file_directory = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id)
+            # processed_file_directory = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id) # Replaced
+            processed_file_directory = pm.get_processed_content_story_dir()
             os.makedirs(processed_file_directory, exist_ok=True)
-            processed_filepath = os.path.join(processed_file_directory, processed_filename)
+            # processed_filepath = os.path.join(processed_file_directory, processed_filename) # Replaced
+            processed_filepath = pm.get_processed_content_chapter_filepath(processed_filename)
 
             try:
                 with open(processed_filepath, 'w', encoding='utf-8') as f:
@@ -518,8 +526,8 @@ def archive_story(
         progress_data_for_epub = progress_data
 
 
-    epub_generator = EPUBGenerator(workspace_root)
-    generated_epub_files = epub_generator.generate_epub(s_id, progress_data_for_epub, chapters_per_volume)
+    epub_generator = EPUBGenerator(pm) # Pass PathManager instance
+    generated_epub_files = epub_generator.generate_epub(progress_data_for_epub, chapters_per_volume) # s_id and workspace_root are in pm
 
     # Initialize progress_data["last_epub_processing"] if it's not a dict
     if not isinstance(progress_data.get("last_epub_processing"), dict):
@@ -544,8 +552,8 @@ def archive_story(
     try:
         # Update last_archived_timestamp before final save
         progress_data["last_archived_timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        save_progress(s_id, progress_data, workspace_root)
-        logger.info(f"Progress saved (including last_archived_timestamp) to {os.path.join(workspace_root, ARCHIVAL_STATUS_DIR, s_id, 'progress_status.json')}")
+        save_progress(s_id, progress_data, workspace_root) # workspace_root is required
+        logger.info(f"Progress saved (including last_archived_timestamp) to {pm.get_progress_filepath()}")
     except Exception as e:
         logger.error(f"Error saving progress for story ID {s_id}: {e}")
 
@@ -553,8 +561,8 @@ def archive_story(
     if not keep_temp_files:
         _call_progress_callback({"status": "info", "message": "Cleaning up temporary files..."})
         logger.info(f"Attempting to remove temporary content directories for story ID: {s_id}")
-        raw_story_dir = os.path.join(workspace_root, RAW_CONTENT_DIR, s_id)
-        processed_story_dir = os.path.join(workspace_root, PROCESSED_CONTENT_DIR, s_id)
+        raw_story_dir = pm.get_raw_content_story_dir()
+        processed_story_dir = pm.get_processed_content_story_dir()
 
         try:
             if os.path.exists(raw_story_dir):
@@ -564,7 +572,7 @@ def archive_story(
                 logger.info(f"Raw content directory not found, no need to remove: {raw_story_dir}")
 
             if os.path.exists(processed_story_dir):
-                # shutil.rmtree(processed_story_dir)
+                shutil.rmtree(processed_story_dir) # Ensuring this is active for cleanup
                 logger.info(f"Successfully removed processed content directory: {processed_story_dir}")
             else:
                 logger.info(f"Processed content directory not found, no need to remove: {processed_story_dir}")
@@ -599,6 +607,8 @@ if __name__ == '__main__':
     test_workspace = "temp_workspace_orchestrator_tests"
 
     story_id_for_run = generate_story_id(url=test_story_url) # For verification path
+    # Instantiate PathManager for the test block
+    pm_test = PathManager(test_workspace, story_id_for_run)
 
     logger.info(f"--- Preparing Test Environment: Cleaning workspace '{test_workspace}' ---")
     if os.path.exists(test_workspace):
@@ -608,24 +618,26 @@ if __name__ == '__main__':
     logger.info(f"--- Running Orchestrator Test for: {test_story_url} ---")
     logger.info(f"--- Workspace: {test_workspace} ---")
 
-    archive_story(test_story_url, workspace_root=test_workspace)
+    # workspace_root is now a required argument for archive_story
+    archive_story(test_story_url, workspace_root=test_workspace, keep_temp_files=True) # keep_temp_files for verification
 
     logger.info(f"--- Orchestrator Test Run Finished ---")
 
     logger.info("--- Verifying Created Files (Basic Checks) ---")
-    progress_file_path = os.path.join(test_workspace, ARCHIVAL_STATUS_DIR, story_id_for_run, "progress_status.json")
-    raw_dir_path = os.path.join(test_workspace, RAW_CONTENT_DIR, story_id_for_run)
-    processed_dir_path = os.path.join(test_workspace, PROCESSED_CONTENT_DIR, story_id_for_run)
+    progress_file_path = pm_test.get_progress_filepath()
+    raw_dir_path = pm_test.get_raw_content_story_dir()
+    processed_dir_path = pm_test.get_processed_content_story_dir()
 
     if os.path.exists(progress_file_path):
         logger.info(f"SUCCESS: Progress file found at {progress_file_path}")
-        loaded_p_data = load_progress(story_id_for_run, workspace_root=test_workspace)
+        loaded_p_data = load_progress(story_id_for_run, workspace_root=test_workspace) # workspace_root required
         if loaded_p_data.get("downloaded_chapters"):
             logger.info(f"SUCCESS: Progress data contains {len(loaded_p_data['downloaded_chapters'])} chapter entries.")
             if loaded_p_data['downloaded_chapters']: # Check if not empty
                 first_chapter_entry = loaded_p_data['downloaded_chapters'][0]
-                raw_file_expected = os.path.join(raw_dir_path, first_chapter_entry['local_raw_filename'])
-                processed_file_expected = os.path.join(processed_dir_path, first_chapter_entry['local_processed_filename'])
+                # Use PathManager to construct expected file paths
+                raw_file_expected = pm_test.get_raw_content_chapter_filepath(first_chapter_entry['local_raw_filename'])
+                processed_file_expected = pm_test.get_processed_content_chapter_filepath(first_chapter_entry['local_processed_filename'])
                 if os.path.exists(raw_file_expected): logger.info(f"SUCCESS: Raw file for first chapter found: {raw_file_expected}")
                 else: logger.error(f"FAILURE: Raw file for first chapter NOT found: {raw_file_expected}")
                 if processed_file_expected and os.path.exists(processed_file_expected): logger.info(f"SUCCESS: Processed file for first chapter found: {processed_file_expected}")
@@ -636,10 +648,17 @@ if __name__ == '__main__':
     else:
         logger.error(f"FAILURE: Progress file NOT found at {progress_file_path}")
 
-    if os.path.exists(raw_dir_path) and os.listdir(raw_dir_path): logger.info(f"SUCCESS: Raw content directory found and is not empty: {raw_dir_path}")
-    else: logger.error(f"FAILURE: Raw content directory NOT found or is empty: {raw_dir_path}")
-    if os.path.exists(processed_dir_path) and os.listdir(processed_dir_path): logger.info(f"SUCCESS: Processed content directory found and is not empty: {processed_dir_path}")
-    else: logger.error(f"FAILURE: Processed content directory NOT found or is empty: {processed_dir_path}")
+    # Check raw_dir_path and processed_dir_path existence after keep_temp_files=True
+    if os.path.exists(raw_dir_path) and os.listdir(raw_dir_path):
+        logger.info(f"SUCCESS: Raw content directory found and is not empty: {raw_dir_path}")
+    else:
+        logger.error(f"FAILURE: Raw content directory NOT found or is empty: {raw_dir_path}")
+
+    if os.path.exists(processed_dir_path) and os.listdir(processed_dir_path):
+        logger.info(f"SUCCESS: Processed content directory found and is not empty: {processed_dir_path}")
+    else:
+        logger.error(f"FAILURE: Processed content directory NOT found or is empty: {processed_dir_path}")
+
 
     logger.info(f"--- Cleaning up Test Environment: Removing workspace '{test_workspace}' ---")
     if os.path.exists(test_workspace):

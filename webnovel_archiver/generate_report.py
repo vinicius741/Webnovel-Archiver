@@ -11,7 +11,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, PROJECT_ROOT)
 
 from webnovel_archiver.core.config_manager import ConfigManager
-from webnovel_archiver.core.storage.progress_manager import load_progress, DEFAULT_WORKSPACE_ROOT, ARCHIVAL_STATUS_DIR, EBOOKS_DIR, get_epub_file_details
+from webnovel_archiver.core.storage.progress_manager import load_progress, get_epub_file_details # Removed constants
+# from webnovel_archiver.core.path_manager import PathManager # For ARCHIVAL_STATUS_DIR_NAME
+from webnovel_archiver.core.path_manager import PathManager # Import PathManager to access its constants
 from webnovel_archiver.utils.logger import get_logger
 
 # Initialize logger
@@ -570,8 +572,8 @@ def main():
             logger.error("Workspace root could not be determined. Exiting.")
             return
 
-        archival_status_path = os.path.join(workspace_root, ARCHIVAL_STATUS_DIR)
-        reports_dir = os.path.join(workspace_root, "reports")
+        archival_status_path = os.path.join(workspace_root, PathManager.ARCHIVAL_STATUS_DIR_NAME) # Use PathManager constant
+        reports_dir = os.path.join(workspace_root, "reports") # This can remain as "reports" is a direct subdir for this script's output
 
         # Create reports directory if it doesn't exist
         os.makedirs(reports_dir, exist_ok=True)

@@ -615,6 +615,22 @@ class RoyalRoadFetcher(BaseFetcher):
             logger.warning(f"Could not find the next chapter link on {chapter_page_url} after trying selectors: {', '.join(selectors_tried)}")
             return None
 
+    def get_source_specific_id(self, url: str) -> str:
+        """
+        Extracts the numerical fiction ID from a RoyalRoad URL.
+        Example: "https://www.royalroad.com/fiction/12345/some-story-title" -> "12345"
+        """
+        # Regex to match royalroad.com domain and extract fiction ID
+        match = re.search(r"royalroad.com/fiction/(\d+)", url)
+        if match:
+            return match.group(1)
+        else:
+            logger.warning(f"Could not extract fiction ID from RoyalRoad URL: {url}")
+            # Raise an error or return a specific value indicating failure,
+            # depending on how the caller (Orchestrator) should handle this.
+            # For now, let's raise ValueError as the Orchestrator might fall back.
+            raise ValueError(f"Could not parse RoyalRoad fiction ID from URL: {url}")
+
 if __name__ == '__main__':
     # Setup basic logging for the __main__ block
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -695,18 +711,3 @@ if __name__ == '__main__':
     #     logger.error(f"Failed to fetch live story '{story_url_live_test}': {e}")
     # except Exception as e:
     #     logger.error(f"An unexpected error occurred with live story '{story_url_live_test}': {e}")
-
-    def get_source_specific_id(self, url: str) -> str:
-        """
-        Extracts the numerical fiction ID from a RoyalRoad URL.
-        Example: "https://www.royalroad.com/fiction/12345/some-story-title" -> "12345"
-        """
-        match = re.search(r"/fiction/(\d+)", url)
-        if match:
-            return match.group(1)
-        else:
-            logger.warning(f"Could not extract fiction ID from RoyalRoad URL: {url}")
-            # Raise an error or return a specific value indicating failure,
-            # depending on how the caller (Orchestrator) should handle this.
-            # For now, let's raise ValueError as the Orchestrator might fall back.
-            raise ValueError(f"Could not parse RoyalRoad fiction ID from URL: {url}")

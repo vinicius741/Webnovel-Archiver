@@ -6,10 +6,11 @@ from typing import Dict, Any, Optional, Callable, Union # Added Callable and Uni
 import requests # For specific exception types like requests.exceptions.RequestException
 
 from webnovel_archiver.utils.logger import get_logger # Import logger
-from .fetchers.royalroad_fetcher import RoyalRoadFetcher
+from .fetchers.fetcher_factory import FetcherFactory
+from .fetchers.exceptions import UnsupportedSourceError
 from .builders.epub_generator import EPUBGenerator # Added EPUBGenerator import
 # Assuming StoryMetadata and ChapterInfo will be used from base_fetcher if needed directly
-# from .fetchers.base_fetcher import StoryMetadata, ChapterInfo
+# from .fetchers.base_fetcher import StoryMetadata, ChapterInfo, BaseFetcher
 from .storage.progress_manager import (
     generate_story_id,
     load_progress,
@@ -61,7 +62,23 @@ def archive_story( # Removed DEFAULT_WORKSPACE_ROOT default for workspace_root
     # and to acknowledge the parameter.
 
     # 1. Fetcher Initialization
-    fetcher = RoyalRoadFetcher() # Later, select based on URL or config.
+    _call_progress_callback({"status": "info", "message": "Initializing content fetcher..."})
+    logger.info(f"Attempting to get fetcher for URL: {story_url}")
+    try:
+        fetcher = FetcherFactory.get_fetcher(story_url)
+        logger.info(f"Successfully obtained fetcher: {type(fetcher).__name__}")
+    except UnsupportedSourceError as e:
+        logger.error(f"Cannot archive story: {e}")
+        _call_progress_callback({"status": "error", "message": f"Cannot archive story: {e}"})
+        return None
+    except ValueError as e: # Catch invalid URL format from factory
+        logger.error(f"Cannot archive story due to invalid URL: {e}")
+        _call_progress_callback({"status": "error", "message": f"Invalid story URL: {e}"})
+        return None
+    except Exception as e: # Catch any other unexpected error from factory
+        logger.error(f"An unexpected error occurred while initializing the fetcher: {e}", exc_info=True)
+        _call_progress_callback({"status": "error", "message": f"Failed to initialize fetcher: {e}"})
+        return None
 
     # 2. Metadata Fetching
     _call_progress_callback({"status": "info", "message": "Fetching story metadata..."})

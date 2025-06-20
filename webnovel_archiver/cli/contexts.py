@@ -238,10 +238,11 @@ class CloudBackupContext:
             self.story_ids_to_process.append(self.story_id_option)
         else:
             try:
-                self.story_ids_to_process = [
+                found_ids = [
                     d for d in os.listdir(self.archival_status_dir)
                     if os.path.isdir(os.path.join(self.archival_status_dir, d))
                 ]
+                self.story_ids_to_process = sorted(found_ids) # Sort the IDs
                 if not self.story_ids_to_process:
                     self.warning_messages.append("No stories found in the archival status directory to back up.")
                 else:

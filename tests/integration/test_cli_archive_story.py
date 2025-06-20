@@ -12,10 +12,8 @@ from webnovel_archiver.cli.main import archiver
 # The target for patching should be where the function is looked up (i.e., in the handlers module)
 from webnovel_archiver.core.config_manager import ConfigManager # Corrected import
 MOCK_ORCHESTRATOR_HANDLER_PATH = "webnovel_archiver.cli.handlers.call_orchestrator_archive_story"
-# To control workspace for tests
-from webnovel_archiver.core.storage.progress_manager import DEFAULT_WORKSPACE_ROOT, ARCHIVAL_STATUS_DIR
-# RAW_CONTENT_DIR and PROCESSED_CONTENT_DIR are in orchestrator, not progress_manager
-from webnovel_archiver.core.orchestrator import RAW_CONTENT_DIR, PROCESSED_CONTENT_DIR
+# To control workspace for tests and construct paths for verification
+from webnovel_archiver.core.path_manager import PathManager
 
 
 @pytest.fixture
@@ -80,15 +78,16 @@ def mock_successful_orchestrator(monkeypatch):
             progress_callback({"status": "info", "message": "Archival process completed."})
 
         # Simulate creation of progress file and some dirs
-        progress_path = os.path.join(workspace_root, ARCHIVAL_STATUS_DIR, story_id)
+        # Use PathManager constants for directory names
+        progress_path = os.path.join(workspace_root, PathManager.ARCHIVAL_STATUS_DIR_NAME, story_id)
         os.makedirs(progress_path, exist_ok=True)
 
         # Simulate some content directories being made
         # In a real scenario, orchestrator creates these based on its internal logic.
         # Mock should reflect what CLI options might influence, e.g. keep_temp_files.
         if keep_temp_files:
-             os.makedirs(os.path.join(workspace_root, RAW_CONTENT_DIR, story_id), exist_ok=True)
-             os.makedirs(os.path.join(workspace_root, PROCESSED_CONTENT_DIR, story_id), exist_ok=True)
+             os.makedirs(os.path.join(workspace_root, PathManager.RAW_CONTENT_DIR_NAME, story_id), exist_ok=True)
+             os.makedirs(os.path.join(workspace_root, PathManager.PROCESSED_CONTENT_DIR_NAME, story_id), exist_ok=True)
 
 
         progress_data = { # This is what would be saved by the real orchestrator
@@ -132,7 +131,8 @@ def test_archive_story_successful_run_default_workspace(runner, mock_successful_
     mock_cm_instance.get_default_sentence_removal_file.return_value = None # Ensure it returns a valid path or None
     # get_gdrive_credentials_path and get_gdrive_token_path are not methods of ConfigManager, so remove attempts to mock them.
     mock_cm_constructor = mock.Mock(return_value=mock_cm_instance)
-    monkeypatch.setattr("webnovel_archiver.cli.handlers.ConfigManager", mock_cm_constructor)
+    # Patch ConfigManager where ArchiveStoryContext imports it
+    monkeypatch.setattr("webnovel_archiver.cli.contexts.ConfigManager", mock_cm_constructor)
 
     story_url = "http://example.com/mockstory"
     result = runner.invoke(archiver, ['archive-story', story_url])
@@ -163,7 +163,7 @@ def test_archive_story_successful_run_default_workspace(runner, mock_successful_
     assert callable(kwargs['progress_callback']) # Ensure callback was passed
 
     # Verify progress file was created by the mock
-    progress_file = os.path.join(temp_workspace, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    progress_file = os.path.join(temp_workspace, PathManager.ARCHIVAL_STATUS_DIR_NAME, "test_story_id_123", "progress_status.json")
     assert os.path.exists(progress_file)
     with open(progress_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -221,7 +221,7 @@ def test_archive_story_with_output_dir_and_options(runner, mock_successful_orche
     assert callable(kwargs['progress_callback'])
 
     # Verify progress file reflects options
-    progress_file = os.path.join(custom_output_dir, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    progress_file = os.path.join(custom_output_dir, PathManager.ARCHIVAL_STATUS_DIR_NAME, "test_story_id_123", "progress_status.json")
     assert os.path.exists(progress_file)
     with open(progress_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -251,7 +251,7 @@ def test_archive_story_sentence_removal_options(runner, mock_successful_orchestr
         '--sentence-removal-file', rules_path1
     ])
     assert result1.exit_code == 0, f"CLI errored (run1): {result1.output}"
-    progress_file1 = os.path.join(workspace1, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    progress_file1 = os.path.join(workspace1, PathManager.ARCHIVAL_STATUS_DIR_NAME, "test_story_id_123", "progress_status.json")
     assert os.path.exists(progress_file1)
     with open(progress_file1, 'r', encoding='utf-8') as f: data1 = json.load(f)
     assert data1['sentence_removal_config_used'] == rules_path1
@@ -272,7 +272,7 @@ def test_archive_story_sentence_removal_options(runner, mock_successful_orchestr
         '--no-sentence-removal' # But disable it
     ])
     assert result2.exit_code == 0, f"CLI errored (run2): {result2.output}"
-    progress_file2 = os.path.join(workspace2, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    progress_file2 = os.path.join(workspace2, PathManager.ARCHIVAL_STATUS_DIR_NAME, "test_story_id_123", "progress_status.json")
     assert os.path.exists(progress_file2)
     with open(progress_file2, 'r', encoding='utf-8') as f: data2 = json.load(f)
     assert data2['sentence_removal_config_used'] == "Disabled via --no-sentence-removal"
@@ -370,7 +370,7 @@ def test_archive_story_deletion_with_other_options(runner, mock_successful_orche
     assert kwargs['keep_temp_files'] is False # Explicitly check it's passed as False
 
     # Verify progress file was created by the mock
-    progress_file = os.path.join(custom_output_dir, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    progress_file = os.path.join(custom_output_dir, PathManager.ARCHIVAL_STATUS_DIR_NAME, "test_story_id_123", "progress_status.json")
     assert os.path.exists(progress_file)
     with open(progress_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -477,7 +477,8 @@ def setup_config_manager_for_temp_workspace(monkeypatch, temp_workspace):
 
     # The mock constructor for ConfigManager
     mock_cm_constructor = mock.Mock(return_value=mock_cm_instance)
-    monkeypatch.setattr("webnovel_archiver.cli.handlers.ConfigManager", mock_cm_constructor)
+    # Patch ConfigManager where ArchiveStoryContext imports it
+    monkeypatch.setattr("webnovel_archiver.cli.contexts.ConfigManager", mock_cm_constructor)
 
     return temp_config_dir, temp_settings_ini_path, mock_cm_instance, config_parser_that_reads_temp_ini
 
@@ -655,7 +656,7 @@ def test_archive_story_epub_contents_option(runner, mock_successful_orchestrator
     args_active, kwargs_active = mock_successful_orchestrator.call_args_list[0] # First call
     assert kwargs_active['story_url'] == story_url_active_only
     assert kwargs_active['epub_contents'] == 'active-only'
-    progress_file_active = os.path.join(workspace_active_only, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    progress_file_active = os.path.join(workspace_active_only, PathManager.ARCHIVAL_STATUS_DIR_NAME, "test_story_id_123", "progress_status.json")
     assert os.path.exists(progress_file_active)
     with open(progress_file_active, 'r', encoding='utf-8') as f:
         data_active = json.load(f)
@@ -674,7 +675,7 @@ def test_archive_story_epub_contents_option(runner, mock_successful_orchestrator
     args_all, kwargs_all = mock_successful_orchestrator.call_args_list[1] # Second call
     assert kwargs_all['story_url'] == story_url_all
     assert kwargs_all['epub_contents'] == 'all'
-    progress_file_all = os.path.join(workspace_all, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    progress_file_all = os.path.join(workspace_all, PathManager.ARCHIVAL_STATUS_DIR_NAME, "test_story_id_123", "progress_status.json")
     assert os.path.exists(progress_file_all)
     with open(progress_file_all, 'r', encoding='utf-8') as f:
         data_all = json.load(f)
@@ -692,7 +693,7 @@ def test_archive_story_epub_contents_option(runner, mock_successful_orchestrator
     args_default, kwargs_default = mock_successful_orchestrator.call_args_list[2] # Third call
     assert kwargs_default['story_url'] == story_url_default
     assert kwargs_default['epub_contents'] == 'all' # Default should be 'all'
-    progress_file_default = os.path.join(workspace_default, ARCHIVAL_STATUS_DIR, "test_story_id_123", "progress_status.json")
+    progress_file_default = os.path.join(workspace_default, PathManager.ARCHIVAL_STATUS_DIR_NAME, "test_story_id_123", "progress_status.json")
     assert os.path.exists(progress_file_default)
     with open(progress_file_default, 'r', encoding='utf-8') as f:
         data_default = json.load(f)

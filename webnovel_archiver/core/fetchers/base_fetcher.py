@@ -32,6 +32,14 @@ class BaseFetcher(ABC):
         pass
 
     @abstractmethod
+    def get_source_specific_id(self, url: str) -> str:
+        """
+        Extracts a unique source-specific identifier from the given URL.
+        Example: For RoyalRoad, this might be the numerical fiction ID.
+        """
+        pass
+
+    @abstractmethod
     def get_chapter_urls(self, story_url: str) -> List[ChapterInfo]:
         """
         Fetches and returns a list of chapter URLs and their titles for a given story URL.

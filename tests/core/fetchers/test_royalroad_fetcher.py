@@ -121,5 +121,26 @@ class TestRoyalRoadFetcherParsing(unittest.TestCase):
         content = self.fetcher.download_chapter_content("http://fake-no-content-url.com")
         self.assertEqual(content, "Chapter content not found.")
 
+    def test_get_source_specific_id(self):
+        # Valid URLs
+        self.assertEqual(self.fetcher.get_source_specific_id("https://www.royalroad.com/fiction/12345/some-story-title"), "12345")
+        self.assertEqual(self.fetcher.get_source_specific_id("https://www.royalroad.com/fiction/67890"), "67890")
+        self.assertEqual(self.fetcher.get_source_specific_id("http://royalroad.com/fiction/123/another-story-slug"), "123")
+        self.assertEqual(self.fetcher.get_source_specific_id("https://royalroad.com/fiction/999999?query=param#fragment"), "999999")
+
+        # Invalid URLs - Expect ValueError
+        with self.assertRaises(ValueError):
+            self.fetcher.get_source_specific_id("https://www.royalroad.com/fictio/12345/typo") # "fictio" instead of "fiction"
+        with self.assertRaises(ValueError):
+            self.fetcher.get_source_specific_id("https://www.royalroad.com/profile/12345") # Not a fiction URL
+        with self.assertRaises(ValueError):
+            self.fetcher.get_source_specific_id("https://www.another-site.com/fiction/12345") # Different domain
+        with self.assertRaises(ValueError):
+            self.fetcher.get_source_specific_id("https://www.royalroad.com/fiction/notanumber/story-title") # Non-numeric ID
+        with self.assertRaises(ValueError):
+            self.fetcher.get_source_specific_id("just a string, not a url")
+        with self.assertRaises(ValueError):
+            self.fetcher.get_source_specific_id("https://www.royalroad.com/fiction/") # Missing ID
+
 if __name__ == '__main__':
     unittest.main()

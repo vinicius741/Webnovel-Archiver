@@ -11,10 +11,12 @@ from click.testing import CliRunner
 from webnovel_archiver.cli.main import archiver
 # Import progress manager functions to help setup test data
 import webnovel_archiver.core.storage.progress_manager as pm
-from webnovel_archiver.core.config_manager import WORKSPACE_ARCHIVAL_STATUS_DIR, WORKSPACE_EBOOKS_DIR, ConfigManager, DEFAULT_WORKSPACE_PATH
+# Import PathManager for directory name constants
+from webnovel_archiver.core.path_manager import PathManager
+from webnovel_archiver.core.config_manager import ConfigManager # DEFAULT_WORKSPACE_PATH is not used here directly
 
 # --- Constants for test setup ---
-TEST_WORKSPACE_ROOT = "_test_integration_workspace"
+TEST_WORKSPACE_ROOT = "_test_integration_cloud_backup_workspace" # Renamed for clarity
 TEST_STORY_ID = "test_story_123"
 TEST_CREDENTIALS_FILE = "dummy_gdrive_creds.json"
 TEST_TOKEN_FILE = "dummy_gdrive_token.json"
@@ -26,8 +28,8 @@ class TestCliCloudBackup(unittest.TestCase):
         # Ensure a clean test workspace
         if os.path.exists(TEST_WORKSPACE_ROOT):
             shutil.rmtree(TEST_WORKSPACE_ROOT)
-        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, WORKSPACE_ARCHIVAL_STATUS_DIR, TEST_STORY_ID), exist_ok=True)
-        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, WORKSPACE_EBOOKS_DIR, TEST_STORY_ID), exist_ok=True)
+        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, PathManager.ARCHIVAL_STATUS_DIR_NAME, TEST_STORY_ID), exist_ok=True)
+        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, PathManager.EBOOKS_DIR_NAME, TEST_STORY_ID), exist_ok=True)
 
         # Create dummy credentials and token files for GDriveSync to find
         # GDriveSync itself will be mocked, but its constructor might check for these paths.
@@ -66,7 +68,7 @@ class TestCliCloudBackup(unittest.TestCase):
             epub_name = epub_info.get('name', f"{story_id}_vol_{i+1}.epub")
             epub_content = epub_info.get('content', f"dummy epub content for {epub_name}")
 
-            epub_local_dir = os.path.join(TEST_WORKSPACE_ROOT, WORKSPACE_EBOOKS_DIR, story_id)
+            epub_local_dir = os.path.join(TEST_WORKSPACE_ROOT, PathManager.EBOOKS_DIR_NAME, story_id)
             epub_local_path = os.path.join(epub_local_dir, epub_name)
             with open(epub_local_path, 'w') as f:
                 f.write(epub_content)
@@ -77,12 +79,12 @@ class TestCliCloudBackup(unittest.TestCase):
         pm.save_progress(story_id, progress_data, workspace_root=TEST_WORKSPACE_ROOT)
         return pm.get_progress_filepath(story_id, workspace_root=TEST_WORKSPACE_ROOT)
 
-    @patch('webnovel_archiver.cli.handlers.GDriveSync') # Patch GDriveSync where it's used by the handler
-    @patch('webnovel_archiver.cli.handlers.ConfigManager') # Patch ConfigManager where it's used by the handler
-    def test_cloud_backup_single_story_success(self, mock_handler_config_manager, mock_handler_gdrive_sync):
+    @patch('webnovel_archiver.cli.contexts.GDriveSync') # Patch GDriveSync where CloudBackupContext imports it
+    @patch('webnovel_archiver.cli.contexts.ConfigManager') # Patch ConfigManager where it's used by CloudBackupContext
+    def test_cloud_backup_single_story_success(self, mock_contexts_config_manager, mock_contexts_gdrive_sync):
         # Setup mocks
-        mock_handler_config_manager.return_value = self.mock_config_manager
-        mock_handler_gdrive_sync.return_value = self.mock_gdrive_sync_instance
+        mock_contexts_config_manager.return_value = self.mock_config_manager
+        mock_contexts_gdrive_sync.return_value = self.mock_gdrive_sync_instance
 
         # Prepare GDriveSync instance mocks
         self.mock_gdrive_sync_instance.create_folder_if_not_exists.side_effect = ['base_folder_id_123', 'story_folder_id_abc']
@@ -96,7 +98,7 @@ class TestCliCloudBackup(unittest.TestCase):
         # Create dummy files
         epub_files_setup = [{'name': 'test_story_123_vol_1.epub'}]
         progress_file_local_path = self._create_dummy_progress_file(TEST_STORY_ID, epub_files_info=epub_files_setup)
-        epub_local_path = os.path.join(TEST_WORKSPACE_ROOT, WORKSPACE_EBOOKS_DIR, TEST_STORY_ID, 'test_story_123_vol_1.epub')
+        epub_local_path = os.path.join(TEST_WORKSPACE_ROOT, PathManager.EBOOKS_DIR_NAME, TEST_STORY_ID, 'test_story_123_vol_1.epub')
 
         # Run CLI command
         result = self.runner.invoke(archiver, [
@@ -143,11 +145,11 @@ class TestCliCloudBackup(unittest.TestCase):
         self.assertEqual(epub_backup_info['cloud_file_id'], 'gdrive_epub_id_1')
 
 
-    @patch('webnovel_archiver.cli.handlers.GDriveSync')
-    @patch('webnovel_archiver.cli.handlers.ConfigManager')
-    def test_cloud_backup_skip_if_remote_not_older(self, mock_handler_config_manager, mock_handler_gdrive_sync):
-        mock_handler_config_manager.return_value = self.mock_config_manager
-        mock_handler_gdrive_sync.return_value = self.mock_gdrive_sync_instance
+    @patch('webnovel_archiver.cli.contexts.GDriveSync') # Patch GDriveSync where CloudBackupContext imports it
+    @patch('webnovel_archiver.cli.contexts.ConfigManager') # Patch ConfigManager where it's used by CloudBackupContext
+    def test_cloud_backup_skip_if_remote_not_older(self, mock_contexts_config_manager, mock_contexts_gdrive_sync):
+        mock_contexts_config_manager.return_value = self.mock_config_manager
+        mock_contexts_gdrive_sync.return_value = self.mock_gdrive_sync_instance
 
         self.mock_gdrive_sync_instance.create_folder_if_not_exists.side_effect = ['base_folder_id_456', 'story_folder_id_def']
 
@@ -178,11 +180,11 @@ class TestCliCloudBackup(unittest.TestCase):
             self.assertEqual(file_backup_info['status'], 'skipped_up_to_date')
             self.assertIn('cloud_file_id', file_backup_info) # Should still record the ID
 
-    @patch('webnovel_archiver.cli.handlers.GDriveSync')
-    @patch('webnovel_archiver.cli.handlers.ConfigManager')
-    def test_cloud_backup_force_full_upload(self, mock_handler_config_manager, mock_handler_gdrive_sync):
-        mock_handler_config_manager.return_value = self.mock_config_manager
-        mock_handler_gdrive_sync.return_value = self.mock_gdrive_sync_instance
+    @patch('webnovel_archiver.cli.contexts.GDriveSync') # Patch GDriveSync where CloudBackupContext imports it
+    @patch('webnovel_archiver.cli.contexts.ConfigManager') # Patch ConfigManager where it's used by CloudBackupContext
+    def test_cloud_backup_force_full_upload(self, mock_contexts_config_manager, mock_contexts_gdrive_sync):
+        mock_contexts_config_manager.return_value = self.mock_config_manager
+        mock_contexts_gdrive_sync.return_value = self.mock_gdrive_sync_instance
 
         self.mock_gdrive_sync_instance.create_folder_if_not_exists.side_effect = ['base_folder_id_789', 'story_folder_id_ghi']
         # get_file_metadata might still be called by GDriveSync's upload if it tries to update vs create
@@ -200,7 +202,7 @@ class TestCliCloudBackup(unittest.TestCase):
 
         self._create_dummy_progress_file(TEST_STORY_ID, epub_files_info=[{'name': 'test_story_123_vol_1.epub'}])
         progress_file_local_path = pm.get_progress_filepath(TEST_STORY_ID, workspace_root=TEST_WORKSPACE_ROOT)
-        epub_local_path = os.path.join(TEST_WORKSPACE_ROOT, WORKSPACE_EBOOKS_DIR, TEST_STORY_ID, 'test_story_123_vol_1.epub')
+        epub_local_path = os.path.join(TEST_WORKSPACE_ROOT, PathManager.EBOOKS_DIR_NAME, TEST_STORY_ID, 'test_story_123_vol_1.epub')
 
 
         result = self.runner.invoke(archiver, [
@@ -227,29 +229,33 @@ class TestCliCloudBackup(unittest.TestCase):
         for file_backup_info in backup_status['backed_up_files']:
             self.assertEqual(file_backup_info['status'], 'uploaded')
 
-    @patch('webnovel_archiver.cli.handlers.GDriveSync')
-    @patch('webnovel_archiver.cli.handlers.ConfigManager')
-    def test_cloud_backup_all_stories(self, mock_handler_config_manager, mock_handler_gdrive_sync):
-        mock_handler_config_manager.return_value = self.mock_config_manager
-        mock_handler_gdrive_sync.return_value = self.mock_gdrive_sync_instance
+    @patch('webnovel_archiver.cli.contexts.GDriveSync') # Patch GDriveSync where CloudBackupContext imports it
+    @patch('webnovel_archiver.cli.contexts.ConfigManager') # Patch ConfigManager where it's used by CloudBackupContext
+    def test_cloud_backup_all_stories(self, mock_contexts_config_manager, mock_contexts_gdrive_sync):
+        mock_contexts_config_manager.return_value = self.mock_config_manager
+        mock_contexts_gdrive_sync.return_value = self.mock_gdrive_sync_instance
 
         # Setup for two stories
         story_id_1 = "story_alpha"
         story_id_2 = "story_beta"
-        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, WORKSPACE_ARCHIVAL_STATUS_DIR, story_id_1), exist_ok=True)
-        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, WORKSPACE_EBOOKS_DIR, story_id_1), exist_ok=True)
-        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, WORKSPACE_ARCHIVAL_STATUS_DIR, story_id_2), exist_ok=True)
-        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, WORKSPACE_EBOOKS_DIR, story_id_2), exist_ok=True)
+        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, PathManager.ARCHIVAL_STATUS_DIR_NAME, story_id_1), exist_ok=True)
+        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, PathManager.EBOOKS_DIR_NAME, story_id_1), exist_ok=True)
+        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, PathManager.ARCHIVAL_STATUS_DIR_NAME, story_id_2), exist_ok=True)
+        os.makedirs(os.path.join(TEST_WORKSPACE_ROOT, PathManager.EBOOKS_DIR_NAME, story_id_2), exist_ok=True)
 
         self._create_dummy_progress_file(story_id_1, epub_files_info=[{'name': 's1.epub'}])
         self._create_dummy_progress_file(story_id_2, epub_files_info=[{'name': 's2.epub'}])
 
         # Mock GDrive behavior
+        # create_folder_if_not_exists is called:
+        # 1. For base "Webnovel Archiver Backups" folder (before loop)
+        # 2. For "story_alpha" (inside loop)
+        # 3. For "story_beta" (inside loop)
+        # The base folder ID is established once.
         self.mock_gdrive_sync_instance.create_folder_if_not_exists.side_effect = [
-            'base_folder_all', # For "Webnovel Archiver Backups"
-            'story_alpha_folder', # For story_alpha
-            'base_folder_all', # For "Webnovel Archiver Backups" (called again for story_beta)
-            'story_beta_folder'  # For story_beta
+            'base_folder_all_id',   # ID for "Webnovel Archiver Backups"
+            'story_alpha_folder_id', # ID for "story_alpha"
+            'story_beta_folder_id'   # ID for "story_beta"
         ]
         self.mock_gdrive_sync_instance.get_file_metadata.return_value = None # All files are new
         self.mock_gdrive_sync_instance.upload_file.return_value = {'id': 'mock_id', 'name': 'uploaded_file', 'modifiedTime': 'ts_all'}
@@ -267,26 +273,32 @@ class TestCliCloudBackup(unittest.TestCase):
         # Check progress for story_alpha
         progress1 = pm.load_progress(story_id_1, TEST_WORKSPACE_ROOT)
         backup_status1 = pm.get_cloud_backup_status(progress1)
-        self.assertEqual(backup_status1['story_cloud_folder_id'], 'story_alpha_folder')
+        self.assertEqual(backup_status1['story_cloud_folder_id'], 'story_alpha_folder_id') # Use the ID from side_effect
         self.assertEqual(len(backup_status1['backed_up_files']), 2) # progress + 1 epub
         for f_info in backup_status1['backed_up_files']: self.assertEqual(f_info['status'], 'uploaded')
 
         # Check progress for story_beta
         progress2 = pm.load_progress(story_id_2, TEST_WORKSPACE_ROOT)
         backup_status2 = pm.get_cloud_backup_status(progress2)
-        self.assertEqual(backup_status2['story_cloud_folder_id'], 'story_beta_folder')
+        self.assertEqual(backup_status2['story_cloud_folder_id'], 'story_beta_folder_id') # Use the ID from side_effect
         self.assertEqual(len(backup_status2['backed_up_files']), 2)
         for f_info in backup_status2['backed_up_files']: self.assertEqual(f_info['status'], 'uploaded')
 
 
-    @patch('webnovel_archiver.cli.handlers.GDriveSync')
-    @patch('webnovel_archiver.cli.handlers.ConfigManager')
-    def test_cloud_backup_no_stories_found(self, mock_handler_config_manager, mock_handler_gdrive_sync):
-        mock_handler_config_manager.return_value = self.mock_config_manager
-        mock_handler_gdrive_sync.return_value = self.mock_gdrive_sync_instance
+    @patch('webnovel_archiver.cli.contexts.GDriveSync') # Patch GDriveSync where CloudBackupContext imports it
+    @patch('webnovel_archiver.cli.contexts.ConfigManager') # Patch ConfigManager where it's used by CloudBackupContext
+    def test_cloud_backup_no_stories_found(self, mock_contexts_config_manager, mock_contexts_gdrive_sync):
+        mock_contexts_config_manager.return_value = self.mock_config_manager
+        mock_contexts_gdrive_sync.return_value = self.mock_gdrive_sync_instance
 
         # Ensure the archival status directory is empty or doesn't exist for any story
-        shutil.rmtree(os.path.join(TEST_WORKSPACE_ROOT, WORKSPACE_ARCHIVAL_STATUS_DIR, TEST_STORY_ID)) # remove the default one
+        archival_base_dir = os.path.join(TEST_WORKSPACE_ROOT, PathManager.ARCHIVAL_STATUS_DIR_NAME)
+        if os.path.exists(os.path.join(archival_base_dir, TEST_STORY_ID)): # If the default test story dir exists
+            shutil.rmtree(os.path.join(archival_base_dir, TEST_STORY_ID))
+        # If archival_base_dir itself is empty or only contains non-story items, that's fine.
+        # If it doesn't exist, create it so listdir doesn't fail, but it will be empty.
+        os.makedirs(archival_base_dir, exist_ok=True)
+
 
         result = self.runner.invoke(archiver, [
             'cloud-backup',
@@ -294,16 +306,19 @@ class TestCliCloudBackup(unittest.TestCase):
             '--token-file', TEST_TOKEN_FILE
         ])
         self.assertEqual(result.exit_code, 0, f"CLI command failed: {result.output}")
-        self.assertIn("No stories found", result.output)
-        self.mock_gdrive_sync_instance.create_folder_if_not_exists.assert_not_called()
+        self.assertIn("No stories found to back up.", result.output) # Adjusted expected message based on handler
+        # Expect create_folder_if_not_exists to be called once for the base backup folder
+        self.mock_gdrive_sync_instance.create_folder_if_not_exists.assert_called_once_with(
+            'Webnovel Archiver Backups', parent_folder_id=None
+        )
 
 
-    @patch('webnovel_archiver.cli.handlers.GDriveSync')
-    @patch('webnovel_archiver.cli.handlers.ConfigManager')
-    def test_cloud_backup_gdrive_connection_error(self, mock_handler_config_manager, mock_handler_gdrive_sync):
-        mock_handler_config_manager.return_value = self.mock_config_manager
-        # Simulate GDriveSync constructor raising ConnectionError
-        mock_handler_gdrive_sync.side_effect = ConnectionError("Failed to connect to GDrive API")
+    @patch('webnovel_archiver.cli.contexts.GDriveSync') # Target GDriveSync where CloudBackupContext imports it
+    @patch('webnovel_archiver.cli.contexts.ConfigManager') # This targets ConfigManager import in contexts.py
+    def test_cloud_backup_gdrive_connection_error(self, mock_contexts_config_manager, mock_gdrive_sync_in_context): # Renamed mock
+        mock_contexts_config_manager.return_value = self.mock_config_manager
+        # Simulate GDriveSync constructor (as imported by CloudBackupContext) raising ConnectionError
+        mock_gdrive_sync_in_context.side_effect = ConnectionError("Failed to connect to GDrive API")
 
         self._create_dummy_progress_file(TEST_STORY_ID)
 

@@ -217,25 +217,24 @@ def generate_story_id(url: Optional[str] = None, title: Optional[str] = None) ->
         parsed_url = urlparse(url)
         path_parts = [part for part in parsed_url.path.split('/') if part]
 
-        if "royalroad.com" in parsed_url.netloc and len(path_parts) >= 2 and path_parts[0] == "fiction":
-            numerical_id = path_parts[1]
-            # It's good practice to ensure the ID is purely numeric if expected.
-            # However, the original code didn't explicitly check this for path_parts[1]
-            # and would have included it as is.
-            # For the new format "royalroad-<numerical_id>", if numerical_id can have non-numeric chars,
-            # they would be included. The task implies it's a number.
-            return f"royalroad-{numerical_id}"
+        # Removed RoyalRoad specific logic:
+        # if "royalroad.com" in parsed_url.netloc and len(path_parts) >= 2 and path_parts[0] == "fiction":
+        #     numerical_id = path_parts[1]
+        #     return f"royalroad-{numerical_id}"
 
         if path_parts:
+            # Use the last part of the path as the base for the ID
             base_id = path_parts[-1]
         else:
-            base_id = parsed_url.netloc
-            base_id = base_id.replace("www.", "")
+            # If no path, use the netloc (domain) and remove "www." if present
+            base_id = parsed_url.netloc.replace("www.", "")
     elif title:
         base_id = title
     else:
+        # Fallback to a timestamp-based ID if no URL or title is provided
         return f"story_{datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')}"
 
+    # Slugify the base_id
     s_id = base_id.lower()
     s_id = re.sub(r'\s+', '-', s_id)
     s_id = re.sub(r'[^a-z0-9_-]', '', s_id)

@@ -7,7 +7,7 @@ import re # Added for migration_handler
 from typing import Optional, List, Dict, Any, Union # Added Union
 
 # Import existing components
-from webnovel_archiver.core.orchestrator import archive_story as call_orchestrator_archive_story, PROCESSED_CONTENT_DIR
+from webnovel_archiver.core.orchestrator import archive_story as call_orchestrator_archive_story
 from webnovel_archiver.core.config_manager import ConfigManager, DEFAULT_WORKSPACE_PATH
 from webnovel_archiver.core.storage.progress_manager import EBOOKS_DIR as WORKSPACE_EBOOKS_DIR, ARCHIVAL_STATUS_DIR as WORKSPACE_ARCHIVAL_STATUS_DIR
 # Using 'as' to keep the constant names the same as they were used throughout the handler code.
@@ -32,6 +32,9 @@ from webnovel_archiver.core.storage.progress_manager import (
 )
 # ConfigManager and DEFAULT_WORKSPACE_PATH are already imported
 # click and get_logger are already imported above.
+
+# Import PathManager
+from webnovel_archiver.core.path_manager import PathManager
 
 # Import the new context classes
 from .contexts import ArchiveStoryContext, CloudBackupContext, MigrationContext
@@ -628,7 +631,7 @@ def handle_restore_from_epubs():
 
     archival_status_base_dir = os.path.join(workspace_root, ARCHIVAL_STATUS_DIR)
     ebooks_base_dir = os.path.join(workspace_root, EBOOKS_DIR)
-    processed_content_base_dir = os.path.join(workspace_root, PROCESSED_CONTENT_DIR)
+    processed_content_base_dir = os.path.join(workspace_root, PathManager.PROCESSED_CONTENT_DIR_NAME)
 
     logger_restore.info(f"Archival status directory: {archival_status_base_dir}")
     logger_restore.info(f"Ebooks directory: {ebooks_base_dir}")

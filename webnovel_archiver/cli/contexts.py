@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, Union
 
 from webnovel_archiver.core.config_manager import ConfigManager, DEFAULT_WORKSPACE_PATH
 from webnovel_archiver.utils.logger import get_logger
+from webnovel_archiver.core.path_manager import PathManager
 
 logger = get_logger(__name__)
 
@@ -139,10 +140,8 @@ class ArchiveStoryContext:
         return True
 
 from webnovel_archiver.core.cloud_sync import GDriveSync, BaseSyncService
-from webnovel_archiver.core.storage.progress_manager import (
-    WORKSPACE_ARCHIVAL_STATUS_DIR, # Renamed from ARCHIVAL_STATUS_DIR for clarity in this context
-    WORKSPACE_EBOOKS_DIR # Renamed from EBOOKS_DIR
-)
+# Removed import of WORKSPACE_ARCHIVAL_STATUS_DIR and WORKSPACE_EBOOKS_DIR from progress_manager
+# They will be replaced by PathManager constants.
 
 
 class CloudBackupContext:
@@ -170,8 +169,8 @@ class CloudBackupContext:
         self._config_manager: Optional[ConfigManager] = None
         self.workspace_root: str = self._resolve_workspace_root()
 
-        self.archival_status_dir: str = os.path.join(self.workspace_root, WORKSPACE_ARCHIVAL_STATUS_DIR)
-        self.ebooks_base_dir: str = os.path.join(self.workspace_root, WORKSPACE_EBOOKS_DIR)
+        self.archival_status_dir: str = os.path.join(self.workspace_root, PathManager.ARCHIVAL_STATUS_DIR_NAME)
+        self.ebooks_base_dir: str = os.path.join(self.workspace_root, PathManager.EBOOKS_DIR_NAME)
 
         self.sync_service: Optional[BaseSyncService] = self._initialize_sync_service()
 
@@ -303,12 +302,12 @@ class CloudBackupContext:
                not any("Cloud service" in msg for msg in self.error_messages) and \
                not any("GDrive credentials file" in msg for msg in self.error_messages) and \
                not any("Could not connect to Google Drive" in msg for msg in self.error_messages):
-                 self.error_messages.append("Error: Sync service could not be initialized (unknown reason).")
+                self.error_messages.append("Error: Sync service could not be initialized (unknown reason).")
             return False
 
         if not self.cloud_base_folder_id:
             # _ensure_cloud_base_folder should have added an error message.
-             if not any("base cloud folder" in msg for msg in self.error_messages):
+            if not any("base cloud folder" in msg for msg in self.error_messages):
                 self.error_messages.append("Error: Cloud base folder ID could not be established.")
             return False
 
@@ -349,8 +348,8 @@ class MigrationContext:
         self._config_manager: Optional[ConfigManager] = None # If needed in future
         self.workspace_root: str = self._resolve_workspace_root()
 
-        self.archival_status_base_dir: str = os.path.join(self.workspace_root, WORKSPACE_ARCHIVAL_STATUS_DIR)
-        self.ebooks_base_dir: str = os.path.join(self.workspace_root, WORKSPACE_EBOOKS_DIR)
+        self.archival_status_base_dir: str = os.path.join(self.workspace_root, PathManager.ARCHIVAL_STATUS_DIR_NAME)
+        self.ebooks_base_dir: str = os.path.join(self.workspace_root, PathManager.EBOOKS_DIR_NAME)
         # Add other relevant base directories if they participate in migration
         # self.raw_content_base_dir = os.path.join(self.workspace_root, "raw_content") # Example
         # self.processed_content_base_dir = os.path.join(self.workspace_root, "processed_content") # Example

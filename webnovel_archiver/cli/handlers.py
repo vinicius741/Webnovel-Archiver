@@ -9,7 +9,8 @@ from typing import Optional, List, Dict, Any, Union # Added Union
 # Import existing components
 from webnovel_archiver.core.orchestrator import archive_story as call_orchestrator_archive_story
 from webnovel_archiver.core.config_manager import ConfigManager, DEFAULT_WORKSPACE_PATH
-from webnovel_archiver.core.storage.progress_manager import EBOOKS_DIR as WORKSPACE_EBOOKS_DIR, ARCHIVAL_STATUS_DIR as WORKSPACE_ARCHIVAL_STATUS_DIR
+# EBOOKS_DIR and ARCHIVAL_STATUS_DIR are now in PathManager
+# from webnovel_archiver.core.storage.progress_manager import EBOOKS_DIR as WORKSPACE_EBOOKS_DIR, ARCHIVAL_STATUS_DIR as WORKSPACE_ARCHIVAL_STATUS_DIR
 # Using 'as' to keep the constant names the same as they were used throughout the handler code.
 from webnovel_archiver.utils.logger import get_logger
 
@@ -25,8 +26,8 @@ import json # For loading progress.json (though pm.load_progress might abstract 
 
 # Import necessary constants and functions from progress_manager
 from webnovel_archiver.core.storage.progress_manager import (
-    ARCHIVAL_STATUS_DIR,  # Already aliased as WORKSPACE_ARCHIVAL_STATUS_DIR, consider removing direct import if not used elsewhere
-    EBOOKS_DIR, # Already aliased as WORKSPACE_EBOOKS_DIR, consider removing direct import if not used elsewhere
+    # ARCHIVAL_STATUS_DIR, # Moved to PathManager
+    # EBOOKS_DIR, # Moved to PathManager
     load_progress, # Already available via pm alias, but explicit import can be clear
     get_progress_filepath # Already available via pm alias
 )
@@ -629,8 +630,8 @@ def handle_restore_from_epubs():
         logger_restore.warning(f"Falling back to default workspace path: {workspace_root}")
         click.echo(click.style(f"Warning: Using default workspace path: {workspace_root}", fg="yellow"), err=True)
 
-    archival_status_base_dir = os.path.join(workspace_root, ARCHIVAL_STATUS_DIR)
-    ebooks_base_dir = os.path.join(workspace_root, EBOOKS_DIR)
+    archival_status_base_dir = os.path.join(workspace_root, PathManager.ARCHIVAL_STATUS_DIR_NAME)
+    ebooks_base_dir = os.path.join(workspace_root, PathManager.EBOOKS_DIR_NAME)
     processed_content_base_dir = os.path.join(workspace_root, PathManager.PROCESSED_CONTENT_DIR_NAME)
 
     logger_restore.info(f"Archival status directory: {archival_status_base_dir}")

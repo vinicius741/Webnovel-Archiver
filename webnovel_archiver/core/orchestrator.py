@@ -160,7 +160,8 @@ def archive_story(
 
     # We will build a new list of chapter details for this run.
     # If a chapter fails, it won't be added to this list for this run.
-    processed_chapters_for_this_run = [] # Initialize list for chapters processed in this execution.
+    # processed_chapters_for_this_run = [] # Initialize list for chapters processed in this execution. - NO LONGER USED FOR SUMMARY
+    successfully_processed_new_or_updated_count = 0 # For summary reporting
     existing_chapters_map = {}
 
     if force_reprocessing:
@@ -409,6 +410,7 @@ def archive_story(
             chapter_detail_entry["download_timestamp"] = current_time_iso # Timestamp of this processing action
             chapter_detail_entry["last_checked_on"] = current_time_iso
             chapter_detail_entry["status"] = "active"
+            successfully_processed_new_or_updated_count +=1
 
 
             # Update last/next downloaded chapter URLs (simplified)
@@ -440,7 +442,24 @@ def archive_story(
             # Ensure its status is 'active' as it's currently in the source list.
             chapter_to_add["status"] = "active"
             # Update title and source_chapter_id from the latest fetch, in case they changed on the source.
-            chapter_to_add["chapter_title"] = source_chapter_info.chapter_title
+            old_title = chapter_to_add.get("chapter_title")
+            new_title = source_chapter_info.chapter_title
+            if old_title != new_title:
+                logger.info(f"Chapter title updated for URL '{source_chapter_info.chapter_url}'. From: '{old_title}', To: '{new_title}'.")
+                _call_progress_callback({
+                    "status": "info",
+                    "message": f"Chapter title updated for '{old_title}' to '{new_title}'.",
+                    "chapter_url": source_chapter_info.chapter_url,
+                    "old_chapter_title": old_title,
+                    "new_chapter_title": new_title
+                })
+            chapter_to_add["chapter_title"] = new_title
+
+            # Similarly, check and log source_chapter_id changes if necessary, though less common for users to track.
+            # old_source_id = chapter_to_add.get("source_chapter_id")
+            # new_source_id = source_chapter_info.source_chapter_id
+            # if old_source_id != new_source_id:
+            #     logger.info(f"Chapter source ID updated for URL '{source_chapter_info.chapter_url}'. From: '{old_source_id}', To: '{new_source_id}'.")
             chapter_to_add["source_chapter_id"] = source_chapter_info.source_chapter_id
         else:
             # This implies a chapter is in the source list but was NOT in updated_downloaded_chapters.
@@ -584,7 +603,7 @@ def archive_story(
     summary = {
         "story_id": s_id,
         "title": progress_data.get("effective_title", metadata.original_title), # effective_title is set before EPUB gen
-        "chapters_processed": len(processed_chapters_for_this_run),
+        "chapters_processed": successfully_processed_new_or_updated_count, # Use the new counter
         "epub_files": [os.path.abspath(f) for f in generated_epub_files if f], # Ensure absolute paths and filter None
         "workspace_root": os.path.abspath(workspace_root)
     }

@@ -285,6 +285,37 @@ class TestCliCloudBackup(unittest.TestCase):
         for f_info in backup_status2['backed_up_files']: self.assertEqual(f_info['status'], 'uploaded')
 
 
+    @patch('webnovel_archiver.cli.handlers.generate_report_main_func')
+    @patch('webnovel_archiver.cli.contexts.GDriveSync') # Patch GDriveSync where CloudBackupContext imports it
+    @patch('webnovel_archiver.cli.contexts.ConfigManager') # Patch ConfigManager where it's used by CloudBackupContext
+    def test_cloud_backup_generates_report_before_backup(self, mock_contexts_config_manager, mock_contexts_gdrive_sync, mock_generate_report):
+        # Setup mocks
+        mock_contexts_config_manager.return_value = self.mock_config_manager
+        mock_contexts_gdrive_sync.return_value = self.mock_gdrive_sync_instance
+
+        # Mock GDrive behavior to avoid actual cloud calls
+        self.mock_gdrive_sync_instance.create_folder_if_not_exists.return_value = 'base_folder_id_report_test'
+        self.mock_gdrive_sync_instance.get_file_metadata.return_value = None
+        self.mock_gdrive_sync_instance.upload_file.return_value = {'id': 'mock_id', 'name': 'uploaded_file', 'modifiedTime': 'ts_report'}
+
+        # Create a dummy story so the backup process runs
+        self._create_dummy_progress_file(TEST_STORY_ID)
+
+        # Run CLI command
+        result = self.runner.invoke(archiver, [
+            'cloud-backup', TEST_STORY_ID,
+            '--credentials-file', TEST_CREDENTIALS_FILE,
+            '--token-file', TEST_TOKEN_FILE
+        ])
+
+        self.assertEqual(result.exit_code, 0, f"CLI command failed: {result.output}")
+
+        # Assert that generate_report_main_func was called
+        mock_generate_report.assert_called_once()
+
+        # Also assert that the backup process continued after the report generation
+        self.mock_gdrive_sync_instance.upload_file.assert_called()
+
     @patch('webnovel_archiver.cli.contexts.GDriveSync') # Patch GDriveSync where CloudBackupContext imports it
     @patch('webnovel_archiver.cli.contexts.ConfigManager') # Patch ConfigManager where it's used by CloudBackupContext
     def test_cloud_backup_no_stories_found(self, mock_contexts_config_manager, mock_contexts_gdrive_sync):

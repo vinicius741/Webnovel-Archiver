@@ -189,6 +189,15 @@ def cloud_backup_handler(
     cloud_base_folder_id = context.cloud_base_folder_id
     base_backup_folder_name = context.base_backup_folder_name # For messaging
 
+    # Automatically generate the report before backup
+    click.echo("Generating latest report before backup...")
+    try:
+        generate_report_main_func()
+        click.echo("Report generation complete.")
+    except Exception as e:
+        click.echo(click.style(f"Warning: Report generation failed: {e}. Continuing with backup.", fg="yellow"), err=True)
+        logger.warning(f"Report generation failed before backup: {e}", exc_info=True)
+
     if not story_ids_to_process and not context.story_id_option : # No specific story and none found
         click.echo("No stories found to back up.")
         # Check for HTML report upload even if no stories are processed

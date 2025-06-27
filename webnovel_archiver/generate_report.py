@@ -82,187 +82,241 @@ def generate_backup_files_html(backup_files_list, format_timestamp_func):
     return f"<ul class=\"file-list\">{items}</ul>"
 
 def get_embedded_css():
-    return """
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f9f9f9; color: #212529; font-size: 16px; line-height: 1.6; }
-    .container { max-width: 1200px; margin: 20px auto; padding: 25px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.075); }
-    .report-title { text-align: center; color: #343a40; margin-bottom: 30px; font-size: 2.5em; font-weight: 300; }
-
-    #storyListContainer { display: flex; flex-wrap: wrap; gap: 20px; justify-content: flex-start; }
-
+    return '''
+    :root {
+        --primary-color: #007bff;
+        --primary-hover-color: #0056b3;
+        --secondary-color: #6c757d;
+        --background-color: #f8f9fa;
+        --card-background-color: #ffffff;
+        --text-color: #212529;
+        --light-text-color: #6c757d;
+        --border-color: #dee2e6;
+        --shadow-color: rgba(0, 0, 0, 0.05);
+        --success-color: #28a745;
+        --warning-color: #ffc107;
+        --danger-color: #dc3545;
+        --info-color: #17a2b8;
+    }
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        margin: 0;
+        background-color: var(--background-color);
+        color: var(--text-color);
+        font-size: 16px;
+        line-height: 1.6;
+    }
+    .container {
+        max-width: 1400px;
+        margin: 2rem auto;
+        padding: 1rem;
+    }
+    .report-title {
+        text-align: center;
+        color: var(--text-color);
+        margin-bottom: 2rem;
+        font-size: 3em;
+        font-weight: 600;
+    }
+    #storyListContainer {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 1.5rem;
+    }
     .story-card {
-        flex-basis: 320px; /* Default width for cards, adjust as needed */
-        flex-grow: 1;
-        max-width: 100%; /* Ensure it doesn't overflow container on very small screens before wrapping */
-        border: 1px solid #e0e0e0;
-        background-color: #fff;
-        border-radius: 10px;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
-        /* margin-bottom: 20px; /* Replaced by gap in #storyListContainer */
-        display: flex; /* This flex is for the card itself to be a flex item */
-        flex-direction: column; /* Stacks summary and hidden modal content vertically */
-        overflow: hidden; /* Prevents content like box shadow from breaking layout */
-    }
-
-    .story-card-summary {
-        display: flex;
-        gap: 15px;
-        padding: 15px;
-        align-items: flex-start; /* Align items at the start of the cross axis */
-    }
-
-    .story-cover {
-        flex-basis: 100px; /* Smaller cover for card view */
-        flex-shrink: 0;
-        flex-grow: 0;
-    }
-    .story-cover img {
-        width: 100%;
-        height: auto;
-        display: block; /* Removes extra space below img */
-        border-radius: 4px;
-        /* border: 1px solid #ced4da; /* Optional: border for cover image */
-    }
-
-    .story-summary-info {
-        flex-grow: 1;
+        border: 1px solid var(--border-color);
+        background-color: var(--card-background-color);
+        border-radius: 12px;
+        box-shadow: 0 4px 12px var(--shadow-color);
         display: flex;
         flex-direction: column;
-        justify-content: flex-start; /* Content flows top to bottom */
-        min-width: 0; /* Prevents text overflow issues in flex item */
+        overflow: hidden;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .story-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    }
+    .story-card-summary {
+        display: flex;
+        gap: 1rem;
+        padding: 1.5rem;
+        align-items: center;
+    }
+    .story-cover img {
+        width: 100px;
+        height: 140px;
+        object-fit: cover;
+        border-radius: 8px;
+    }
+    .story-summary-info {
+        flex-grow: 1;
+        min-width: 0;
     }
     .story-summary-info h2 {
         margin-top: 0;
-        font-size: 1.2em; /* Adjusted for card layout */
-        font-weight: 500;
-        color: #007bff;
-        margin-bottom: 8px;
-        word-break: break-word; /* Prevent overflow */
+        font-size: 1.4em;
+        font-weight: 600;
+        color: var(--primary-color);
+        margin-bottom: 0.5rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
-    .story-summary-info h2 a { text-decoration: none; color: inherit; }
-    .story-summary-info h2 a:hover { text-decoration: underline; }
+    .story-summary-info h2 a {
+        text-decoration: none;
+        color: inherit;
+    }
+    .story-summary-info h2 a:hover {
+        text-decoration: underline;
+    }
     .story-summary-info p {
-        margin-top: 0;
-        margin-bottom: 8px; /* Adjusted spacing */
-        color: #495057;
-        font-size: 0.9em;
-        word-break: break-word; /* Prevent overflow */
+        margin: 0.25rem 0;
+        color: var(--light-text-color);
+        font-size: 0.95em;
     }
-
     .view-details-btn {
-        padding: 8px 12px;
-        background-color: #007bff;
-        color: white !important; /* Important to override potential link styles if it were an <a> */
+        padding: 0.75rem 1.5rem;
+        background-color: var(--primary-color);
+        color: white !important;
         border: none;
-        border-radius: 4px;
+        border-radius: 8px;
         cursor: pointer;
-        margin-top: auto; /* Pushes button to the bottom of its flex container (.story-summary-info) */
-        font-size: 0.9em;
-        text-decoration: none; /* In case it's an <a> styled as a button */
-        display: inline-block; /* Or block if full width is desired */
+        margin-top: 1rem;
+        font-size: 1em;
+        font-weight: 500;
+        text-decoration: none;
+        display: inline-block;
         text-align: center;
+        transition: background-color 0.2s ease;
     }
     .view-details-btn:hover {
-        background-color: #0056b3;
-        text-decoration: none;
+        background-color: var(--primary-hover-color);
     }
-
-    /* .story-details { flex-grow: 1; min-width: 0; } /* This was for the old layout, content now in modal */
-    /* General h2 and p inside story-card were too broad, now scoped to story-summary-info or apply to modal content */
-
-    .synopsis { max-height: 6em; /* Approx 3-4 lines based on line-height */ overflow: hidden; transition: max-height 0.3s ease-out; margin-bottom: 0px; position: relative; cursor: pointer;}
-    .synopsis.expanded { max-height: 500px; /* Sufficiently large */ }
-    .synopsis-toggle { color: #007bff; cursor: pointer; display: block; margin-top: 0px; font-size: 0.9em; text-align: right; }
-    .progress-bar-container { background-color: #e9ecef; border-radius: .25rem; height: 22px; overflow: hidden; margin-bottom: 8px; }
-    .progress-bar { background-color: #28a745; height: 100%; line-height: 22px; color: white; text-align: center; font-weight: bold; transition: width 0.4s ease; font-size: 0.85em; }
-    .badge { display: inline-block; padding: .35em .65em; font-size: .75em; font-weight: 700; line-height: 1; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: .25rem; }
-    .status-complete { background-color: #28a745; color: white; }
-    .status-ongoing { background-color: #ffc107; color: #212529; }
-    .status-possibly-complete-total-unknown { background-color: #17a2b8; color: white; }
-    .status-unknown-no-chapters-downloaded-total-unknown { background-color: #6c757d; color: white; }
-    .backup-ok { background-color: #28a745; color: white; }
-    .backup-failed { background-color: #dc3545; color: white; }
-    .backup-never-backed-up { background-color: #6c757d; color: white; } /* Adjusted class name */
-    .backup-partial-unknown { background-color: #ffc107; color: #212529; }
-    .backup-ok-timestamp-missing { background-color: #17a2b8; color: white; }
-    .section-title { font-weight: 600; margin-top: 12px; margin-bottom: 10px; font-size: 1em; color: #222; border-bottom: 1px solid #eaeaea; padding-bottom: 5px;}
-    .file-list { list-style: none; padding-left: 0; margin-bottom: 10px; }
-    .file-list li { font-size: 0.9em; margin-bottom: 6px; color: #495057; word-break: break-all; padding: 8px 12px; background-color: #f0f0f0; border: 1px solid #dcdcdc; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-    .file-list li a { text-decoration: none; color: #0056b3; }
-    .file-list li a:hover { text-decoration: underline; }
-    .no-items { color: #6c757d; font-style: italic; font-size: 0.9em; }
-    .search-sort-filter { margin-bottom: 20px; padding: 20px; background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 10px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
-    .search-sort-filter input, .search-sort-filter select { padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 0.95em; }
-    .search-sort-filter input:focus, .search-sort-filter select:focus { border-color: #007bff; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); outline: none; }
-    .search-sort-filter input[type="text"] { flex-grow: 1; min-width: 200px; }
-
-    /* Toggle Epubs Button Style */
-    .toggle-epubs-btn {
-        background-color: #007bff;
-        color: white !important;
-        padding: 8px 15px;
-        border: none;
-        border-radius: 5px;
-        text-decoration: none;
-        cursor: pointer;
-        display: inline-block;
-        margin-top: 10px;
-        font-size: 0.9em;
-    }
-    .toggle-epubs-btn:hover {
-        background-color: #0056b3;
-        text-decoration: none;
-    }
-
-    /* Modal Styles */
     .modal {
-        display: none; /* Hidden by default */
-        position: fixed; /* Stay in place */
-        z-index: 1000; /* Sit on top */
+        display: none;
+        position: fixed;
+        z-index: 1000;
         left: 0;
         top: 0;
-        width: 100%; /* Full width */
-        height: 100%; /* Full height */
-        overflow: auto; /* Enable scroll if needed */
-        background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0,0,0,0.5);
+        animation: fadeIn 0.3s;
+    }
+    @keyframes fadeIn {
+        from {opacity: 0;}
+        to {opacity: 1;}
     }
     .modal-content {
-        background-color: #fefefe;
-        margin: 10% auto; /* 10% from the top and centered */
-        padding: 20px;
-        border: 1px solid #888;
-        width: 80%; /* Could be more or less, depending on screen size */
-        border-radius: 8px;
+        background-color: var(--card-background-color);
+        margin: 5% auto;
+        padding: 2rem;
+        border: 1px solid var(--border-color);
+        width: 90%;
+        max-width: 800px;
+        border-radius: 12px;
         position: relative;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        animation: slideIn 0.4s;
+    }
+    @keyframes slideIn {
+        from {transform: translateY(-50px);}
+        to {transform: translateY(0);}
     }
     .modal-close-btn {
-        color: #aaa;
-        float: right;
-        font-size: 28px;
+        color: var(--light-text-color);
+        position: absolute;
+        top: 1rem;
+        right: 1.5rem;
+        font-size: 2rem;
         font-weight: bold;
+        cursor: pointer;
     }
     .modal-close-btn:hover,
     .modal-close-btn:focus {
-        color: black;
-        text-decoration: none;
-        cursor: pointer;
+        color: var(--text-color);
     }
     #modalBodyContent {
-        max-height: 70vh; /* Example: limit height and make it scrollable if content overflows */
+        max-height: 80vh;
         overflow-y: auto;
     }
-    /* Ensure section titles and other elements within modalBodyContent are styled correctly */
-    #modalBodyContent .section-title { /* Scoping section-title for modal if needed, but global one should be fine */
-        margin-top: 15px; /* Add a bit more top margin for sections in modal */
+    .section-title {
+        font-weight: 600;
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+        font-size: 1.2em;
+        color: var(--text-color);
+        border-bottom: 2px solid var(--primary-color);
+        padding-bottom: 0.5rem;
     }
-    #modalBodyContent .section-title:first-child {
-        margin-top: 0; /* No extra margin for the very first section title in modal */
+    .file-list {
+        list-style: none;
+        padding-left: 0;
     }
-    #modalBodyContent .file-list li { /* Example of adjusting list item padding in modal */
-        padding: 6px 10px;
+    .file-list li {
+        font-size: 1em;
+        margin-bottom: 0.5rem;
+        padding: 0.75rem 1rem;
+        background-color: var(--background-color);
+        border-left: 4px solid var(--primary-color);
+        border-radius: 4px;
     }
+    .file-list li a {
+        text-decoration: none;
+        color: var(--primary-hover-color);
+        font-weight: 500;
+    }
+    .badge {
+        display: inline-block;
+        padding: .4em .75em;
+        font-size: .8em;
+        font-weight: 600;
+        line-height: 1;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: baseline;
+        border-radius: 20px;
+    }
+    .status-complete { background-color: var(--success-color); color: white; }
+    .status-ongoing { background-color: var(--warning-color); color: var(--text-color); }
+    .status-possibly-complete-total-unknown { background-color: var(--info-color); color: white; }
+    .status-unknown-no-chapters-downloaded-total-unknown { background-color: var(--secondary-color); color: white; }
+    .backup-ok { background-color: var(--success-color); color: white; }
+    .backup-failed { background-color: var(--danger-color); color: white; }
+    .backup-never-backed-up { background-color: var(--secondary-color); color: white; }
+    .backup-partial-unknown { background-color: var(--warning-color); color: var(--text-color); }
+    .backup-ok-timestamp-missing { background-color: var(--info-color); color: white; }
+    .search-sort-filter {
+        margin-bottom: 2rem;
+        padding: 1.5rem;
+        background-color: var(--card-background-color);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: center;
+    }
+    .search-sort-filter input, .search-sort-filter select {
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        font-size: 1em;
+        background-color: #fff;
+    }
+    .search-sort-filter input:focus, .search-sort-filter select:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(0,123,255,.25);
+        outline: none;
+    }
+    .search-sort-filter input[type="text"] {
+        flex-grow: 1;
+        min-width: 250px;
+    }
+    '''
 
-    """
 
 def get_javascript():
     script_path = os.path.join(os.path.dirname(__file__), 'report_scripts.js')
@@ -277,13 +331,16 @@ def get_javascript():
         return f"console.error('Error loading report_scripts.js: {str(e).replace('`', '')}');"
 
 def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
-    return f"""
+    return f'''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{html.escape(title_text)}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         {css_styles}
     </style>
@@ -305,7 +362,7 @@ def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
     </script>
 </body>
 </html>
-"""
+'''
 
 def generate_story_card_html(story_data, format_timestamp_func):
     title = html.escape(story_data.get('title') or 'Untitled')
@@ -313,37 +370,32 @@ def generate_story_card_html(story_data, format_timestamp_func):
     story_url = html.escape(story_data.get('story_url') or '#')
     cover_image_url = html.escape(story_data.get('cover_image_url') or 'https://via.placeholder.com/150x220.png?text=No+Cover')
     synopsis = html.escape(story_data.get('synopsis') or 'No synopsis available.')
-    progress_percentage = story_data.get('progress_percentage', 0) # Keep as is, not directly escaped
     progress_text = html.escape(story_data.get('progress_text') or 'N/A')
-    status_display_text = html.escape(story_data.get('status') or 'N/A') # For display
-    epub_gen_ts = html.escape(story_data.get('epub_generation_timestamp') or 'N/A') # Already uses 'or'
+    status_display_text = html.escape(story_data.get('status') or 'N/A')
+    epub_gen_ts = html.escape(story_data.get('epub_generation_timestamp') or 'N/A')
 
     epub_files_list = story_data.get('epub_files', [])
-    story_id_for_epub_toggle = sanitize_for_css_class(story_data.get('story_id') or '') # Sanitize story_id
+    story_id_for_epub_toggle = sanitize_for_css_class(story_data.get('story_id') or '')
     story_id_display = html.escape(story_data.get('story_id') or 'N/A')
     backup_summary_display_text = html.escape(story_data.get('backup_status_summary') or 'N/A')
     backup_service = html.escape(story_data.get('backup_service') or 'N/A')
-    backup_last_success_ts = html.escape(story_data.get('formatted_last_successful_backup_ts') or 'N/A') # Already uses 'or'
-    backup_files_detail_list = story_data.get('backup_files_status', []) # Not escaped directly, handled by generate_backup_files_html
-    last_updated = html.escape(story_data.get('formatted_last_updated_ts') or 'N/A') # Already uses 'or'
-    chapters_for_report = story_data.get('chapters_for_report', []) # Get the new chapter data
+    backup_last_success_ts = html.escape(story_data.get('formatted_last_successful_backup_ts') or 'N/A')
+    backup_files_detail_list = story_data.get('backup_files_status', [])
+    last_updated = html.escape(story_data.get('formatted_last_updated_ts') or 'N/A')
+    chapters_for_report = story_data.get('chapters_for_report', [])
 
-    # Data attributes for JS (raw values are fine, but escape them for safety in attributes)
-    # Apply `or ''` pattern for data attributes to ensure they are strings.
     data_title = html.escape(story_data.get('title') or '')
     data_author = html.escape(story_data.get('author') or '')
-    data_status = html.escape(story_data.get('status') or '') # Raw status for filtering logic
-    data_last_updated = html.escape(story_data.get('last_updated_timestamp') or '') # Raw ISO for sorting
-    data_progress = html.escape(str(progress_percentage)) # Already a string or number
+    data_status = html.escape(story_data.get('status') or '')
+    data_last_updated = html.escape(story_data.get('last_updated_timestamp') or '')
+    data_progress = html.escape(str(story_data.get('progress_percentage', 0)))
 
-    # CSS class names from statuses (these should not be HTML escaped, sanitize_for_css_class handles None)
-    status_class = sanitize_for_css_class(story_data.get('status')) # Removed default from .get()
-    backup_summary_class = sanitize_for_css_class(story_data.get('backup_status_summary')) # Removed default from .get()
+    status_class = sanitize_for_css_class(story_data.get('status'))
+    backup_summary_class = sanitize_for_css_class(story_data.get('backup_status_summary'))
 
     epub_list_html = generate_epub_list_html(epub_files_list, story_id_for_epub_toggle)
-    story_id_for_modal = story_id_for_epub_toggle # Re-use sanitized ID
+    story_id_for_modal = story_id_for_epub_toggle
 
-    # Generate HTML for chapter list
     chapters_html = ""
     if chapters_for_report:
         chapter_items = []
@@ -357,26 +409,23 @@ def generate_story_card_html(story_data, format_timestamp_func):
             if status == 'archived':
                 status_marker = " [Archived]"
 
-            # Display link if URL exists, otherwise just title. Add downloaded status.
-            # Add class for styling based on status if needed later.
             download_status_display = " (Downloaded)" if downloaded else " (Not Downloaded)"
             if url and url != '#':
-                chapter_items.append(f"<li><a href=\"{url}\" target=\"_blank\">{title}</a>{status_marker}{download_status_display}</li>")
+                chapter_items.append(f'<li><a href="{url}" target="_blank">{title}</a>{status_marker}{download_status_display}</li>')
             else:
-                chapter_items.append(f"<li>{title}{status_marker}{download_status_display}</li>")
+                chapter_items.append(f'<li>{title}{status_marker}{download_status_display}</li>')
 
         if chapter_items:
-            chapters_html = f"""
+            chapters_html = f'''
             <p class="section-title">Chapters ({len(chapters_for_report)} total):</p>
-            <ul class="file-list chapter-list">{''.join(chapter_items)}</ul>
-            """
+            <ul class="file-list chapter-list">{' '.join(chapter_items)}</ul>
+            '''
         else:
-            chapters_html = "<p class=\"section-title\">Chapters:</p><p class=\"no-items\">No chapter details available.</p>"
+            chapters_html = '<p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>'
     else:
-        chapters_html = "<p class=\"section-title\">Chapters:</p><p class=\"no-items\">No chapter details available.</p>"
+        chapters_html = '<p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>'
 
-
-    card_html = f"""
+    card_html = f'''
     <div class="story-card" data-title="{data_title}" data-author="{data_author}" data-status="{data_status}" data-last-updated="{data_last_updated}" data-progress="{data_progress}">
         <div class="story-card-summary">
             <div class="story-cover">
@@ -386,6 +435,7 @@ def generate_story_card_html(story_data, format_timestamp_func):
                 <h2><a href="{story_url}" target="_blank">{title}</a></h2>
                 <p><strong>Author:</strong> {author}</p>
                 <p><strong>Story ID:</strong> {story_id_display}</p>
+                <p><strong>Progress:</strong> {progress_text}</p>
                 <button class="view-details-btn" data-story-id="{story_id_for_modal}">View Details</button>
             </div>
         </div>
@@ -395,9 +445,6 @@ def generate_story_card_html(story_data, format_timestamp_func):
             <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
 
             <p class="section-title">Download Progress:</p>
-            <div class="progress-bar-container">
-                <div class="progress-bar" style="width:{progress_percentage}%;">{progress_percentage}%</div>
-            </div>
             <p>{progress_text}</p>
             <p><strong>Story Status:</strong> <span class="badge status-{status_class}">{status_display_text}</span></p>
 
@@ -417,8 +464,9 @@ def generate_story_card_html(story_data, format_timestamp_func):
             <p>{last_updated}</p>
         </div>
     </div>
-    """
+    '''
     return card_html
+
 
 def process_story_for_report(progress_data, workspace_root):
     logger.debug(f"Processing story for report: {progress_data.get('story_id')}")

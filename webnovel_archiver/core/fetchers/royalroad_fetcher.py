@@ -8,10 +8,6 @@ from urllib.parse import urljoin
 
 from .base_fetcher import BaseFetcher, StoryMetadata, ChapterInfo
 
-# Placeholder for the example HTML content provided in the issue
-# In a real scenario, this would be fetched via an HTTP request
-EXAMPLE_STORY_PAGE_HTML = """"""
-
 # Setup basic logging
 logger = logging.getLogger(__name__)
 
@@ -20,10 +16,6 @@ class RoyalRoadFetcher(BaseFetcher):
         super().__init__(story_url)
 
     def _fetch_html_content(self, url: str) -> BeautifulSoup:
-        # Use example HTML for the specific story page URL to avoid excessive requests during metadata/chapter list parsing tests
-        if url == "https://www.royalroad.com/fiction/117255/rend":
-            logger.info(f"Using example HTML for URL: {url}")
-            return BeautifulSoup(EXAMPLE_STORY_PAGE_HTML, 'html.parser')
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -321,23 +313,19 @@ class RoyalRoadFetcher(BaseFetcher):
         Extracts the numerical fiction ID from a RoyalRoad URL.
         Example: "https://www.royalroad.com/fiction/12345/some-story-title" -> "12345"
         """
-        # Regex to match royalroad.com domain and extract fiction ID
         match = re.search(r"royalroad.com/fiction/(\d+)", self.story_url)
         if match:
-            return f"royalroad-{match.group(1)}"
+            return match.group(1)
         else:
-            logger.warning(f"Could not extract fiction ID from RoyalRoad URL: {self.story_url}")
-            # Raise an error or return a specific value indicating failure,
-            # depending on how the caller (Orchestrator) should handle this.
-            # For now, let's raise ValueError as the Orchestrator might fall back.
-            raise ValueError(f"Could not parse RoyalRoad fiction ID from URL: {self.story_url}")
+            logger.warning(f"Could not extract fiction ID from RoyalRoad URL: {story_url}")
+            raise ValueError(f"Could not parse RoyalRoad fiction ID from URL: {story_url}")
 
 if __name__ == '__main__':
     # Setup basic logging for the __main__ block
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
     # Example usage for testing (will be part of actual test files later)
-    story_url_example = "https://www.royalroad.com/fiction/117255/rend" # Uses example HTML via _fetch_html_content logic
+    story_url_example = "https://www.royalroad.com/fiction/117255/rend"
     fetcher = RoyalRoadFetcher(story_url_example)
 
     logger.info("--- Story Metadata ---")

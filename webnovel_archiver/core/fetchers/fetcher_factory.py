@@ -46,6 +46,16 @@ class FetcherFactory:
         else:
             raise UnsupportedSourceError(f"Source not supported for URL: {story_url} (domain: {domain})")
 
+    @staticmethod
+    def get_fetcher_class(source_name: str):
+        """
+        Returns the fetcher class for a given source name.
+        """
+        if source_name.lower() == "royalroad":
+            return RoyalRoadFetcher
+        else:
+            raise UnsupportedSourceError(f"No fetcher class found for source: {source_name}")
+
 if __name__ == '__main__':
     # Example Usage (for testing or demonstration)
     test_urls = [

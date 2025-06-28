@@ -5,194 +5,250 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Webnovel Archive Report</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f9f9f9; color: #212529; font-size: 16px; line-height: 1.6; }
-    .container { max-width: 1200px; margin: 20px auto; padding: 25px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.075); }
-    .report-title { text-align: center; color: #343a40; margin-bottom: 30px; font-size: 2.5em; font-weight: 300; }
-
-    #storyListContainer { display: flex; flex-wrap: wrap; gap: 20px; justify-content: flex-start; }
-
+        
+    :root {
+        --primary-color: #007bff;
+        --primary-hover-color: #0056b3;
+        --secondary-color: #6c757d;
+        --background-color: #f8f9fa;
+        --card-background-color: #ffffff;
+        --text-color: #212529;
+        --light-text-color: #6c757d;
+        --border-color: #dee2e6;
+        --shadow-color: rgba(0, 0, 0, 0.05);
+        --success-color: #28a745;
+        --warning-color: #ffc107;
+        --danger-color: #dc3545;
+        --info-color: #17a2b8;
+    }
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        margin: 0;
+        background-color: var(--background-color);
+        color: var(--text-color);
+        font-size: 16px;
+        line-height: 1.6;
+    }
+    .container {
+        max-width: 1400px;
+        margin: 2rem auto;
+        padding: 1rem;
+    }
+    .report-title {
+        text-align: center;
+        color: var(--text-color);
+        margin-bottom: 2rem;
+        font-size: 3em;
+        font-weight: 600;
+    }
+    #storyListContainer {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 1.5rem;
+    }
     .story-card {
-        flex-basis: 320px; /* Default width for cards, adjust as needed */
-        flex-grow: 1;
-        max-width: 100%; /* Ensure it doesn't overflow container on very small screens before wrapping */
-        border: 1px solid #e0e0e0;
-        background-color: #fff;
-        border-radius: 10px;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
-        /* margin-bottom: 20px; /* Replaced by gap in #storyListContainer */
-        display: flex; /* This flex is for the card itself to be a flex item */
-        flex-direction: column; /* Stacks summary and hidden modal content vertically */
-        overflow: hidden; /* Prevents content like box shadow from breaking layout */
-    }
-
-    .story-card-summary {
-        display: flex;
-        gap: 15px;
-        padding: 15px;
-        align-items: flex-start; /* Align items at the start of the cross axis */
-    }
-
-    .story-cover {
-        flex-basis: 100px; /* Smaller cover for card view */
-        flex-shrink: 0;
-        flex-grow: 0;
-    }
-    .story-cover img {
-        width: 100%;
-        height: auto;
-        display: block; /* Removes extra space below img */
-        border-radius: 4px;
-        /* border: 1px solid #ced4da; /* Optional: border for cover image */
-    }
-
-    .story-summary-info {
-        flex-grow: 1;
+        border: 1px solid var(--border-color);
+        background-color: var(--card-background-color);
+        border-radius: 12px;
+        box-shadow: 0 4px 12px var(--shadow-color);
         display: flex;
         flex-direction: column;
-        justify-content: flex-start; /* Content flows top to bottom */
-        min-width: 0; /* Prevents text overflow issues in flex item */
+        overflow: hidden;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .story-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    }
+    .story-card-summary {
+        display: flex;
+        gap: 1rem;
+        padding: 1.5rem;
+        align-items: center;
+    }
+    .story-cover img {
+        width: 100px;
+        height: 140px;
+        object-fit: cover;
+        border-radius: 8px;
+    }
+    .story-summary-info {
+        flex-grow: 1;
+        min-width: 0;
     }
     .story-summary-info h2 {
         margin-top: 0;
-        font-size: 1.2em; /* Adjusted for card layout */
-        font-weight: 500;
-        color: #007bff;
-        margin-bottom: 8px;
-        word-break: break-word; /* Prevent overflow */
+        font-size: 1.4em;
+        font-weight: 600;
+        color: var(--primary-color);
+        margin-bottom: 0.5rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
-    .story-summary-info h2 a { text-decoration: none; color: inherit; }
-    .story-summary-info h2 a:hover { text-decoration: underline; }
+    .story-summary-info h2 a {
+        text-decoration: none;
+        color: inherit;
+    }
+    .story-summary-info h2 a:hover {
+        text-decoration: underline;
+    }
     .story-summary-info p {
-        margin-top: 0;
-        margin-bottom: 8px; /* Adjusted spacing */
-        color: #495057;
-        font-size: 0.9em;
-        word-break: break-word; /* Prevent overflow */
+        margin: 0.25rem 0;
+        color: var(--light-text-color);
+        font-size: 0.95em;
     }
-
     .view-details-btn {
-        padding: 8px 12px;
-        background-color: #007bff;
-        color: white !important; /* Important to override potential link styles if it were an <a> */
+        padding: 0.75rem 1.5rem;
+        background-color: var(--primary-color);
+        color: white !important;
         border: none;
-        border-radius: 4px;
+        border-radius: 8px;
         cursor: pointer;
-        margin-top: auto; /* Pushes button to the bottom of its flex container (.story-summary-info) */
-        font-size: 0.9em;
-        text-decoration: none; /* In case it's an <a> styled as a button */
-        display: inline-block; /* Or block if full width is desired */
+        margin-top: 1rem;
+        font-size: 1em;
+        font-weight: 500;
+        text-decoration: none;
+        display: inline-block;
         text-align: center;
+        transition: background-color 0.2s ease;
     }
     .view-details-btn:hover {
-        background-color: #0056b3;
-        text-decoration: none;
+        background-color: var(--primary-hover-color);
     }
-
-    /* .story-details { flex-grow: 1; min-width: 0; } /* This was for the old layout, content now in modal */
-    /* General h2 and p inside story-card were too broad, now scoped to story-summary-info or apply to modal content */
-
-    .synopsis { max-height: 6em; /* Approx 3-4 lines based on line-height */ overflow: hidden; transition: max-height 0.3s ease-out; margin-bottom: 0px; position: relative; cursor: pointer;}
-    .synopsis.expanded { max-height: 500px; /* Sufficiently large */ }
-    .synopsis-toggle { color: #007bff; cursor: pointer; display: block; margin-top: 0px; font-size: 0.9em; text-align: right; }
-    .progress-bar-container { background-color: #e9ecef; border-radius: .25rem; height: 22px; overflow: hidden; margin-bottom: 8px; }
-    .progress-bar { background-color: #28a745; height: 100%; line-height: 22px; color: white; text-align: center; font-weight: bold; transition: width 0.4s ease; font-size: 0.85em; }
-    .badge { display: inline-block; padding: .35em .65em; font-size: .75em; font-weight: 700; line-height: 1; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: .25rem; }
-    .status-complete { background-color: #28a745; color: white; }
-    .status-ongoing { background-color: #ffc107; color: #212529; }
-    .status-possibly-complete-total-unknown { background-color: #17a2b8; color: white; }
-    .status-unknown-no-chapters-downloaded-total-unknown { background-color: #6c757d; color: white; }
-    .backup-ok { background-color: #28a745; color: white; }
-    .backup-failed { background-color: #dc3545; color: white; }
-    .backup-never-backed-up { background-color: #6c757d; color: white; } /* Adjusted class name */
-    .backup-partial-unknown { background-color: #ffc107; color: #212529; }
-    .backup-ok-timestamp-missing { background-color: #17a2b8; color: white; }
-    .section-title { font-weight: 600; margin-top: 12px; margin-bottom: 10px; font-size: 1em; color: #222; border-bottom: 1px solid #eaeaea; padding-bottom: 5px;}
-    .file-list { list-style: none; padding-left: 0; margin-bottom: 10px; }
-    .file-list li { font-size: 0.9em; margin-bottom: 6px; color: #495057; word-break: break-all; padding: 8px 12px; background-color: #f0f0f0; border: 1px solid #dcdcdc; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-    .file-list li a { text-decoration: none; color: #0056b3; }
-    .file-list li a:hover { text-decoration: underline; }
-    .no-items { color: #6c757d; font-style: italic; font-size: 0.9em; }
-    .search-sort-filter { margin-bottom: 20px; padding: 20px; background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 10px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
-    .search-sort-filter input, .search-sort-filter select { padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 0.95em; }
-    .search-sort-filter input:focus, .search-sort-filter select:focus { border-color: #007bff; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); outline: none; }
-    .search-sort-filter input[type="text"] { flex-grow: 1; min-width: 200px; }
-
-    /* Toggle Epubs Button Style */
-    .toggle-epubs-btn {
-        background-color: #007bff;
-        color: white !important;
-        padding: 8px 15px;
-        border: none;
-        border-radius: 5px;
-        text-decoration: none;
-        cursor: pointer;
-        display: inline-block;
-        margin-top: 10px;
-        font-size: 0.9em;
-    }
-    .toggle-epubs-btn:hover {
-        background-color: #0056b3;
-        text-decoration: none;
-    }
-
-    /* Modal Styles */
     .modal {
-        display: none; /* Hidden by default */
-        position: fixed; /* Stay in place */
-        z-index: 1000; /* Sit on top */
+        display: none;
+        position: fixed;
+        z-index: 1000;
         left: 0;
         top: 0;
-        width: 100%; /* Full width */
-        height: 100%; /* Full height */
-        overflow: auto; /* Enable scroll if needed */
-        background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0,0,0,0.5);
+        animation: fadeIn 0.3s;
+    }
+    @keyframes fadeIn {
+        from {opacity: 0;}
+        to {opacity: 1;}
     }
     .modal-content {
-        background-color: #fefefe;
-        margin: 10% auto; /* 10% from the top and centered */
-        padding: 20px;
-        border: 1px solid #888;
-        width: 80%; /* Could be more or less, depending on screen size */
-        border-radius: 8px;
+        background-color: var(--card-background-color);
+        margin: 5% auto;
+        padding: 2rem;
+        border: 1px solid var(--border-color);
+        width: 90%;
+        max-width: 800px;
+        border-radius: 12px;
         position: relative;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        animation: slideIn 0.4s;
+    }
+    @keyframes slideIn {
+        from {transform: translateY(-50px);}
+        to {transform: translateY(0);}
     }
     .modal-close-btn {
-        color: #aaa;
-        float: right;
-        font-size: 28px;
+        color: var(--light-text-color);
+        position: absolute;
+        top: 1rem;
+        right: 1.5rem;
+        font-size: 2rem;
         font-weight: bold;
+        cursor: pointer;
     }
     .modal-close-btn:hover,
     .modal-close-btn:focus {
-        color: black;
-        text-decoration: none;
-        cursor: pointer;
+        color: var(--text-color);
     }
     #modalBodyContent {
-        max-height: 70vh; /* Example: limit height and make it scrollable if content overflows */
+        max-height: 80vh;
         overflow-y: auto;
     }
-    /* Ensure section titles and other elements within modalBodyContent are styled correctly */
-    #modalBodyContent .section-title { /* Scoping section-title for modal if needed, but global one should be fine */
-        margin-top: 15px; /* Add a bit more top margin for sections in modal */
+    .section-title {
+        font-weight: 600;
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+        font-size: 1.2em;
+        color: var(--text-color);
+        border-bottom: 2px solid var(--primary-color);
+        padding-bottom: 0.5rem;
     }
-    #modalBodyContent .section-title:first-child {
-        margin-top: 0; /* No extra margin for the very first section title in modal */
+    .file-list {
+        list-style: none;
+        padding-left: 0;
     }
-    #modalBodyContent .file-list li { /* Example of adjusting list item padding in modal */
-        padding: 6px 10px;
+    .file-list li {
+        font-size: 1em;
+        margin-bottom: 0.5rem;
+        padding: 0.75rem 1rem;
+        background-color: var(--background-color);
+        border-left: 4px solid var(--primary-color);
+        border-radius: 4px;
     }
-
-
+    .file-list li a {
+        text-decoration: none;
+        color: var(--primary-hover-color);
+        font-weight: 500;
+    }
+    .badge {
+        display: inline-block;
+        padding: .4em .75em;
+        font-size: .8em;
+        font-weight: 600;
+        line-height: 1;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: baseline;
+        border-radius: 20px;
+    }
+    .status-complete { background-color: var(--success-color); color: white; }
+    .status-ongoing { background-color: var(--warning-color); color: var(--text-color); }
+    .status-possibly-complete-total-unknown { background-color: var(--info-color); color: white; }
+    .status-unknown-no-chapters-downloaded-total-unknown { background-color: var(--secondary-color); color: white; }
+    .backup-ok { background-color: var(--success-color); color: white; }
+    .backup-failed { background-color: var(--danger-color); color: white; }
+    .backup-never-backed-up { background-color: var(--secondary-color); color: white; }
+    .backup-partial-unknown { background-color: var(--warning-color); color: var(--text-color); }
+    .backup-ok-timestamp-missing { background-color: var(--info-color); color: white; }
+    .search-sort-filter {
+        margin-bottom: 2rem;
+        padding: 1.5rem;
+        background-color: var(--card-background-color);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: center;
+    }
+    .search-sort-filter input, .search-sort-filter select {
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        font-size: 1em;
+        background-color: #fff;
+    }
+    .search-sort-filter input:focus, .search-sort-filter select:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(0,123,255,.25);
+        outline: none;
+    }
+    .search-sort-filter input[type="text"] {
+        flex-grow: 1;
+        min-width: 250px;
+    }
+    
     </style>
 </head>
 <body>
     <div class="container">
         <h1 class="report-title">Webnovel Archive Report</h1>
-
+        
     <div class="search-sort-filter">
         <input type="text" id="searchInput" onkeyup="filterStories()" placeholder="Search by title or author..." aria-label="Search stories">
         <select id="sortSelect" onchange="sortStories()" aria-label="Sort stories by">
@@ -202,153 +258,28 @@
             <option value="progress_desc">Sort by Progress (Highest First)</option>
         </select>
     </div>
-
+    
         <div id="storyListContainer">
-    <div class="story-card" data-title="Untitled" data-author="Unknown Author" data-status="Complete" data-last-updated="" data-progress="0">
+    <div class="story-card" data-title="  A Tale of Spaces  " data-author="Test Author" data-status="Complete" data-last-updated="" data-progress="100">
         <div class="story-card-summary">
             <div class="story-cover">
-                <img src="https://via.placeholder.com/150x220.png?text=No+Cover" alt="Cover for Untitled">
+                <img src="https://via.placeholder.com/150x220.png?text=No+Cover" alt="Cover for   A Tale of Spaces  ">
             </div>
             <div class="story-summary-info">
-                <h2><a href="#" target="_blank">Untitled</a></h2>
-                <p><strong>Author:</strong> Unknown Author</p>
-                <p><strong>Story ID:</strong> story123</p>
-                <button class="view-details-btn" data-story-id="story123">View Details</button>
-            </div>
-        </div>
-        <div class="story-card-modal-content" style="display: none;">
-            <p class="section-title">Synopsis:</p>
-            <div class="synopsis" onclick="toggleSynopsis(this)">No synopsis available.</div>
-            <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
-
-            <p class="section-title">Download Progress:</p>
-            <div class="progress-bar-container">
-                <div class="progress-bar" style="width:0%;">0%</div>
-            </div>
-            <p>0 / 0 chapters downloaded</p>
-            <p><strong>Story Status:</strong> <span class="badge status-complete">Complete</span></p>
-
-            <p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>
-
-            <p class="section-title">Local EPUBs (Generated: N/A):</p>
-            <p class="no-items">No EPUB files found.</p>
-
-            <p class="section-title">Cloud Backup:</p>
-            <p><strong>Status:</strong> <span class="badge backup-never-backed-up">Never Backed Up</span>
-               (Service: N/A)
-            </p>
-            <p>Last Successful Backup: N/A</p>
-            <p class="no-items">No backup file details.</p>
-
-            <p class="section-title">Last Local Update:</p>
-            <p>N/A</p>
-        </div>
-    </div>
-
-    <div class="story-card" data-title="Untitled" data-author="Unknown Author" data-status="Complete" data-last-updated="" data-progress="0">
-        <div class="story-card-summary">
-            <div class="story-cover">
-                <img src="https://via.placeholder.com/150x220.png?text=No+Cover" alt="Cover for Untitled">
-            </div>
-            <div class="story-summary-info">
-                <h2><a href="#" target="_blank">Untitled</a></h2>
-                <p><strong>Author:</strong> Unknown Author</p>
-                <p><strong>Story ID:</strong> test_story_001</p>
-                <button class="view-details-btn" data-story-id="teststory001">View Details</button>
-            </div>
-        </div>
-        <div class="story-card-modal-content" style="display: none;">
-            <p class="section-title">Synopsis:</p>
-            <div class="synopsis" onclick="toggleSynopsis(this)">No synopsis available.</div>
-            <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
-
-            <p class="section-title">Download Progress:</p>
-            <div class="progress-bar-container">
-                <div class="progress-bar" style="width:0%;">0%</div>
-            </div>
-            <p>0 / 0 chapters downloaded</p>
-            <p><strong>Story Status:</strong> <span class="badge status-complete">Complete</span></p>
-
-            <p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>
-
-            <p class="section-title">Local EPUBs (Generated: N/A):</p>
-            <p class="no-items">No EPUB files found.</p>
-
-            <p class="section-title">Cloud Backup:</p>
-            <p><strong>Status:</strong> <span class="badge backup-never-backed-up">Never Backed Up</span>
-               (Service: N/A)
-            </p>
-            <p>Last Successful Backup: N/A</p>
-            <p class="no-items">No backup file details.</p>
-
-            <p class="section-title">Last Local Update:</p>
-            <p>N/A</p>
-        </div>
-    </div>
-
-    <div class="story-card" data-title="Untitled" data-author="Unknown Author" data-status="Complete" data-last-updated="" data-progress="0">
-        <div class="story-card-summary">
-            <div class="story-cover">
-                <img src="https://via.placeholder.com/150x220.png?text=No+Cover" alt="Cover for Untitled">
-            </div>
-            <div class="story-summary-info">
-                <h2><a href="#" target="_blank">Untitled</a></h2>
-                <p><strong>Author:</strong> Unknown Author</p>
-                <p><strong>Story ID:</strong> story456</p>
-                <button class="view-details-btn" data-story-id="story456">View Details</button>
-            </div>
-        </div>
-        <div class="story-card-modal-content" style="display: none;">
-            <p class="section-title">Synopsis:</p>
-            <div class="synopsis" onclick="toggleSynopsis(this)">No synopsis available.</div>
-            <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
-
-            <p class="section-title">Download Progress:</p>
-            <div class="progress-bar-container">
-                <div class="progress-bar" style="width:0%;">0%</div>
-            </div>
-            <p>0 / 0 chapters downloaded</p>
-            <p><strong>Story Status:</strong> <span class="badge status-complete">Complete</span></p>
-
-            <p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>
-
-            <p class="section-title">Local EPUBs (Generated: N/A):</p>
-            <p class="no-items">No EPUB files found.</p>
-
-            <p class="section-title">Cloud Backup:</p>
-            <p><strong>Status:</strong> <span class="badge backup-never-backed-up">Never Backed Up</span>
-               (Service: N/A)
-            </p>
-            <p>Last Successful Backup: N/A</p>
-            <p class="no-items">No backup file details.</p>
-
-            <p class="section-title">Last Local Update:</p>
-            <p>N/A</p>
-        </div>
-    </div>
-
-    <div class="story-card" data-title="Untitled" data-author="Unknown Author" data-status="Complete" data-last-updated="" data-progress="0">
-        <div class="story-card-summary">
-            <div class="story-cover">
-                <img src="https://via.placeholder.com/150x220.png?text=No+Cover" alt="Cover for Untitled">
-            </div>
-            <div class="story-summary-info">
-                <h2><a href="#" target="_blank">Untitled</a></h2>
-                <p><strong>Author:</strong> Unknown Author</p>
+                <h2><a href="http://example.com/story" target="_blank">  A Tale of Spaces  </a></h2>
+                <p><strong>Author:</strong> Test Author</p>
                 <p><strong>Story ID:</strong> test_story_s6_001</p>
+                <p><strong>Progress:</strong> 1 / 1 chapters downloaded</p>
                 <button class="view-details-btn" data-story-id="teststorys6001">View Details</button>
             </div>
         </div>
         <div class="story-card-modal-content" style="display: none;">
             <p class="section-title">Synopsis:</p>
-            <div class="synopsis" onclick="toggleSynopsis(this)">No synopsis available.</div>
+            <div class="synopsis" onclick="toggleSynopsis(this)">A test story for sorting.</div>
             <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
 
             <p class="section-title">Download Progress:</p>
-            <div class="progress-bar-container">
-                <div class="progress-bar" style="width:0%;">0%</div>
-            </div>
-            <p>0 / 0 chapters downloaded</p>
+            <p>1 / 1 chapters downloaded</p>
             <p><strong>Story Status:</strong> <span class="badge status-complete">Complete</span></p>
 
             <p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>
@@ -364,7 +295,124 @@
             <p class="no-items">No backup file details.</p>
 
             <p class="section-title">Last Local Update:</p>
-            <p>N/A</p>
+            <p>2023-01-01 12:00:00 UTC</p>
+        </div>
+    </div>
+    
+    <div class="story-card" data-title="Test Story with Many Epubs" data-author="Unknown Author" data-status="Complete" data-last-updated="" data-progress="100">
+        <div class="story-card-summary">
+            <div class="story-cover">
+                <img src="https://via.placeholder.com/600x800.png?text=My+Awesome+Cover" alt="Cover for Test Story with Many Epubs">
+            </div>
+            <div class="story-summary-info">
+                <h2><a href="http://example.com/story123" target="_blank">Test Story with Many Epubs</a></h2>
+                <p><strong>Author:</strong> Unknown Author</p>
+                <p><strong>Story ID:</strong> story123</p>
+                <p><strong>Progress:</strong> 5 / 5 chapters downloaded</p>
+                <button class="view-details-btn" data-story-id="story123">View Details</button>
+            </div>
+        </div>
+        <div class="story-card-modal-content" style="display: none;">
+            <p class="section-title">Synopsis:</p>
+            <div class="synopsis" onclick="toggleSynopsis(this)">This is a fantastic test story about adventures in EPUB land. It includes a cover and this very synopsis to ensure everything is working as expected.</div>
+            <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
+
+            <p class="section-title">Download Progress:</p>
+            <p>5 / 5 chapters downloaded</p>
+            <p><strong>Story Status:</strong> <span class="badge status-complete">Complete</span></p>
+
+            <p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>
+
+            <p class="section-title">Local EPUBs (Generated: 2023-10-26 10:00:00 UTC):</p>
+            <p class="no-items">No EPUB files found.</p>
+
+            <p class="section-title">Cloud Backup:</p>
+            <p><strong>Status:</strong> <span class="badge backup-ok">OK</span>
+               (Service: TestDrive)
+            </p>
+            <p>Last Successful Backup: 2023-10-26 11:00:00 UTC</p>
+            <ul class="file-list"><li>ebooks/story123/story123_vol1.epub (story123_vol1.epub): uploaded - Last backed up: 2023-10-26 11:00:00 UTC</li><li>ebooks/story123/story123_vol2.epub (story123_vol2.epub): uploaded - Last backed up: 2023-10-26 11:00:00 UTC</li></ul>
+
+            <p class="section-title">Last Local Update:</p>
+            <p>2024-01-01 12:00:00 UTC</p>
+        </div>
+    </div>
+    
+    <div class="story-card" data-title="My Test Story" data-author="Test Author" data-status="Ongoing" data-last-updated="" data-progress="50">
+        <div class="story-card-summary">
+            <div class="story-cover">
+                <img src="https://via.placeholder.com/150x220.png?text=No+Cover" alt="Cover for My Test Story">
+            </div>
+            <div class="story-summary-info">
+                <h2><a href="http://example.com/story" target="_blank">My Test Story</a></h2>
+                <p><strong>Author:</strong> Test Author</p>
+                <p><strong>Story ID:</strong> test_story_001</p>
+                <p><strong>Progress:</strong> 1 / 2 chapters downloaded</p>
+                <button class="view-details-btn" data-story-id="teststory001">View Details</button>
+            </div>
+        </div>
+        <div class="story-card-modal-content" style="display: none;">
+            <p class="section-title">Synopsis:</p>
+            <div class="synopsis" onclick="toggleSynopsis(this)">A test story.</div>
+            <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
+
+            <p class="section-title">Download Progress:</p>
+            <p>1 / 2 chapters downloaded</p>
+            <p><strong>Story Status:</strong> <span class="badge status-ongoing">Ongoing</span></p>
+
+            <p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>
+
+            <p class="section-title">Local EPUBs (Generated: 2023-01-01 12:05:00 UTC):</p>
+            <p class="no-items">No EPUB files found.</p>
+
+            <p class="section-title">Cloud Backup:</p>
+            <p><strong>Status:</strong> <span class="badge backup-ok">OK</span>
+               (Service: TestService)
+            </p>
+            <p>Last Successful Backup: 2023-01-01 12:10:00 UTC</p>
+            <ul class="file-list"><li>ebooks/test_story_001/My Test Story.epub (My Test Story.epub): uploaded - Last backed up: 2023-01-01 12:10:00 UTC</li></ul>
+
+            <p class="section-title">Last Local Update:</p>
+            <p>2023-01-01 12:00:00 UTC</p>
+        </div>
+    </div>
+    
+    <div class="story-card" data-title="Test Story with Few Epubs" data-author="Another Test Author" data-status="Complete" data-last-updated="" data-progress="100">
+        <div class="story-card-summary">
+            <div class="story-cover">
+                <img src="http://via.placeholder.com/150" alt="Cover for Test Story with Few Epubs">
+            </div>
+            <div class="story-summary-info">
+                <h2><a href="http://example.com/story456" target="_blank">Test Story with Few Epubs</a></h2>
+                <p><strong>Author:</strong> Another Test Author</p>
+                <p><strong>Story ID:</strong> story456</p>
+                <p><strong>Progress:</strong> 2 / 2 chapters downloaded</p>
+                <button class="view-details-btn" data-story-id="story456">View Details</button>
+            </div>
+        </div>
+        <div class="story-card-modal-content" style="display: none;">
+            <p class="section-title">Synopsis:</p>
+            <div class="synopsis" onclick="toggleSynopsis(this)">A test story with only one EPUB file.</div>
+            <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
+
+            <p class="section-title">Download Progress:</p>
+            <p>2 / 2 chapters downloaded</p>
+            <p><strong>Story Status:</strong> <span class="badge status-complete">Complete</span></p>
+
+            <p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>
+
+            <p class="section-title">Local EPUBs (Generated: 2023-10-25 14:30:00 UTC):</p>
+            <p class="no-items">No EPUB files found.</p>
+
+            <p class="section-title">Cloud Backup:</p>
+            <p><strong>Status:</strong> <span class="badge backup-ok">OK</span>
+               (Service: TestDrive)
+            </p>
+            <p>Last Successful Backup: 2023-10-25 15:00:00 UTC</p>
+            <ul class="file-list"><li>ebooks/story456/story456_complete.epub (story456_complete.epub): uploaded - Last backed up: 2023-10-25 15:00:00 UTC</li></ul>
+
+            <p class="section-title">Last Local Update:</p>
+            <p>2023-10-25 14:00:00 UTC</p>
         </div>
     </div>
     </div>
@@ -380,70 +428,27 @@
     </div>
 
     <script>
-        // Global variables
-// let currentPage = 1; // Removed pagination
-// const itemsPerPage = 25; // Removed pagination
-let masterStoryCards = []; // Holds all story cards, never changes after load
-let allVisibleStoryCards = []; // Holds currently visible/filtered/sorted cards
-
-// DOM Element caching (populated in DOMContentLoaded)
+        let masterStoryCards = [];
 let searchInput = null;
 let sortSelect = null;
 let storyListContainer = null;
-// let paginationControls = null; // Removed pagination
-
-// Modal elements
 let modal = null;
 let modalCloseBtn = null;
 let modalBodyContent = null;
 
-function toggleSynopsis(element) {
-    element.classList.toggle('expanded');
-    const toggleLink = element.nextElementSibling;
-    if (element.classList.contains('expanded')) {
-        toggleLink.textContent = '(Read less)';
-    } else {
-        toggleLink.textContent = '(Read more)';
-    }
-}
-
-// Removed function displayPage(pageNumber, currentItems)
-// Removed function updatePaginationControlsUI(totalItemsCount)
-// Removed function setupPaginationControls(totalItemsCount, itemsPerPage, containerId, displayFnForPageChange)
-// Removed function handlePageChange(newPage, totalItems, displayFn)
-
 function updateDisplayedCards() {
-    if (!searchInput || !sortSelect || !storyListContainer) {
-        // console.warn("updateDisplayedCards called before DOM elements are cached.");
-        return;
-    }
-
-    // Hide all master cards initially to ensure a clean slate
-    if (masterStoryCards && masterStoryCards.length > 0) {
-        masterStoryCards.forEach(card => {
-            card.style.display = 'none'; // Hide all cards initially
-        });
-    }
+    if (!searchInput || !sortSelect || !storyListContainer) return;
 
     const filterText = searchInput.value.toUpperCase();
     const sortValue = sortSelect.value;
 
-    // 1. Filter masterStoryCards
-    let filteredCards;
-    if (filterText) {
-        filteredCards = masterStoryCards.filter(card => {
-            let title = (card.dataset.title || '').toUpperCase();
-            let author = (card.dataset.author || '').toUpperCase();
-            return title.includes(filterText) || author.includes(filterText);
-        });
-    } else {
-        filteredCards = [...masterStoryCards]; // If no filter, use all master cards
-    }
+    let filteredCards = masterStoryCards.filter(card => {
+        const title = (card.dataset.title || '').toUpperCase();
+        const author = (card.dataset.author || '').toUpperCase();
+        return title.includes(filterText) || author.includes(filterText);
+    });
 
-    // 2. Sort a copy of filteredCards
-    // Create a mutable copy for sorting, to not affect filteredCards if it's masterStoryCards itself
-    let sortedCards = [...filteredCards];
-    sortedCards.sort(function(a, b) {
+    let sortedCards = [...filteredCards].sort((a, b) => {
         let valA, valB;
         switch (sortValue) {
             case 'title':
@@ -453,144 +458,76 @@ function updateDisplayedCards() {
             case 'last_updated_desc':
                 valA = a.dataset.lastUpdated || '';
                 valB = b.dataset.lastUpdated || '';
-                return valB.localeCompare(valA); // Descending
+                return valB.localeCompare(valA);
             case 'last_updated_asc':
                 valA = a.dataset.lastUpdated || '';
                 valB = b.dataset.lastUpdated || '';
-                return valA.localeCompare(valB); // Ascending
+                return valA.localeCompare(valB);
             case 'progress_desc':
                 valA = parseInt(a.dataset.progress || 0);
                 valB = parseInt(b.dataset.progress || 0);
-                return valB - valA; // Descending
+                return valB - valA;
             default:
                 return 0;
         }
     });
 
-    allVisibleStoryCards = sortedCards;
-
-    // 3. Display all filtered and sorted cards
-    // All masterStoryCards were hidden at the start of this function.
-    // Now, make the cards in allVisibleStoryCards visible.
-    if (allVisibleStoryCards && allVisibleStoryCards.length > 0) {
-        allVisibleStoryCards.forEach(card => {
-            card.style.display = 'flex'; // Assuming 'flex' is the default display for visible cards
-        });
-    }
-    // If allVisibleStoryCards is empty, no cards will be shown, which is correct.
+    storyListContainer.innerHTML = '';
+    sortedCards.forEach(card => storyListContainer.appendChild(card));
 }
 
-function filterStories() {
-    updateDisplayedCards();
-}
-
-function sortStories() {
-    updateDisplayedCards();
-}
-
-function toggleExtraEpubs(story_id_sanitized, buttonElement, totalEpubs, threshold) {
-    const moreEpubsDiv = document.getElementById(`more-epubs-${story_id_sanitized}`);
-    if (moreEpubsDiv) {
-        const isHidden = moreEpubsDiv.style.display === 'none';
-        moreEpubsDiv.style.display = isHidden ? 'block' : 'none';
-        if (isHidden) {
-            buttonElement.textContent = 'Show fewer EPUBs';
-        } else {
-            buttonElement.textContent = `Show all ${totalEpubs} EPUBs`;
-        }
-    }
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    // Cache DOM elements
-    searchInput = document.getElementById('searchInput');
-    sortSelect = document.getElementById('sortSelect');
-    storyListContainer = document.getElementById('storyListContainer');
-    // paginationControls = document.getElementById('paginationControls'); // Removed pagination
-
-    if (storyListContainer) {
-        // Populate masterStoryCards with all story cards from the DOM.
-        masterStoryCards = Array.from(storyListContainer.querySelectorAll('.story-card'));
-
-        // Initial display: apply default sort and no filter.
-        updateDisplayedCards();
-    } else {
-        // console.error("Story list container not found.");
-        // Still attempt to setup pagination for an empty list if other controls might exist
-        updateDisplayedCards(); // Will likely do nothing if storyListContainer is null but handles gracefully
-    }
-
-    // Add event listeners for filter and sort controls
-    if (searchInput) {
-        searchInput.addEventListener('keyup', filterStories);
-    }
-    if (sortSelect) {
-        sortSelect.addEventListener('change', sortStories);
-    }
-
-    // Modal elements caching
-    modal = document.getElementById('storyDetailModal');
-    modalCloseBtn = document.querySelector('.modal-close-btn'); // Assuming only one such button
-    modalBodyContent = document.getElementById('modalBodyContent');
-
-    // Event listener for "View Details" buttons (using event delegation)
-    if (storyListContainer) {
-        storyListContainer.addEventListener('click', function(event) {
-            const button = event.target.closest('.view-details-btn');
-            if (button) {
-                openModalWithStoryData(button);
-            }
-        });
-    }
-
-    // Event listener for modal close button
-    if (modalCloseBtn) {
-        modalCloseBtn.onclick = function() {
-            if (modal) {
-                modal.style.display = 'none';
-            }
-            if (modalBodyContent) {
-                modalBodyContent.innerHTML = ''; // Clear content for next time
-            }
-        };
-    }
-
-    // Event listener for clicking outside the modal content to close
-    if (modal) {
-        window.onclick = function(event) {
-            if (event.target == modal) {
-                modal.style.display = 'none';
-                if (modalBodyContent) {
-                    modalBodyContent.innerHTML = ''; // Clear content
-                }
-            }
-        };
-    }
-});
-
-// Function to open modal and populate it with story data
 function openModalWithStoryData(buttonElement) {
-    if (!modal || !modalBodyContent) {
-        console.error('Modal elements not found.');
-        return;
-    }
+    if (!modal || !modalBodyContent) return;
 
     const storyCard = buttonElement.closest('.story-card');
-    if (!storyCard) {
-        console.error('Parent story card not found for the button.');
-        return;
-    }
+    if (!storyCard) return;
 
     const modalContentSource = storyCard.querySelector('.story-card-modal-content');
-    if (!modalContentSource) {
-        console.error('Modal content source div not found in the story card.');
-        return;
-    }
+    if (!modalContentSource) return;
 
     modalBodyContent.innerHTML = modalContentSource.innerHTML;
     modal.style.display = 'block';
 }
 
+document.addEventListener('DOMContentLoaded', function() {
+    searchInput = document.getElementById('searchInput');
+    sortSelect = document.getElementById('sortSelect');
+    storyListContainer = document.getElementById('storyListContainer');
+    modal = document.getElementById('storyDetailModal');
+    modalCloseBtn = document.querySelector('.modal-close-btn');
+    modalBodyContent = document.getElementById('modalBodyContent');
+
+    if (storyListContainer) {
+        masterStoryCards = Array.from(storyListContainer.querySelectorAll('.story-card'));
+        updateDisplayedCards();
+    }
+
+    if (searchInput) searchInput.addEventListener('keyup', updateDisplayedCards);
+    if (sortSelect) sortSelect.addEventListener('change', updateDisplayedCards);
+
+    if (storyListContainer) {
+        storyListContainer.addEventListener('click', function(event) {
+            const button = event.target.closest('.view-details-btn');
+            if (button) openModalWithStoryData(button);
+        });
+    }
+
+    if (modalCloseBtn) {
+        modalCloseBtn.onclick = () => {
+            modal.style.display = 'none';
+            modalBodyContent.innerHTML = '';
+        };
+    }
+
+    if (modal) {
+        window.onclick = (event) => {
+            if (event.target == modal) {
+                modal.style.display = 'none';
+                modalBodyContent.innerHTML = '';
+            }
+        };
+    }
+});
     </script>
 </body>
 </html>

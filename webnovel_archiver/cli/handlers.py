@@ -26,10 +26,7 @@ import json # For loading progress.json (though pm.load_progress might abstract 
 
 # Import necessary constants and functions from progress_manager
 from webnovel_archiver.core.storage.progress_manager import (
-    # ARCHIVAL_STATUS_DIR, # Moved to PathManager
-    # EBOOKS_DIR, # Moved to PathManager
-    load_progress, # Already available via pm alias, but explicit import can be clear
-    get_progress_filepath # Already available via pm alias
+    load_progress,
 )
 # ConfigManager and DEFAULT_WORKSPACE_PATH are already imported
 # click and get_logger are already imported above.
@@ -216,7 +213,7 @@ def cloud_backup_handler(
         # an_upload_occurred = False # Renamed to actual_files_uploaded_this_story for clarity
         click.echo(f"Processing story: {current_story_id}")
 
-        progress_file_path = pm.get_progress_filepath(current_story_id, workspace_root)
+        progress_file_path = pm.get_progress_filepath()
 
         if not os.path.exists(progress_file_path):
             click.echo(f"Warning: Progress file not found for story {current_story_id} at {progress_file_path}. Skipping.", err=True)

@@ -348,6 +348,16 @@ class RoyalRoadFetcher(BaseFetcher):
             raise HTTPError(f"An unexpected error occurred for {url}: {e}")
 
 
+    def get_source_specific_id(self, url: str) -> str:
+        """
+        Extracts the numerical fiction ID from a RoyalRoad URL.
+        Example: "https://www.royalroad.com/fiction/12345/some-story-title" -> "royalroad-12345"
+        """
+        match = re.search(r"royalroad.com/fiction/(\d+)", url)
+        if match:
+            return f"royalroad-{match.group(1)}"
+        raise ValueError(f"Could not parse RoyalRoad fiction ID from URL: {url}")
+
     def get_story_metadata(self, url: str) -> StoryMetadata:
         # Fetch live content or use example based on URL.
         # _fetch_html_content will handle if it's the specific example URL.
@@ -355,6 +365,7 @@ class RoyalRoadFetcher(BaseFetcher):
 
         metadata = StoryMetadata()
         metadata.story_url = url
+        metadata.story_id = self.get_source_specific_id(url)
 
         # Title
         title_tag = soup.find('h1', class_='font-white')

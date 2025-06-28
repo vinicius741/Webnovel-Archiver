@@ -11,7 +11,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, PROJECT_ROOT)
 
 from webnovel_archiver.core.config_manager import ConfigManager
-from webnovel_archiver.core.storage.progress_manager import load_progress, get_epub_file_details # Removed constants
+from webnovel_archiver.core.storage.progress_manager import load_progress, get_epub_file_details
+from webnovel_archiver.core.storage.index_manager import IndexManager
 # from webnovel_archiver.core.path_manager import PathManager # For ARCHIVAL_STATUS_DIR_NAME
 from webnovel_archiver.core.path_manager import PathManager # Import PathManager to access its constants
 from webnovel_archiver.utils.logger import get_logger
@@ -468,7 +469,7 @@ def generate_story_card_html(story_data, format_timestamp_func):
     return card_html
 
 
-def process_story_for_report(progress_data, workspace_root):
+def process_story_for_report(progress_data, path_manager):
     logger.debug(f"Processing story for report: {progress_data.get('story_id')}")
     story_id = progress_data.get('story_id')
 
@@ -541,9 +542,7 @@ def process_story_for_report(progress_data, workspace_root):
     epub_generation_timestamp_raw = progress_data.get('last_epub_processing', {}).get('timestamp')
     epub_generation_timestamp = format_timestamp(epub_generation_timestamp_raw)
 
-    print(f"DEBUG [process_story]: story_id for get_epub_file_details: {story_id}, workspace_root: {workspace_root}")
-    epub_files = get_epub_file_details(progress_data, story_id, workspace_root)
-    print(f"DEBUG [process_story]: epub_files returned: {epub_files}")
+    epub_files = get_epub_file_details(progress_data, story_id, path_manager)
 
 
     # Cloud Backup Status
@@ -659,25 +658,24 @@ def main():
         logger.info(f"Found {len(story_ids)} potential story directories.")
         # print(f"DEBUG: Found {len(story_ids)} story IDs: {story_ids}") # TEMP DEBUG PRINT - REMOVED
 
-    for story_id in story_ids:
-        logger.debug(f"Processing story_id: {story_id}")
-        try:
-            # Pass workspace_root to load_progress as it's needed for resolving potential relative paths
-            # within the progress file if any, or for default values.
-            progress_data = load_progress(story_id, workspace_root)
-            # print(f"DEBUG: Loaded progress for {story_id}: {progress_data.get('title', 'NO TITLE LOADED')} - Keys: {list(progress_data.keys())}") # TEMP DEBUG PRINT - REMOVED
+    index_manager = IndexManager(workspace_root)
+    path_manager = PathManager(workspace_root, index_manager)
 
-            # Ensure that loaded_data is not None and contains story_id,
-            # which load_progress should guarantee by returning a new structure if file is missing/corrupt.
+    for story_id_folder_name in story_ids: # Renamed variable for clarity
+        logger.debug(f"Processing story_id_folder_name: {story_id_folder_name}")
+        try:
+            # Construct the full path to the progress.json file
+            progress_file_path = os.path.join(archival_status_path, story_id_folder_name, PathManager.PROGRESS_FILENAME)
+
+            progress_data = load_progress(progress_file_path)
+
             if progress_data and progress_data.get("story_id"):
                 all_story_data.append(progress_data)
-                logger.debug(f"Successfully loaded progress for story_id: {story_id}")
+                logger.debug(f"Successfully loaded progress for story_id: {progress_data.get('story_id')}")
             else:
-                # This case should ideally not be hit if load_progress always returns a valid structure
-                logger.warning(f"Failed to load valid progress data for story_id: {story_id} or data is malformed. Skipping.")
+                logger.warning(f"Failed to load valid progress data from {progress_file_path} or data is malformed. Skipping.")
         except Exception as e:
-            logger.error(f"Error loading progress for story_id {story_id}: {e}", exc_info=True)
-            # Decide if you want to skip this story or halt. For a report, skipping is better.
+            logger.error(f"Error loading progress for story_id_folder_name {story_id_folder_name}: {e}", exc_info=True)
 
     logger.info(f"Successfully loaded data for {len(all_story_data)} out of {len(story_ids)} stories found.")
 
@@ -689,7 +687,7 @@ def main():
         logger.info(f"Processing {len(all_story_data)} stories for the report...")
         for story_data in all_story_data:
             try:
-                processed_data = process_story_for_report(story_data, workspace_root)
+                processed_data = process_story_for_report(story_data, path_manager)
                 processed_stories.append(processed_data)
             except Exception as e:
                 logger.error(f"Error processing story data for story_id {story_data.get('story_id', 'N/A')}: {e}", exc_info=True)

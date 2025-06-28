@@ -10,20 +10,19 @@ from webnovel_archiver.core.storage.progress_manager import (
     load_progress,
     save_progress,
     get_progress_filepath,
-    DEFAULT_WORKSPACE_ROOT,
     _get_new_progress_structure
 )
 
 # Define a temporary workspace for these tests
-TEST_WORKSPACE_ROOT = os.path.join(DEFAULT_WORKSPACE_ROOT, "test_progress_manager_workspace")
+TEST_WORKSPACE_ROOT = os.path.join("workspace", "test_progress_manager_workspace")
 
 class TestProgressManager(unittest.TestCase):
 
     def setUp(self):
         """Set up a temporary workspace for testing progress manager functions."""
         # Ensure the default workspace root exists, then create the test-specific subdirectory
-        if not os.path.exists(DEFAULT_WORKSPACE_ROOT):
-            os.makedirs(DEFAULT_WORKSPACE_ROOT)
+        if not os.path.exists("workspace"):
+            os.makedirs("workspace")
         if os.path.exists(TEST_WORKSPACE_ROOT):
             shutil.rmtree(TEST_WORKSPACE_ROOT) # Clean up from previous runs if any
         os.makedirs(TEST_WORKSPACE_ROOT)
@@ -69,7 +68,7 @@ class TestProgressManager(unittest.TestCase):
 
 
         # Test with URLs that might produce edge cases
-        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/12345/some-story-title?query=param#fragment"), "royalroad-12345")
+        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/12345/some-story-title?query=param#fragment"), "some-story-title")
         self.assertEqual(generate_story_id(url="https://www.somesite.com/stories/edge_case/?query=true"), "edge_case")
         # Corrected based on actual slugify logic: multiple slashes are handled by split, empty parts removed.
         self.assertEqual(generate_story_id(url="https://www.somesite.com/stories//multipleslashes//"), "multipleslashes")

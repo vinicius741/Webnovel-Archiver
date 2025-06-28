@@ -7,15 +7,13 @@ import copy # For deepcopying progress data
 
 from webnovel_archiver.core.orchestrator import archive_story
 from webnovel_archiver.core.fetchers.base_fetcher import StoryMetadata, ChapterInfo
-from webnovel_archiver.core.storage.progress_manager import DEFAULT_WORKSPACE_ROOT
-
 
 class TestArchiveStory(unittest.TestCase):
 
     def setUp(self):
         self.mock_progress_callback = MagicMock()
         self.test_story_url = "https://www.test.com/fiction/123"
-        self.test_workspace_root = os.path.join(DEFAULT_WORKSPACE_ROOT, "test_workspace_orchestrator")
+        self.test_workspace_root = os.path.join("workspace", "test_workspace_orchestrator")
         self.story_id = "test_story_id_123"
 
         # Mocked metadata and chapter info
@@ -34,7 +32,7 @@ class TestArchiveStory(unittest.TestCase):
 
         # Start patching common dependencies
         self.patchers = {
-            'RoyalRoadFetcher': patch('webnovel_archiver.core.orchestrator.RoyalRoadFetcher').start(),
+            'get_fetcher': patch('webnovel_archiver.core.orchestrator.FetcherFactory.get_fetcher').start(),
             'EPUBGenerator': patch('webnovel_archiver.core.orchestrator.EPUBGenerator').start(),
             'os.makedirs': patch('os.makedirs').start(),
             'os.path.exists': patch('os.path.exists', return_value=True).start(), # Default to True, override per test if needed
@@ -55,7 +53,7 @@ class TestArchiveStory(unittest.TestCase):
         self.mock_utcnow.isoformat.return_value = "2023-01-01T12:00:00" # .isoformat() is called before adding 'Z'
 
         # Configure Fetcher mock instance
-        self.mock_fetcher_instance = self.patchers['RoyalRoadFetcher'].return_value
+        self.mock_fetcher_instance = self.patchers['FetcherFactory'].return_value
         self.mock_fetcher_instance.get_story_metadata.return_value = self.mock_metadata
         self.mock_fetcher_instance.get_chapter_urls.return_value = self.mock_chapters_info
         self.mock_fetcher_instance.download_chapter_content.side_effect = lambda url: f"<html><body>Content for {url}</body></html>"

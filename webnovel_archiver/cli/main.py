@@ -2,10 +2,12 @@ import click
 from typing import Optional
 from webnovel_archiver.cli.handlers import archive_story_handler, generate_report_handler, handle_restore_from_epubs
 from webnovel_archiver.generate_report import main as generate_report_main
+from webnovel_archiver.cli.migration import trigger_migration_if_needed
 
 @click.group()
 def archiver():
     """A CLI tool for archiving webnovels."""
+    trigger_migration_if_needed()
     pass
 
 @archiver.command()

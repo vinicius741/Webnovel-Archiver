@@ -6,10 +6,10 @@ import os
 from webnovel_archiver.cli.handlers import archive_story_handler
 from webnovel_archiver.core.config_manager import ConfigManager, DEFAULT_WORKSPACE_PATH
 
-# Mock the core orchestrator function directly where it's imported in handlers
+# Mock the core orchestrator function directly where it’s imported in handlers
 MOCK_ORCHESTRATOR_PATH = "webnovel_archiver.cli.handlers.call_orchestrator_archive_story"
 
-# Mock ConfigManager if it's used for default path
+# Mock ConfigManager if it’s used for default path
 MOCK_CONFIG_MANAGER_PATH = "webnovel_archiver.cli.handlers.ConfigManager"
 MOCK_OS_PATH_EXISTS = "webnovel_archiver.cli.handlers.os.path.exists" # Used for files
 MOCK_OS_PATH_ISDIR = "webnovel_archiver.cli.handlers.os.path.isdir" # Used for directories
@@ -55,7 +55,8 @@ def test_archive_story_handler_basic_call(mock_config_manager_instance):
             force_reprocessing=False,
             cli_sentence_removal_file=None, # Renamed in handler
             no_sentence_removal=False,
-            chapters_per_volume=None
+            chapters_per_volume=None,
+            epub_contents='all'
         )
         mock_orchestrator.assert_called_once_with(
             story_url=story_url,
@@ -66,7 +67,8 @@ def test_archive_story_handler_basic_call(mock_config_manager_instance):
             sentence_removal_file=None, # Expect None as per new logic
             no_sentence_removal=False,
             chapters_per_volume=None,
-            progress_callback=mock.ANY # Added to match actual call
+            progress_callback=mock.ANY, # Added to match actual call
+            epub_contents='all'
         )
 
 def test_archive_story_handler_with_output_dir(mock_config_manager_instance):
@@ -89,7 +91,8 @@ def test_archive_story_handler_with_output_dir(mock_config_manager_instance):
             force_reprocessing=True,
             cli_sentence_removal_file=cli_sr_file, # Provide a CLI SR file
             no_sentence_removal=False,             # Explicitly not disabling SR
-            chapters_per_volume=50
+            chapters_per_volume=50,
+            epub_contents='all'
         )
         mock_orchestrator.assert_called_once_with(
             story_url=story_url,
@@ -100,7 +103,8 @@ def test_archive_story_handler_with_output_dir(mock_config_manager_instance):
             sentence_removal_file=cli_sr_file, # Expect CLI file to be used
             no_sentence_removal=False,
             chapters_per_volume=50,
-            progress_callback=mock.ANY # Added
+            progress_callback=mock.ANY, # Added
+            epub_contents='all'
         )
         # Ensure ConfigManager.get_workspace_path was NOT called
         mock_config_manager_instance.get_workspace_path.assert_not_called()
@@ -130,7 +134,8 @@ def test_archive_story_handler_config_manager_workspace_failure(monkeypatch):
             force_reprocessing=False,
             cli_sentence_removal_file=None,
             no_sentence_removal=False,
-            chapters_per_volume=None
+            chapters_per_volume=None,
+            epub_contents='all'
         )
         mock_orchestrator.assert_called_once_with(
             story_url=story_url,
@@ -141,7 +146,8 @@ def test_archive_story_handler_config_manager_workspace_failure(monkeypatch):
             sentence_removal_file=None,
             no_sentence_removal=False,
             chapters_per_volume=None,
-            progress_callback=mock.ANY # Added
+            progress_callback=mock.ANY, # Added
+            epub_contents='all'
         )
 
 # New tests for sentence removal logic
@@ -160,7 +166,8 @@ def test_archive_story_uses_default_sentence_removal_file(mock_config_manager_in
             cli_sentence_removal_file=None,
             no_sentence_removal=False,
             # other args as None or False
-            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None
+            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None,
+            epub_contents='all'
         )
 
         mock_exists.assert_any_call(default_sr_path) # Check that existence of default path was tested
@@ -169,7 +176,8 @@ def test_archive_story_uses_default_sentence_removal_file(mock_config_manager_in
             workspace_root=mock_config_manager_instance.get_workspace_path(),
             sentence_removal_file=default_sr_path,
             no_sentence_removal=False,
-            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None, progress_callback=mock.ANY
+            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None, progress_callback=mock.ANY,
+            epub_contents='all'
         )
         assert f"Using default sentence removal file from config: {default_sr_path}" in caplog.text
 
@@ -187,7 +195,8 @@ def test_archive_story_prioritizes_cli_sentence_removal_file(mock_config_manager
             output_dir=None,
             cli_sentence_removal_file=cli_sr_path,
             no_sentence_removal=False,
-            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None
+            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None,
+            epub_contents='all'
         )
 
         mock_exists.assert_any_call(cli_sr_path)
@@ -196,7 +205,8 @@ def test_archive_story_prioritizes_cli_sentence_removal_file(mock_config_manager
             workspace_root=mock_config_manager_instance.get_workspace_path(),
             sentence_removal_file=cli_sr_path,
             no_sentence_removal=False,
-            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None, progress_callback=mock.ANY
+            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None, progress_callback=mock.ANY,
+            epub_contents='all'
         )
         assert f"Using sentence removal file provided via CLI: {cli_sr_path}" in caplog.text
         # Ensure default is not checked if CLI is provided and exists
@@ -217,7 +227,8 @@ def test_archive_story_respects_no_sentence_removal_flag(mock_config_manager_ins
             output_dir=None,
             cli_sentence_removal_file=cli_sr_path, # Provide CLI one
             no_sentence_removal=True, # Explicitly disable
-            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None
+            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None,
+            epub_contents='all'
         )
 
         mock_orchestrator.assert_called_once_with(
@@ -225,11 +236,11 @@ def test_archive_story_respects_no_sentence_removal_flag(mock_config_manager_ins
             workspace_root=mock_config_manager_instance.get_workspace_path(),
             sentence_removal_file=None, # Should be None
             no_sentence_removal=True,   # Should be True
-            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None, progress_callback=mock.ANY
+            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None, progress_callback=mock.ANY,
+            epub_contents='all'
         )
         assert "Sentence removal explicitly disabled" in caplog.text
         mock_config_manager_instance.get_default_sentence_removal_file.assert_not_called()
-
 
 def test_archive_story_warns_if_default_sr_file_not_found(mock_config_manager_instance, caplog):
     """Test warning if default SR file is configured but not found."""
@@ -244,7 +255,8 @@ def test_archive_story_warns_if_default_sr_file_not_found(mock_config_manager_in
             output_dir=None,
             cli_sentence_removal_file=None,
             no_sentence_removal=False,
-            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None
+            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None,
+            epub_contents='all'
         )
 
         mock_exists.assert_any_call(non_existent_default_sr_path)
@@ -253,7 +265,8 @@ def test_archive_story_warns_if_default_sr_file_not_found(mock_config_manager_in
             workspace_root=mock_config_manager_instance.get_workspace_path(),
             sentence_removal_file=None, # Should be None as file not found
             no_sentence_removal=False,
-            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None, progress_callback=mock.ANY
+            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None, progress_callback=mock.ANY,
+            epub_contents='all'
         )
         assert f"Default sentence removal file configured at '{non_existent_default_sr_path}' not found." in caplog.text
 
@@ -271,7 +284,8 @@ def test_archive_story_warns_if_cli_sr_file_not_found(mock_config_manager_instan
             output_dir=None,
             cli_sentence_removal_file=non_existent_cli_sr_path,
             no_sentence_removal=False,
-            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None
+            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None,
+            epub_contents='all'
         )
 
         mock_exists.assert_any_call(non_existent_cli_sr_path)
@@ -280,7 +294,8 @@ def test_archive_story_warns_if_cli_sr_file_not_found(mock_config_manager_instan
             workspace_root=mock_config_manager_instance.get_workspace_path(),
             sentence_removal_file=None, # Should be None as file not found
             no_sentence_removal=False,
-            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None, progress_callback=mock.ANY
+            ebook_title_override=None, keep_temp_files=False, force_reprocessing=False, chapters_per_volume=None, progress_callback=mock.ANY,
+            epub_contents='all'
         )
         assert f"Sentence removal file provided via CLI not found: {non_existent_cli_sr_path}" in caplog.text
         mock_config_manager_instance.get_default_sentence_removal_file.assert_not_called()
@@ -333,7 +348,7 @@ def mock_cloud_backup_common_deps(monkeypatch):
         "gdrive_sync": mock_gdrive_sync_instance,
         "logger": mock_logger_instance,
         "click_echo": mock_echo,
-        "os_path_exists_mock": monkeypatch.getattr(MOCK_OS_PATH_EXISTS) # Return this if needed for modification
+        
     }
 
 
@@ -344,7 +359,7 @@ def test_cloud_backup_handler_uploads_html_report_if_exists(mock_cloud_backup_co
     mock_click_echo = mock_cloud_backup_common_deps["click_echo"]
 
     report_path = "/mocked/workspace/reports/archive_report.html"
-    # Ensure os.path.exists returns True only for the report path in this test's context
+    # Ensure os.path.exists returns True only for the report path in this test’s context
     monkeypatch.setattr(MOCK_OS_PATH_EXISTS, lambda path: path == report_path)
 
     # Call the handler
@@ -429,9 +444,9 @@ def test_cloud_backup_uses_existing_cloud_base_id_for_report(mock_cloud_backup_c
     # Simulate one story being processed
     monkeypatch.setattr(MOCK_OS_LISTDIR, mock.Mock(return_value=["story1"]))
 
-    # Mock GDriveSync's create_folder_if_not_exists for story processing
+    # Mock GDriveSync’s create_folder_if_not_exists for story processing
     # First call for base "Webnovel Archiver Backups", second for "story1" folder
-    # This first call's return value should be used by the report logic later.
+    # This first call’s return value should be used by the report logic later.
     mock_gdrive_sync.create_folder_if_not_exists.side_effect = [
         "story_proc_root_id", # ID for "Webnovel Archiver Backups"
         "story1_folder_id"    # ID for "story1"
@@ -446,7 +461,7 @@ def test_cloud_backup_uses_existing_cloud_base_id_for_report(mock_cloud_backup_c
     # - report_path
     # - story_progress_file (to enter the story processing block)
     # - gdrive_credentials_path / gdrive_token_path (if they are checked by GDriveSync init, though GDriveSync itself is mocked)
-    # For simplicity, we assume GDriveSync init doesn't hit os.path.exists for creds/token in this unit test context.
+    # For simplicity, we assume GDriveSync init doesn’t hit os.path.exists for creds/token in this unit test context.
     def selective_os_path_exists(path_to_check):
         if path_to_check == report_path: return True
         if path_to_check == story_progress_file: return True
@@ -464,7 +479,7 @@ def test_cloud_backup_uses_existing_cloud_base_id_for_report(mock_cloud_backup_c
     )
 
     # Check calls to upload_file
-    # Expected: one for story1's progress_status.json, one for archive_report.html
+    # Expected: one for story1’s progress_status.json, one for archive_report.html
     report_upload_call_args = None
     story_file_upload_call_args = None
 

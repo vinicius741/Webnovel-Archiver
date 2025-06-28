@@ -23,8 +23,11 @@ class ChapterInfo:
     # next_chapter_url_from_page: Optional[str] = None # This might be too specific for base ChapterInfo
 
 class BaseFetcher(ABC):
+    def __init__(self, story_url: str):
+        self.story_url = story_url
+
     @abstractmethod
-    def get_story_metadata(self, url: str) -> StoryMetadata:
+    def get_story_metadata(self) -> StoryMetadata:
         """
         Fetches and returns metadata for a story from the given URL.
         This method should parse the main story page.
@@ -32,15 +35,16 @@ class BaseFetcher(ABC):
         pass
 
     @abstractmethod
-    def get_source_specific_id(self, url: str) -> str:
+    def get_permanent_id(self) -> str:
         """
-        Extracts a unique source-specific identifier from the given URL.
-        Example: For RoyalRoad, this might be the numerical fiction ID.
+        Extracts a unique, permanent identifier from the story URL.
+        This ID should not change even if the story title changes.
+        Example: For RoyalRoad, this is the numerical fiction ID.
         """
         pass
 
     @abstractmethod
-    def get_chapter_urls(self, story_url: str) -> List[ChapterInfo]:
+    def get_chapter_urls(self) -> List[ChapterInfo]:
         """
         Fetches and returns a list of chapter URLs and their titles for a given story URL.
         This method might parse a table of contents page or the main story page.

@@ -46,10 +46,11 @@ class EPUBGenerator:
 
             local_filename = f"cover{ext}"
             # file_path = os.path.join(temp_cover_path, local_filename) # Replaced
-            file_path = self.pm.get_cover_image_filepath(local_filename)
+            file_path = str(self.pm.get_cover_image_filepath(local_filename))
 
             with open(file_path, 'wb') as f:
-                shutil.copyfileobj(response.raw, f)
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
             logger.info(f"Cover image downloaded for story {self.pm.get_story_id()} to {file_path}")
             return file_path
         except requests.exceptions.RequestException as e:
@@ -150,7 +151,7 @@ class EPUBGenerator:
             if synopsis:
                 synopsis_xhtml_title = "Synopsis"
                 synopsis_file_name = "synopsis.xhtml"
-                epub_synopsis = epub.EpubHtml(title=synopsis_xhtml_title, file_name=synopsis_file_name, lang='en')
+                epub_synopsis = epub.EpubHtml(title=synopsis_xhtml_title, file_name=synopsis_file_name, lang='en', uid="synopsis")
                 epub_synopsis.content = f"<h1>{synopsis_xhtml_title}</h1><p>{synopsis}</p>"
                 book.add_item(epub_synopsis)
                 epub_items_for_book.append(epub_synopsis) # Add to items list for spine
@@ -184,7 +185,8 @@ class EPUBGenerator:
                 epub_chapter = epub.EpubHtml(
                     title=chapter_title,
                     file_name=f"chap_{chapter_info.get('download_order', 'unknown')}.xhtml",
-                    lang='en'
+                    lang='en',
+                    uid=f"chapter_{chapter_info.get('download_order', 'unknown')}"
                 )
                 html_content = f"<h1>{chapter_title}</h1>{html_content}"
                 epub_chapter.content = html_content
@@ -238,7 +240,7 @@ class EPUBGenerator:
                  pass # Cover is handled by metadata and `set_cover(create_page=True)`
 
             spine_items.extend(epub_items_for_book)
-            book.spine = spine_items
+            book.spine = [(item, 'no') for item in spine_items]
 
             if len(volume_chapters_list) > 1:
                 epub_filename = f"{sanitized_story_title}_vol_{volume_number}.epub"

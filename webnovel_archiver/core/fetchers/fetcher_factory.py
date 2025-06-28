@@ -38,11 +38,11 @@ class FetcherFactory:
             raise ValueError(f"Could not determine domain from URL: {story_url}")
 
         if "royalroad.com" in domain:
-            return RoyalRoadFetcher()
+            return RoyalRoadFetcher(story_url)
         # Example for a future ScribbleHubFetcher
         # elif "scribblehub.com" in domain:
         #     from .scribblehub_fetcher import ScribbleHubFetcher # Assuming it exists
-        #     return ScribbleHubFetcher()
+        #     return ScribbleHubFetcher(story_url)
         else:
             raise UnsupportedSourceError(f"Source not supported for URL: {story_url} (domain: {domain})")
 

@@ -11,7 +11,9 @@ MOCK_HANDLER_PATH_IN_MAIN = "webnovel_archiver.cli.main.archive_story_handler"
 def runner():
     return CliRunner()
 
-def test_archive_story_cli_passes_params_to_handler(runner):
+import os
+
+def test_archive_story_cli_passes_params_to_handler(runner, tmp_path):
     """
     Tests that the 'archive-story' CLI command correctly passes all its options
     as arguments to the archive_story_handler function.
@@ -23,8 +25,9 @@ def test_archive_story_cli_passes_params_to_handler(runner):
     # If the path was invalid and exists=True was active without `resolve_path=False`,
     # Click would error out before calling the command's Python function.
     # Here, we just need a string path.
-    rules_file_in = "dummy_rules.json" # Changed to a relative path, as Click might try to resolve it.
-                                     # For this test, it's just a string.
+    rules_file_in = tmp_path / "dummy_rules.json"
+    rules_file_in.touch() # Create the dummy file
+    rules_file_in = str(rules_file_in.resolve())
 
     output_dir_in = "/custom/output/dir"
     ebook_title_override_in = "My Custom Test Title"

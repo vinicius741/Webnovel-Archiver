@@ -23,6 +23,8 @@ class PathManager:
         """
         if not workspace_root:
             raise ValueError("workspace_root cannot be empty.")
+        if story_id is not None and not story_id:
+            raise ValueError("story_id cannot be empty if provided.")
 
         self._workspace_root = workspace_root
         self._story_id = story_id

@@ -104,17 +104,11 @@ class SentenceRemover:
                     if not modified_text.strip():
                         parent = text_node.parent
                         text_node.extract() # Remove the now empty text node
-                        # If parent has no other children (text or tags) and no attributes that might be important (e.g. id, class for structure)
-                        # A more robust check would be if not parent.get_text(strip=True) and not parent.find(True, recursive=False)
-                        # For now, a simpler check: if not parent.contents and not parent.attrs
-                        if parent and not parent.contents and not parent.attrs and parent.name not in ['body', 'html', 'head']:
-                             # Check if it's a common block tag that might be intentionally empty for spacing (e.g. <p></p>)
-                            if parent.name not in ['p', 'div', 'span', 'br']: # Add more tags if needed
-                                logger.debug(f"Removing empty parent tag: <{parent.name}>")
-                                parent.decompose()
-                            elif not parent.get_text(strip=True): # For p, div, span - remove if truly empty after modification
-                                parent.decompose()
-
+                        # After extracting the text node, check if the parent element is now empty
+                        # This means it has no visible text content and no other child tags
+                        if parent and not parent.get_text(strip=True) and not parent.find(True) and parent.name not in ['body', 'html', 'head']:
+                            logger.debug(f"Removing empty parent tag: <{parent.name}>")
+                            parent.decompose()
                     else:
                         text_node.replace_with(NavigableString(modified_text))
 

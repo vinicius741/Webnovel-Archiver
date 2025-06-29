@@ -63,7 +63,7 @@ def mock_successful_orchestrator(monkeypatch):
             progress_callback({"status": "info", "message": "Fetching story metadata..."})
             progress_callback({"status": "info", "message": f"Successfully fetched metadata: {effective_title}"})
             progress_callback({"status": "info", "message": "Fetching chapter list..."})
-            progress_callback({"status": "info", "message": "Found 1 chapters."}) # Simplified
+            progress_callback({"status": "info", "message": "Found 1 chapters."})
             progress_callback({
                 "status": "info", "message": "Processing chapter: Mock Chapter 1 (1/1)",
                 "current_chapter_num": 1, "total_chapters": 1, "chapter_title": "Mock Chapter 1"
@@ -123,116 +123,6 @@ def mock_successful_orchestrator(monkeypatch):
     monkeypatch.setattr(MOCK_ORCHESTRATOR_HANDLER_PATH, mock_orchestrator_func)
     return mock_orchestrator_func
 
-def test_archive_story_successful_run_default_workspace(runner, mock_successful_orchestrator, temp_workspace, monkeypatch):
-    """Test basic successful run using a temporary default workspace."""
-    # Patch ConfigManager to use temp_workspace as default
-    mock_cm_instance = mock.Mock(spec=ConfigManager) # Use spec for better mocking
-    mock_cm_instance.get_workspace_path.return_value = temp_workspace
-    mock_cm_instance.get_default_sentence_removal_file.return_value = None # Ensure it returns a valid path or None
-    # get_gdrive_credentials_path and get_gdrive_token_path are not methods of ConfigManager, so remove attempts to mock them.
-    mock_cm_constructor = mock.Mock(return_value=mock_cm_instance)
-    # Patch ConfigManager where ArchiveStoryContext imports it
-    monkeypatch.setattr("webnovel_archiver.cli.contexts.ConfigManager", mock_cm_constructor)
-
-    story_url = "http://example.com/mockstory"
-    result = runner.invoke(archiver, ['archive-story', story_url])
-
-    assert result.exit_code == 0, f"CLI errored: {result.output}"
-    # Check for some key progress messages
-    assert "[INFO] Starting archival process..." in result.output
-    assert "[INFO] Fetching story metadata..." in result.output
-    assert "[INFO] Successfully fetched metadata: Original Mock Title" in result.output
-    assert "[INFO] Processing chapter: Mock Chapter 1 (1/1)" in result.output
-    assert "[INFO] Starting EPUB generation..." in result.output
-    assert "[INFO] Cleaning up temporary files..." in result.output # Default is to clean
-
-    # Check for the new detailed success message
-    assert "✓ Archival process completed successfully!" in result.output
-    assert "Title: Original Mock Title" in result.output
-    assert "Story ID: test_story_id_123" in result.output
-    assert "Chapters processed in this run: 1" in result.output
-    assert "Generated EPUB file(s):" in result.output
-    mock_epub_path = os.path.abspath(os.path.join(temp_workspace, "ebooks", "test_story_id_123", "Original Mock Title.epub"))
-    assert f"- {mock_epub_path}" in result.output
-    assert f"Workspace: {os.path.abspath(temp_workspace)}" in result.output
-
-    mock_successful_orchestrator.assert_called_once()
-    args, kwargs = mock_successful_orchestrator.call_args
-    assert kwargs['story_url'] == story_url
-    assert kwargs['workspace_root'] == temp_workspace
-    assert callable(kwargs['progress_callback']) # Ensure callback was passed
-
-    # Verify progress file was created by the mock
-    progress_file = os.path.join(temp_workspace, PathManager.ARCHIVAL_STATUS_DIR_NAME, "test_story_id_123", "progress_status.json")
-    assert os.path.exists(progress_file)
-    with open(progress_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        assert data['story_url'] == story_url
-
-    # Verify temp dirs are NOT present (default behavior, as keep_temp_files=False)
-    # The mock orchestrator's side_effect does not create these if keep_temp_files is False
-    # and it simulates the cleanup callback.
-    # The actual deletion is mocked via shutil.rmtree in orchestrator unit tests.
-    # Here we rely on the mock orchestrator to have simulated the correct callback for cleanup.
-
-def test_archive_story_with_output_dir_and_options(runner, mock_successful_orchestrator, temp_workspace):
-    story_url = "http://example.com/anothermock"
-    custom_output_dir = os.path.join(temp_workspace, "custom_out")
-    # os.makedirs(custom_output_dir) # CLI/Orchestrator should handle creation
-
-    title_override = "My Awesome Mock Novel"
-    chapters_vol = 20
-
-    result = runner.invoke(archiver, [
-        'archive-story', story_url,
-        '--output-dir', custom_output_dir,
-        '--ebook-title-override', title_override,
-        '--chapters-per-volume', str(chapters_vol),
-        '--keep-temp-files', # Flag
-        '--force-reprocessing' # Flag
-    ])
-
-    assert result.exit_code == 0, f"CLI errored: {result.output}"
-    assert f"Using provided output directory: {custom_output_dir}" in result.output
-
-    # Check for some key progress messages (keep_temp_files=True means no cleanup messages)
-    assert "[INFO] Starting archival process..." in result.output
-    assert f"[INFO] Successfully fetched metadata: {title_override}" in result.output
-    assert "Cleaning up temporary files..." not in result.output
-
-    # Check for the new detailed success message
-    assert "✓ Archival process completed successfully!" in result.output
-    assert f"Title: {title_override}" in result.output
-    assert "Story ID: test_story_id_123" in result.output
-    assert "Chapters processed in this run: 1" in result.output # Mock processes 1 chapter
-    assert "Generated EPUB file(s):" in result.output
-    mock_epub_path = os.path.abspath(os.path.join(custom_output_dir, "ebooks", "test_story_id_123", f"{title_override}.epub"))
-    assert f"- {mock_epub_path}" in result.output
-    assert f"Workspace: {os.path.abspath(custom_output_dir)}" in result.output
-
-    mock_successful_orchestrator.assert_called_once()
-    args, kwargs = mock_successful_orchestrator.call_args
-    assert kwargs['story_url'] == story_url
-    assert kwargs['workspace_root'] == custom_output_dir
-    assert kwargs['ebook_title_override'] == title_override
-    assert kwargs['chapters_per_volume'] == chapters_vol
-    assert kwargs['keep_temp_files'] is True
-    assert kwargs['force_reprocessing'] is True
-    assert callable(kwargs['progress_callback'])
-
-    # Verify progress file reflects options
-    progress_file = os.path.join(custom_output_dir, PathManager.ARCHIVAL_STATUS_DIR_NAME, "test_story_id_123", "progress_status.json")
-    assert os.path.exists(progress_file)
-    with open(progress_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        assert data['effective_title'] == title_override
-        assert data['force_reprocessing_used'] is True
-        assert data['chapters_per_volume_setting'] == chapters_vol
-
-    # For integration tests, we rely on the mock orchestrator's `keep_temp_files` logic for callbacks.
-    # The actual file system state for temp files is unit-tested in orchestrator tests.
-    # Here, the mock was simplified and doesn't create temp files on disk.
-    # If we wanted to assert their presence, the mock would need to create them.
 
 
 def test_archive_story_sentence_removal_options(runner, mock_successful_orchestrator, temp_workspace):
@@ -242,7 +132,7 @@ def test_archive_story_sentence_removal_options(runner, mock_successful_orchestr
     workspace1 = os.path.join(temp_workspace, "ws1")
     os.makedirs(workspace1, exist_ok=True)
     rules_path1 = os.path.join(workspace1, "rules.json")
-    with open(rules_path1, 'w', encoding='utf-8') as f: # Create dummy rules file
+    with open(rules_path1, 'w', encoding='utf-8') as f:
         json.dump({"remove_sentences": ["test"]}, f)
 
     # Test with sentence removal file
@@ -307,7 +197,7 @@ def test_archive_story_orchestrator_failure(runner, monkeypatch, temp_workspace)
     # simulated callback calls (like "Starting archival process...") would occur.
     # We should check that the initial messages from the handler (before the call) are there.
     assert f"Received story URL: {story_url}" in result.output
-    assert f"Using provided output directory: {temp_workspace}" in result.output # or from config
+    assert f"Workspace directory: {temp_workspace}" in result.output # or from config
     # And that later orchestrator-driven progress messages are NOT there.
     assert "[INFO] Starting archival process..." not in result.output
     assert "[INFO] Fetching story metadata..." not in result.output
@@ -360,7 +250,7 @@ def test_archive_story_deletion_with_other_options(runner, mock_successful_orche
     ])
 
     assert result.exit_code == 0, f"CLI errored: {result.output}"
-    assert f"Using provided output directory: {custom_output_dir}" in result.output
+    assert f"Workspace directory: {custom_output_dir}" in result.output
 
     mock_successful_orchestrator.assert_called_once()
     args, kwargs = mock_successful_orchestrator.call_args

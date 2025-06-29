@@ -315,10 +315,10 @@ class RoyalRoadFetcher(BaseFetcher):
         """
         match = re.search(r"royalroad.com/fiction/(\d+)", self.story_url)
         if match:
-            return match.group(1)
+            return f"royalroad-{match.group(1)}"
         else:
-            logger.warning(f"Could not extract fiction ID from RoyalRoad URL: {story_url}")
-            raise ValueError(f"Could not parse RoyalRoad fiction ID from URL: {story_url}")
+            logger.warning(f"Could not extract fiction ID from RoyalRoad URL: {self.story_url}")
+            raise ValueError(f"Could not parse RoyalRoad fiction ID from URL: {self.story_url}")
 
 if __name__ == '__main__':
     # Setup basic logging for the __main__ block

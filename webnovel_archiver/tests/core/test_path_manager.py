@@ -5,7 +5,7 @@ from webnovel_archiver.core.path_manager import PathManager
 class TestPathManager(unittest.TestCase):
 
     def setUp(self):
-        self.workspace_root = "test_workspace"
+        self.workspace_root = os.path.abspath("test_workspace")
         self.story_id = "test_story_123"
         self.pm = PathManager(self.workspace_root, self.story_id)
 

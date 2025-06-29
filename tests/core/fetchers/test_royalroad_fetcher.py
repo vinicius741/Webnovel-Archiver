@@ -6,8 +6,54 @@ from webnovel_archiver.core.fetchers.royalroad_fetcher import (
     RoyalRoadFetcher,
     StoryMetadata,
     ChapterInfo,
-    EXAMPLE_STORY_PAGE_HTML # Import for direct use if needed, though fetcher handles it
 )
+import logging
+
+# Suppress warnings from the fetcher during tests (e.g., "Chapter content not found")
+logging.getLogger("webnovel_archiver.core.fetchers.royalroad_fetcher").setLevel(logging.ERROR)
+
+EXAMPLE_STORY_PAGE_HTML = """
+<html>
+<head>
+    <title>REND | Royal Road</title>
+    <meta property="og:title" content="REND">
+    <meta property="books:author" content="Temple">
+    <meta property="og:image" content="https://www.royalroadcdn.com/public/covers-large/117255-rend.jpg?time=1748727569">
+    <script type="application/ld+json">
+    {
+      "@context": "http://schema.org",
+      "@type": "Book",
+      "description": "Erind Hartwell: dutiful daughter, law student, psychopath, film enthusiast"
+    }
+    </script>
+</head>
+<body>
+    <h1 class="font-white">REND</h1>
+    <h4 class="font-white"><a href="/profile/123">Temple</a></h4>
+    <div class="cover-art-container"><img class="thumbnail" src="https://www.royalroadcdn.com/public/covers-large/117255-rend.jpg?time=1748727569"></div>
+    <div class="description"><div class="hidden-content"><p>Erind Hartwell: dutiful daughter, law student, psychopath, film enthusiast</p></div></div>
+    <table id="chapters" data-chapters="12">
+        <tbody>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2291798/11-crappy-monday">1.1 Crappy Monday</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-11">Chapter 11</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-2">Chapter 2</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-3">Chapter 3</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-4">Chapter 4</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-5">Chapter 5</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-6">Chapter 6</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-7">Chapter 7</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-8">Chapter 8</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-9">Chapter 9</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-10">Chapter 10</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-11">Chapter 11</a></td></tr>
+        </tbody>
+    </table>
+</body>
+</html>
+"""
+
+# Suppress warnings from the fetcher during tests (e.g., "Chapter content not found")
+logging.getLogger("webnovel_archiver.core.fetchers.royalroad_fetcher").setLevel(logging.ERROR)
 import logging
 
 # Suppress warnings from the fetcher during tests (e.g., "Chapter content not found")
@@ -19,10 +65,13 @@ class TestRoyalRoadFetcherParsing(unittest.TestCase):
     def setUp(self):
         self.example_story_url = "https://www.royalroad.com/fiction/117255/rend"
         self.fetcher = RoyalRoadFetcher(self.example_story_url)
-        # This URL is specifically handled by RoyalRoadFetcher._fetch_html_content
-        # to return EXAMPLE_STORY_PAGE_HTML, so no actual HTTP request is made.
-        # We don't strictly need to parse self.example_soup here if tests rely on fetcher methods,
-        # as the fetcher's _fetch_html_content will handle returning the parsed example soup.
+        # Patch _fetch_html_content to return our example HTML
+        self.patcher = patch.object(RoyalRoadFetcher, '_fetch_html_content')
+        self.mock_fetch_html_content = self.patcher.start()
+        self.mock_fetch_html_content.return_value = BeautifulSoup(EXAMPLE_STORY_PAGE_HTML, 'html.parser')
+
+    def tearDown(self):
+        self.patcher.stop()
 
     def test_get_story_metadata_from_example(self):
         metadata = self.fetcher.get_story_metadata()
@@ -56,8 +105,8 @@ class TestRoyalRoadFetcherParsing(unittest.TestCase):
             self.assertIsInstance(last_chapter, ChapterInfo)
             self.assertEqual(last_chapter.source_chapter_id, "2322033")
             self.assertEqual(last_chapter.download_order, 12)
-            self.assertEqual(last_chapter.chapter_url, "https://www.royalroad.com/fiction/117255/rend/chapter/2322033/41-a-memorial-to-remember")
-            self.assertEqual(last_chapter.chapter_title, "4.1 A Memorial To Remember")
+            self.assertEqual(last_chapter.chapter_url, "https://www.royalroad.com/fiction/117255/rend/chapter/2322033/chapter-11")
+            self.assertEqual(last_chapter.chapter_title, "Chapter 11")
 
     @patch.object(RoyalRoadFetcher, '_fetch_html_content')
     def test_download_chapter_content_parsing_found(self, mock_fetch_html_content):

@@ -6,8 +6,54 @@ from webnovel_archiver.core.fetchers.royalroad_fetcher import (
     RoyalRoadFetcher,
     StoryMetadata,
     ChapterInfo,
-    EXAMPLE_STORY_PAGE_HTML # Import for direct use if needed, though fetcher handles it
 )
+import logging
+
+# Suppress warnings from the fetcher during tests (e.g., "Chapter content not found")
+logging.getLogger("webnovel_archiver.core.fetchers.royalroad_fetcher").setLevel(logging.ERROR)
+
+EXAMPLE_STORY_PAGE_HTML = """
+<html>
+<head>
+    <title>REND | Royal Road</title>
+    <meta property="og:title" content="REND">
+    <meta property="books:author" content="Temple">
+    <meta property="og:image" content="https://www.royalroadcdn.com/public/covers-large/117255-rend.jpg?time=1748727569">
+    <script type="application/ld+json">
+    {
+      "@context": "http://schema.org",
+      "@type": "Book",
+      "description": "Erind Hartwell: dutiful daughter, law student, psychopath, film enthusiast"
+    }
+    </script>
+</head>
+<body>
+    <h1 class="font-white">REND</h1>
+    <h4 class="font-white"><a href="/profile/123">Temple</a></h4>
+    <div class="cover-art-container"><img class="thumbnail" src="https://www.royalroadcdn.com/public/covers-large/117255-rend.jpg?time=1748727569"></div>
+    <div class="description"><div class="hidden-content"><p>Erind Hartwell: dutiful daughter, law student, psychopath, film enthusiast</p></div></div>
+    <table id="chapters" data-chapters="12">
+        <tbody>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2291798/11-crappy-monday">1.1 Crappy Monday</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-11">Chapter 11</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-2">Chapter 2</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-3">Chapter 3</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-4">Chapter 4</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-5">Chapter 5</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-6">Chapter 6</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-7">Chapter 7</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-8">Chapter 8</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-9">Chapter 9</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-10">Chapter 10</a></td></tr>
+            <tr class="chapter-row"><td><a href="/fiction/117255/rend/chapter/2322033/chapter-11">Chapter 11</a></td></tr>
+        </tbody>
+    </table>
+</body>
+</html>
+"""
+
+# Suppress warnings from the fetcher during tests (e.g., "Chapter content not found")
+logging.getLogger("webnovel_archiver.core.fetchers.royalroad_fetcher").setLevel(logging.ERROR)
 import logging
 
 # Suppress warnings from the fetcher during tests (e.g., "Chapter content not found")
@@ -17,15 +63,18 @@ logging.getLogger("webnovel_archiver.core.fetchers.royalroad_fetcher").setLevel(
 class TestRoyalRoadFetcherParsing(unittest.TestCase):
 
     def setUp(self):
-        self.fetcher = RoyalRoadFetcher()
-        # This URL is specifically handled by RoyalRoadFetcher._fetch_html_content
-        # to return EXAMPLE_STORY_PAGE_HTML, so no actual HTTP request is made.
         self.example_story_url = "https://www.royalroad.com/fiction/117255/rend"
-        # We don't strictly need to parse self.example_soup here if tests rely on fetcher methods,
-        # as the fetcher's _fetch_html_content will handle returning the parsed example soup.
+        self.fetcher = RoyalRoadFetcher(self.example_story_url)
+        # Patch _fetch_html_content to return our example HTML
+        self.patcher = patch.object(RoyalRoadFetcher, '_fetch_html_content')
+        self.mock_fetch_html_content = self.patcher.start()
+        self.mock_fetch_html_content.return_value = BeautifulSoup(EXAMPLE_STORY_PAGE_HTML, 'html.parser')
+
+    def tearDown(self):
+        self.patcher.stop()
 
     def test_get_story_metadata_from_example(self):
-        metadata = self.fetcher.get_story_metadata(self.example_story_url)
+        metadata = self.fetcher.get_story_metadata()
 
         self.assertIsInstance(metadata, StoryMetadata)
         self.assertEqual(metadata.original_title, "REND")
@@ -36,7 +85,7 @@ class TestRoyalRoadFetcherParsing(unittest.TestCase):
         self.assertEqual(metadata.estimated_total_chapters_source, 12)
 
     def test_get_chapter_urls_from_example(self):
-        chapters = self.fetcher.get_chapter_urls(self.example_story_url)
+        chapters = self.fetcher.get_chapter_urls()
 
         self.assertIsInstance(chapters, list)
         self.assertEqual(len(chapters), 12)
@@ -56,13 +105,12 @@ class TestRoyalRoadFetcherParsing(unittest.TestCase):
             self.assertIsInstance(last_chapter, ChapterInfo)
             self.assertEqual(last_chapter.source_chapter_id, "2322033")
             self.assertEqual(last_chapter.download_order, 12)
-            self.assertEqual(last_chapter.chapter_url, "https://www.royalroad.com/fiction/117255/rend/chapter/2322033/41-a-memorial-to-remember")
-            self.assertEqual(last_chapter.chapter_title, "4.1 A Memorial To Remember")
+            self.assertEqual(last_chapter.chapter_url, "https://www.royalroad.com/fiction/117255/rend/chapter/2322033/chapter-11")
+            self.assertEqual(last_chapter.chapter_title, "Chapter 11")
 
     @patch.object(RoyalRoadFetcher, '_fetch_html_content')
     def test_download_chapter_content_parsing_found(self, mock_fetch_html_content):
-        sample_chapter_html = """
-        <html><body>
+        sample_chapter_html = """        <html><body>
             <div class='other-stuff'>Header</div>
             <div class='chapter-content'>
                 <p>Test chapter text.</p>
@@ -87,7 +135,7 @@ class TestRoyalRoadFetcherParsing(unittest.TestCase):
   More text.
  </span>
 </div>"""
-        # Normalize both for comparison (e.g. using BeautifulSoup to parse and prettify)
+        # Normalize both for comparison (e.g., using BeautifulSoup to parse and prettify)
         # The actual cleaner might strip the class from chapter-content div.
         # Based on html_cleaner, it *will* strip the class.
 
@@ -121,26 +169,26 @@ class TestRoyalRoadFetcherParsing(unittest.TestCase):
         content = self.fetcher.download_chapter_content("http://fake-no-content-url.com")
         self.assertEqual(content, "Chapter content not found.")
 
-    def test_get_source_specific_id(self):
+    def test_get_permanent_id(self):
         # Valid URLs
-        self.assertEqual(self.fetcher.get_source_specific_id("https://www.royalroad.com/fiction/12345/some-story-title"), "12345")
-        self.assertEqual(self.fetcher.get_source_specific_id("https://www.royalroad.com/fiction/67890"), "67890")
-        self.assertEqual(self.fetcher.get_source_specific_id("http://royalroad.com/fiction/123/another-story-slug"), "123")
-        self.assertEqual(self.fetcher.get_source_specific_id("https://royalroad.com/fiction/999999?query=param#fragment"), "999999")
+        self.assertEqual(RoyalRoadFetcher("https://www.royalroad.com/fiction/12345/some-story-title").get_permanent_id(), "royalroad-12345")
+        self.assertEqual(RoyalRoadFetcher("https://www.royalroad.com/fiction/67890").get_permanent_id(), "royalroad-67890")
+        self.assertEqual(RoyalRoadFetcher("http://royalroad.com/fiction/123/another-story-slug").get_permanent_id(), "royalroad-123")
+        self.assertEqual(RoyalRoadFetcher("https://royalroad.com/fiction/999999?query=param#fragment").get_permanent_id(), "royalroad-999999")
 
         # Invalid URLs - Expect ValueError
         with self.assertRaises(ValueError):
-            self.fetcher.get_source_specific_id("https://www.royalroad.com/fictio/12345/typo") # "fictio" instead of "fiction"
+            RoyalRoadFetcher("https://www.royalroad.com/fictio/12345/typo").get_permanent_id()
         with self.assertRaises(ValueError):
-            self.fetcher.get_source_specific_id("https://www.royalroad.com/profile/12345") # Not a fiction URL
+            RoyalRoadFetcher("https://www.royalroad.com/profile/12345").get_permanent_id()
         with self.assertRaises(ValueError):
-            self.fetcher.get_source_specific_id("https://www.another-site.com/fiction/12345") # Different domain
+            RoyalRoadFetcher("https://www.another-site.com/fiction/12345").get_permanent_id()
         with self.assertRaises(ValueError):
-            self.fetcher.get_source_specific_id("https://www.royalroad.com/fiction/notanumber/story-title") # Non-numeric ID
+            RoyalRoadFetcher("https://www.royalroad.com/fiction/notanumber/story-title").get_permanent_id()
         with self.assertRaises(ValueError):
-            self.fetcher.get_source_specific_id("just a string, not a url")
+            RoyalRoadFetcher("just a string, not a url").get_permanent_id()
         with self.assertRaises(ValueError):
-            self.fetcher.get_source_specific_id("https://www.royalroad.com/fiction/") # Missing ID
+            RoyalRoadFetcher("https://www.royalroad.com/fiction/").get_permanent_id()
 
 if __name__ == '__main__':
     unittest.main()

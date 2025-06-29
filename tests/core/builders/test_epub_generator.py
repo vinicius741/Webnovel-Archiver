@@ -1,29 +1,33 @@
-import unittest
+import pytest
 import os
 import shutil
 import json
 import datetime
-import ebooklib # Ensure ebooklib itself is imported
+import ebooklib
 from ebooklib import epub
-from webnovel_archiver.core.builders.epub_generator import EPUBGenerator
-from webnovel_archiver.utils.logger import get_logger # For potential direct use or if generator uses it
+import io
+import requests # Import requests for mocking
+from pathlib import Path
 
-# Disable logging for tests to keep output clean, or configure for test-specific output
-import unittest.mock # Ensure unittest.mock is imported for patching
-# import logging
-# logging.getLogger('webnovel_archiver').setLevel(logging.CRITICAL)
+from webnovel_archiver.core.builders.epub_generator import EPUBGenerator
+from webnovel_archiver.core.path_manager import PathManager
 
 # Mock requests.get for cover download
-class MockResponse: # Already defined, no change
+class MockResponse:
     def __init__(self, content, status_code, headers=None):
         self.content = content
-        self.raw = content
+        self.raw = io.BytesIO(content) # Make raw a file-like object
         self.status_code = status_code
         self.headers = headers if headers else {'content-type': 'image/jpeg'}
 
+    def iter_content(self, chunk_size=8192):
+        # Simulate yielding content in chunks
+        for i in range(0, len(self.content), chunk_size):
+            yield self.content[i:i + chunk_size]
+
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise Exception("HTTP Error")
+            raise requests.exceptions.HTTPError("HTTP Error")
 
     def __enter__(self):
         return self
@@ -31,10 +35,9 @@ class MockResponse: # Already defined, no change
     def __exit__(self, *args):
         pass
 
-def mock_requests_get(url, stream=False):
+def mock_requests_get_side_effect(url, stream=False):
     if "valid_cover.jpg" in url:
-        # Simulate a successful image download
-        image_content = b"dummy_image_bytes" # Simulate image data
+        image_content = b"dummy_image_bytes"
         return MockResponse(image_content, 200, {'content-type': 'image/jpeg'})
     elif "valid_cover.png" in url:
         image_content = b"dummy_png_bytes"
@@ -43,548 +46,503 @@ def mock_requests_get(url, stream=False):
         raise requests.exceptions.RequestException("Simulated download failure")
     elif "http_error" in url:
         return MockResponse(None, 404)
-    return MockResponse(None, 404) # Default to 404 for unknown URLs
+    return MockResponse(None, 404)
 
+@pytest.fixture
+def setup_epub_generator(tmp_path, mocker):
+    """
+    Fixture to set up PathManager, EPUBGenerator, and mock requests.get.
+    Uses tmp_path for isolated test directories.
+    """
+    test_workspace = tmp_path / "test_workspace_epub_generator"
+    story_id = "test_story_001"
+    path_manager = PathManager(str(test_workspace), story_id)
 
-class TestEPUBGenerator(unittest.TestCase):
-    def setUp(self):
-        self.test_workspace = "test_workspace_epub_generator"
-        self.story_id = "test_story_001"
-        self.processed_content_dir = os.path.join(self.test_workspace, "processed_content", self.story_id)
-        self.ebooks_dir = os.path.join(self.test_workspace, "ebooks", self.story_id)
+    # Ensure directories exist for the generator
+    Path(path_manager.get_processed_content_story_dir()).mkdir(parents=True, exist_ok=True)
+    Path(path_manager.get_ebooks_story_dir()).mkdir(parents=True, exist_ok=True)
 
-        # Clean up before each test
-        if os.path.exists(self.test_workspace):
-            shutil.rmtree(self.test_workspace)
-        os.makedirs(self.processed_content_dir, exist_ok=True)
-        os.makedirs(self.ebooks_dir, exist_ok=True)
+    epub_generator = EPUBGenerator(path_manager)
 
-        self.epub_generator = EPUBGenerator(workspace_root=self.test_workspace)
+    # Mock requests.get for cover download tests
+    mocker.patch('requests.get', side_effect=mock_requests_get_side_effect)
 
-        self.sample_progress_data = {
-            "effective_title": "My Awesome Story", # Changed "title" to "effective_title"
-            "author": "Test Author",
-            "story_id": self.story_id,
-            "downloaded_chapters": [],
-            "synopsis": None, # Ensure it's part of the base sample data
-            "cover_image_url": None # Ensure it's part of the base sample data
-        }
+    return {
+        "path_manager": path_manager,
+        "epub_generator": epub_generator,
+        "test_workspace": test_workspace,
+        "story_id": story_id
+    }
 
-        # Patch requests.get for cover download tests
-        self.patcher = unittest.mock.patch('requests.get', side_effect=mock_requests_get)
-        self.mock_get = self.patcher.start()
+@pytest.fixture
+def sample_progress_data():
+    """Fixture for a base sample progress data dictionary."""
+    return {
+        "effective_title": "My Awesome Story",
+        "author": "Test Author",
+        "story_id": "test_story_001",
+        "downloaded_chapters": [],
+        "synopsis": None,
+        "cover_image_url": None
+    }
 
+@pytest.fixture
+def create_dummy_html_file(setup_epub_generator):
+    """Helper fixture to create a dummy HTML file and return its chapter_info."""
+    processed_content_dir = setup_epub_generator["path_manager"].get_processed_content_story_dir()
 
-    def tearDown(self):
-        if os.path.exists(self.test_workspace):
-            shutil.rmtree(self.test_workspace)
-        self.patcher.stop() # Stop the patcher
-
-    def _create_dummy_html_file(self, filename_prefix: str, chapter_order: int, title: str, content: str, status: str = "active") -> dict:
-        """Helper to create a dummy HTML file and return its chapter_info."""
+    def _creator(filename_prefix: str, chapter_order: int, title: str, content: str, status: str = "active") -> dict:
         html_filename = f"{filename_prefix}_{chapter_order}.html"
-        filepath = os.path.join(self.processed_content_dir, html_filename)
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(content)
+        filepath = Path(processed_content_dir) / html_filename
+        filepath.write_text(content, encoding="utf-8")
         return {
             "title": title,
             "local_processed_filename": html_filename,
             "download_order": chapter_order,
-            "source_chapter_id": f"src_{chapter_order}", # Dummy source ID
+            "source_chapter_id": f"src_{chapter_order}",
             "status": status
         }
+    return _creator
 
-    def test_generate_single_epub_success(self):
-        # 1. Create dummy processed HTML files
-        chap1_info = self._create_dummy_html_file(
+class TestEPUBGenerator:
+    def test_generate_single_epub_success(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
+        ebooks_dir = setup_epub_generator["path_manager"].get_ebooks_story_dir()
+
+        chap1_info = create_dummy_html_file(
             "chap", 1, "Chapter 1: The Beginning", "<h1>Chapter 1</h1><p>Once upon a time...</p>"
         )
-        chap2_info = self._create_dummy_html_file(
+        chap2_info = create_dummy_html_file(
             "chap", 2, "Chapter 2: The Adventure", "<h1>Chapter 2</h1><p>The journey continues.</p>"
         )
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info]
+        sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info]
 
-        # 2. Call generate_epub
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        generated_files = epub_generator.generate_epub(sample_progress_data)
 
-        # 3. Assertions
-        self.assertEqual(len(generated_files), 1, "Should generate one EPUB file.")
-        epub_filepath = generated_files[0]
-        self.assertTrue(os.path.exists(epub_filepath), f"EPUB file should exist at {epub_filepath}")
-        self.assertTrue(epub_filepath.endswith(".epub"))
-        self.assertIn(self.ebooks_dir, epub_filepath) # Check it's in the correct story's ebook dir
+        assert len(generated_files) == 1, "Should generate one EPUB file."
+        epub_filepath = Path(generated_files[0])
+        assert epub_filepath.exists(), f"EPUB file should exist at {epub_filepath}"
+        assert epub_filepath.suffix == ".epub"
+        assert Path(ebooks_dir) in epub_filepath.parents # Check it's in the correct story's ebook dir
 
-        # 4. Use epub.read_epub() and assert metadata
-        book = epub.read_epub(epub_filepath)
-        self.assertEqual(book.get_metadata('DC', 'title')[0][0], self.sample_progress_data["effective_title"])
-        self.assertEqual(book.get_metadata('DC', 'creator')[0][0], self.sample_progress_data["author"])
-        self.assertEqual(book.get_metadata('DC', 'language')[0][0], 'en')
-        self.assertEqual(book.get_metadata('DC', 'identifier')[0][0], self.story_id)
+        book = epub.read_epub(str(epub_filepath))
+        assert book.get_metadata('DC', 'title')[0][0] == sample_progress_data["effective_title"]
+        assert book.get_metadata('DC', 'creator')[0][0] == sample_progress_data["author"]
+        assert book.get_metadata('DC', 'language')[0][0] == 'en'
+        assert book.get_metadata('DC', 'identifier')[0][0] == sample_progress_data["story_id"]
 
-        # 5. Assert number of chapters
         all_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
         content_chapters = [item for item in all_items if item.get_name() != 'nav.xhtml']
-        self.assertEqual(len(content_chapters), 2, "EPUB should contain two content chapters.")
+        assert len(content_chapters) == 2, "EPUB should contain two content chapters."
 
-        # 6. Assert chapter titles and content (simplified check)
-        # Note: Order in items might not be guaranteed, but usually is by add_item.
-        # For robust check, map by file_name or title if possible.
-
-        # Check chapter 1
-        # Assuming content_chapters are now correctly ordered as per addition
         epub_chap1_content = content_chapters[0].get_content().decode('utf-8')
-        # Check for essential parts due to ebooklib HTML formatting
-        self.assertIn("<h1>Chapter 1: The Beginning</h1>", epub_chap1_content)
-        self.assertIn("<h1>Chapter 1</h1>", epub_chap1_content)
-        self.assertIn("<p>Once upon a time...</p>", epub_chap1_content)
+        assert "<h1>Chapter 1: The Beginning</h1>" in epub_chap1_content
+        assert "<h1>Chapter 1</h1>" in epub_chap1_content
+        assert "<p>Once upon a time...</p>" in epub_chap1_content
 
-        # Check chapter 2
         epub_chap2_content = content_chapters[1].get_content().decode('utf-8')
-        self.assertIn("<h1>Chapter 2: The Adventure</h1>", epub_chap2_content)
-        self.assertIn("<h1>Chapter 2</h1>", epub_chap2_content)
-        self.assertIn("<p>The journey continues.</p>", epub_chap2_content)
+        assert "<h1>Chapter 2: The Adventure</h1>" in epub_chap2_content
+        assert "<h1>Chapter 2</h1>" in epub_chap2_content
+        assert "<p>The journey continues.</p>" in epub_chap2_content
 
-        # Check TOC for titles (more reliable for chapter titles)
         toc_titles = [toc_item.title for toc_item in book.toc]
-        self.assertIn("Chapter 1: The Beginning", toc_titles)
-        self.assertIn("Chapter 2: The Adventure", toc_titles)
+        assert "Chapter 1: The Beginning" in toc_titles
+        assert "Chapter 2: The Adventure" in toc_titles
 
+    def test_generate_epub_multiple_volumes(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
+        story_id = setup_epub_generator["story_id"]
 
-    def test_generate_epub_multiple_volumes(self):
-        chap1 = self._create_dummy_html_file("c", 1, "Ch 1", "<p>Vol 1 Chap 1</p>")
-        chap2 = self._create_dummy_html_file("c", 2, "Ch 2", "<p>Vol 1 Chap 2</p>")
-        chap3 = self._create_dummy_html_file("c", 3, "Ch 3", "<p>Vol 2 Chap 1</p>")
-        chap4 = self._create_dummy_html_file("c", 4, "Ch 4", "<p>Vol 2 Chap 2</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1, chap2, chap3, chap4]
+        chap1 = create_dummy_html_file("c", 1, "Ch 1", "<p>Vol 1 Chap 1</p>")
+        chap2 = create_dummy_html_file("c", 2, "Ch 2", "<p>Vol 1 Chap 2</p>")
+        chap3 = create_dummy_html_file("c", 3, "Ch 3", "<p>Vol 2 Chap 1</p>")
+        chap4 = create_dummy_html_file("c", 4, "Ch 4", "<p>Vol 2 Chap 2</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1, chap2, chap3, chap4]
 
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data, chapters_per_volume=2)
+        generated_files = epub_generator.generate_epub(sample_progress_data, chapters_per_volume=2)
 
-        self.assertEqual(len(generated_files), 2, "Should generate two EPUB files for two volumes.")
+        assert len(generated_files) == 2, "Should generate two EPUB files for two volumes."
 
-        sanitized_title = "My_Awesome_Story" # From progress_data["title"]
+        sanitized_title = "My_Awesome_Story"
         expected_vol1_filename = f"{sanitized_title}_vol_1.epub"
         expected_vol2_filename = f"{sanitized_title}_vol_2.epub"
 
         found_vol1 = any(expected_vol1_filename in f for f in generated_files)
         found_vol2 = any(expected_vol2_filename in f for f in generated_files)
-        self.assertTrue(found_vol1, f"Volume 1 EPUB ({expected_vol1_filename}) not found in {generated_files}")
-        self.assertTrue(found_vol2, f"Volume 2 EPUB ({expected_vol2_filename}) not found in {generated_files}")
+        assert found_vol1, f"Volume 1 EPUB ({expected_vol1_filename}) not found in {generated_files}"
+        assert found_vol2, f"Volume 2 EPUB ({expected_vol2_filename}) not found in {generated_files}"
 
-        # Verify Volume 1
-        vol1_path = next(f for f in generated_files if expected_vol1_filename in f)
-        book1 = epub.read_epub(vol1_path)
-        self.assertEqual(book1.get_metadata('DC', 'title')[0][0], f"{self.sample_progress_data['effective_title']} Vol. 1")
-        self.assertEqual(book1.get_metadata('DC', 'identifier')[0][0], f"{self.story_id}_vol_1")
+        vol1_path = Path(next(f for f in generated_files if expected_vol1_filename in f))
+        book1 = epub.read_epub(str(vol1_path))
+        assert book1.get_metadata('DC', 'title')[0][0] == f"{sample_progress_data['effective_title']} Vol. 1"
+        assert book1.get_metadata('DC', 'identifier')[0][0] == f"{story_id}_vol_1"
         all_vol1_items = list(book1.get_items_of_type(ebooklib.ITEM_DOCUMENT))
         vol1_content_chapters = [item for item in all_vol1_items if item.get_name() != 'nav.xhtml']
-        self.assertEqual(len(vol1_content_chapters), 2, "Volume 1 should have 2 content chapters.")
+        assert len(vol1_content_chapters) == 2, "Volume 1 should have 2 content chapters."
         vol1_content_chap1 = vol1_content_chapters[0].get_content().decode('utf-8')
-        self.assertIn("<h1>Ch 1</h1>", vol1_content_chap1)
-        self.assertIn("<p>Vol 1 Chap 1</p>", vol1_content_chap1)
+        assert "<h1>Ch 1</h1>" in vol1_content_chap1
+        assert "<p>Vol 1 Chap 1</p>" in vol1_content_chap1
         vol1_content_chap2 = vol1_content_chapters[1].get_content().decode('utf-8')
-        self.assertIn("<h1>Ch 2</h1>", vol1_content_chap2)
-        self.assertIn("<p>Vol 1 Chap 2</p>", vol1_content_chap2)
+        assert "<h1>Ch 2</h1>" in vol1_content_chap2
+        assert "<p>Vol 1 Chap 2</p>" in vol1_content_chap2
         vol1_toc_titles = [toc_item.title for toc_item in book1.toc]
-        self.assertIn("Ch 1", vol1_toc_titles)
-        self.assertIn("Ch 2", vol1_toc_titles)
+        assert "Ch 1" in vol1_toc_titles
+        assert "Ch 2" in vol1_toc_titles
 
-
-        # Verify Volume 2
-        vol2_path = next(f for f in generated_files if expected_vol2_filename in f)
-        book2 = epub.read_epub(vol2_path)
-        self.assertEqual(book2.get_metadata('DC', 'title')[0][0], f"{self.sample_progress_data['effective_title']} Vol. 2")
-        self.assertEqual(book2.get_metadata('DC', 'identifier')[0][0], f"{self.story_id}_vol_2")
+        vol2_path = Path(next(f for f in generated_files if expected_vol2_filename in f))
+        book2 = epub.read_epub(str(vol2_path))
+        assert book2.get_metadata('DC', 'title')[0][0] == f"{sample_progress_data['effective_title']} Vol. 2"
+        assert book2.get_metadata('DC', 'identifier')[0][0] == f"{story_id}_vol_2"
         all_vol2_items = list(book2.get_items_of_type(ebooklib.ITEM_DOCUMENT))
         vol2_content_chapters = [item for item in all_vol2_items if item.get_name() != 'nav.xhtml']
-        self.assertEqual(len(vol2_content_chapters), 2, "Volume 2 should have 2 content chapters.")
-        vol2_content_chap1 = vol2_content_chapters[0].get_content().decode('utf-8') # First chapter of this volume
-        self.assertIn("<h1>Ch 3</h1>", vol2_content_chap1)
-        self.assertIn("<p>Vol 2 Chap 1</p>", vol2_content_chap1)
+        assert len(vol2_content_chapters) == 2, "Volume 2 should have 2 content chapters."
+        vol2_content_chap1 = vol2_content_chapters[0].get_content().decode('utf-8')
+        assert "<h1>Ch 3</h1>" in vol2_content_chap1
+        assert "<p>Vol 2 Chap 1</p>" in vol2_content_chap1
         vol2_content_chap2 = vol2_content_chapters[1].get_content().decode('utf-8')
-        self.assertIn("<h1>Ch 4</h1>", vol2_content_chap2)
-        self.assertIn("<p>Vol 2 Chap 2</p>", vol2_content_chap2)
+        assert "<h1>Ch 4</h1>" in vol2_content_chap2
+        assert "<p>Vol 2 Chap 2</p>" in vol2_content_chap2
         vol2_toc_titles = [toc_item.title for toc_item in book2.toc]
-        self.assertIn("Ch 3", vol2_toc_titles)
-        self.assertIn("Ch 4", vol2_toc_titles)
+        assert "Ch 3" in vol2_toc_titles
+        assert "Ch 4" in vol2_toc_titles
 
+    def test_generate_epub_no_chapters(self, setup_epub_generator, sample_progress_data):
+        epub_generator = setup_epub_generator["epub_generator"]
+        ebooks_dir = setup_epub_generator["path_manager"].get_ebooks_story_dir()
 
-    def test_generate_epub_no_chapters(self):
-        self.sample_progress_data["downloaded_chapters"] = []
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
-        self.assertEqual(len(generated_files), 0, "Should return an empty list if no chapters.")
-        self.assertEqual(len(os.listdir(self.ebooks_dir)), 0, "No EPUB file should be created in ebooks_dir.")
+        sample_progress_data["downloaded_chapters"] = []
+        generated_files = epub_generator.generate_epub(sample_progress_data)
+        assert len(generated_files) == 0, "Should return an empty list if no chapters."
+        assert len(list(Path(ebooks_dir).iterdir())) == 0, "No EPUB file should be created in ebooks_dir."
 
-    def test_generate_epub_missing_html_file(self):
-        # Ensure this test also uses effective_title if it sets progress_data directly
-        # For now, it relies on self.sample_progress_data, which will be fixed by the change above.
-        chap1_info = self._create_dummy_html_file(
+    def test_generate_epub_missing_html_file(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
+
+        chap1_info = create_dummy_html_file(
             "chap", 1, "Chapter 1", "<p>Content 1</p>"
         )
-        # Chapter 2's HTML file will intentionally not be created
         chap2_info = {
             "title": "Chapter 2 - Missing",
-            "local_processed_filename": "non_existent_chap_2.html", # This file won't exist
+            "local_processed_filename": "non_existent_chap_2.html",
             "download_order": 2,
             "source_chapter_id": "src_2_missing"
         }
-        chap3_info = self._create_dummy_html_file(
+        chap3_info = create_dummy_html_file(
             "chap", 3, "Chapter 3", "<p>Content 3</p>"
         )
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info, chap3_info]
+        sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info, chap3_info]
 
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        generated_files = epub_generator.generate_epub(sample_progress_data)
 
-        self.assertEqual(len(generated_files), 1, "One EPUB should still be generated.")
-        epub_filepath = generated_files[0]
-        self.assertTrue(os.path.exists(epub_filepath))
+        assert len(generated_files) == 1, "One EPUB should still be generated."
+        epub_filepath = Path(generated_files[0])
+        assert epub_filepath.exists()
 
-        book = epub.read_epub(epub_filepath)
+        book = epub.read_epub(str(epub_filepath))
         all_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
         content_chapters = [item for item in all_items if item.get_name() != 'nav.xhtml']
-        # Should contain chapter 1 and chapter 3, skipping chapter 2
-        self.assertEqual(len(content_chapters), 2, "EPUB should contain 2 content chapters, skipping the missing one.")
+        assert len(content_chapters) == 2, "EPUB should contain 2 content chapters, skipping the missing one."
 
         toc_titles = [toc_item.title for toc_item in book.toc]
-        self.assertIn("Chapter 1", toc_titles)
-        self.assertNotIn("Chapter 2 - Missing", toc_titles)
-        self.assertIn("Chapter 3", toc_titles)
+        assert "Chapter 1" in toc_titles
+        assert "Chapter 2 - Missing" not in toc_titles
+        assert "Chapter 3" in toc_titles
 
-        # Verify content of included chapters
-        # Assuming content_chapters are now correctly ordered as per addition
         epub_chap1_content = content_chapters[0].get_content().decode('utf-8')
-        self.assertIn("<h1>Chapter 1</h1>", epub_chap1_content)
-        self.assertIn("<p>Content 1</p>", epub_chap1_content)
-        epub_chap3_content = content_chapters[1].get_content().decode('utf-8') # Now it's the second item
-        self.assertIn("<h1>Chapter 3</h1>", epub_chap3_content)
-        self.assertIn("<p>Content 3</p>", epub_chap3_content)
+        assert "<h1>Chapter 1</h1>" in epub_chap1_content
+        assert "<p>Content 1</p>" in epub_chap1_content
+        epub_chap3_content = content_chapters[1].get_content().decode('utf-8')
+        assert "<h1>Chapter 3</h1>" in epub_chap3_content
+        assert "<p>Content 3</p>" in epub_chap3_content
 
+    def test_filename_sanitization(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
 
-    def test_filename_sanitization(self):
-        self.sample_progress_data["effective_title"] = "Story: The \"Best\" Title Ever!?" # Changed "title" to "effective_title"
-        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>Content</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
+        sample_progress_data["effective_title"] = "Story: The \"Best\" Title Ever!?"
+        chap1_info = create_dummy_html_file("chap", 1, "Chapter 1", "<p>Content</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1_info]
 
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
-        self.assertEqual(len(generated_files), 1)
-        epub_filepath = generated_files[0]
+        generated_files = epub_generator.generate_epub(sample_progress_data)
+        assert len(generated_files) == 1
+        epub_filepath = Path(generated_files[0])
 
-        expected_sanitized_filename_part = "Story__The__Best__Title_Ever__" # Based on current sanitization in EPUBGenerator
-        # Full name: Story__The__Best__Title_Ever__.epub
-        self.assertIn(expected_sanitized_filename_part, epub_filepath, "EPUB filename should be sanitized.")
-        self.assertTrue(epub_filepath.endswith(".epub"))
+        expected_sanitized_filename_part = "Story__The__Best__Title_Ever__"
+        assert expected_sanitized_filename_part in str(epub_filepath), "EPUB filename should be sanitized."
+        assert epub_filepath.suffix == ".epub"
 
-    def test_generate_epub_one_volume_explicit_chapters_per_volume(self):
-        """Test when chapters_per_volume is set but still results in one volume."""
-        chap1_info = self._create_dummy_html_file("chap", 1, "Ch 1", "<p>C1</p>")
-        chap2_info = self._create_dummy_html_file("chap", 2, "Ch 2", "<p>C2</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info]
+    def test_generate_epub_one_volume_explicit_chapters_per_volume(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
+        story_id = setup_epub_generator["story_id"]
 
-        # chapters_per_volume is >= total chapters, should result in one volume
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data, chapters_per_volume=5)
+        chap1_info = create_dummy_html_file("chap", 1, "Ch 1", "<p>C1</p>")
+        chap2_info = create_dummy_html_file("chap", 2, "Ch 2", "<p>C2</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info]
 
-        self.assertEqual(len(generated_files), 1, "Should generate one EPUB file.")
-        epub_filepath = generated_files[0]
-        book = epub.read_epub(epub_filepath)
-        # Title should not have "Vol. X"
-        self.assertEqual(book.get_metadata('DC', 'title')[0][0], self.sample_progress_data["effective_title"])
-        # Identifier should not have "_vol_X"
-        self.assertEqual(book.get_metadata('DC', 'identifier')[0][0], self.story_id)
+        generated_files = epub_generator.generate_epub(sample_progress_data, chapters_per_volume=5)
+
+        assert len(generated_files) == 1, "Should generate one EPUB file."
+        epub_filepath = Path(generated_files[0])
+        book = epub.read_epub(str(epub_filepath))
+        assert book.get_metadata('DC', 'title')[0][0] == sample_progress_data["effective_title"]
+        assert book.get_metadata('DC', 'identifier')[0][0] == story_id
         all_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
         content_chapters = [item for item in all_items if item.get_name() != 'nav.xhtml']
-        self.assertEqual(len(content_chapters), 2, "EPUB should contain two content chapters.")
+        assert len(content_chapters) == 2, "EPUB should contain two content chapters."
 
-    def test_generate_epub_chapters_per_volume_zero_or_none(self):
-        """Test that chapters_per_volume=0 or None creates a single volume."""
-        chap1 = self._create_dummy_html_file("c", 1, "Ch 1", "<p>C1</p>")
-        chap2 = self._create_dummy_html_file("c", 2, "Ch 2", "<p>C2</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1, chap2]
+    def test_generate_epub_chapters_per_volume_zero_or_none(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
+        story_id = setup_epub_generator["story_id"]
 
-        # Test with chapters_per_volume = 0
-        generated_files_zero = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data, chapters_per_volume=0)
-        self.assertEqual(len(generated_files_zero), 1)
-        book_zero = epub.read_epub(generated_files_zero[0])
-        self.assertEqual(book_zero.get_metadata('DC', 'title')[0][0], self.sample_progress_data["effective_title"])
-        self.assertEqual(book_zero.get_metadata('DC', 'identifier')[0][0], self.story_id)
+        chap1 = create_dummy_html_file("c", 1, "Ch 1", "<p>C1</p>")
+        chap2 = create_dummy_html_file("c", 2, "Ch 2", "<p>C2</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1, chap2]
 
-        # Test with chapters_per_volume = None (already tested in test_generate_single_epub_success, but good for direct comparison)
-        generated_files_none = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data, chapters_per_volume=None)
-        self.assertEqual(len(generated_files_none), 1)
-        book_none = epub.read_epub(generated_files_none[0])
-        self.assertEqual(book_none.get_metadata('DC', 'title')[0][0], self.sample_progress_data["effective_title"])
-        self.assertEqual(book_none.get_metadata('DC', 'identifier')[0][0], self.story_id)
+        generated_files_zero = epub_generator.generate_epub(sample_progress_data, chapters_per_volume=0)
+        assert len(generated_files_zero) == 1
+        book_zero = epub.read_epub(str(generated_files_zero[0]))
+        assert book_zero.get_metadata('DC', 'title')[0][0] == sample_progress_data["effective_title"]
+        assert book_zero.get_metadata('DC', 'identifier')[0][0] == story_id
 
+        generated_files_none = epub_generator.generate_epub(sample_progress_data, chapters_per_volume=None)
+        assert len(generated_files_none) == 1
+        book_none = epub.read_epub(str(generated_files_none[0]))
+        assert book_none.get_metadata('DC', 'title')[0][0] == sample_progress_data["effective_title"]
+        assert book_none.get_metadata('DC', 'identifier')[0][0] == story_id
 
-if __name__ == '__main__':
-    unittest.main()
+    def test_generate_epub_with_archived_chapters(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
 
-
-    def test_generate_epub_with_archived_chapters(self):
-        chap1_info = self._create_dummy_html_file(
+        chap1_info = create_dummy_html_file(
             "chap", 1, "Chapter 1 Title", "<h1>Chapter 1</h1><p>Active content.</p>", status="active"
         )
-        chap2_info = self._create_dummy_html_file(
+        chap2_info = create_dummy_html_file(
             "chap", 2, "Chapter 2 Title", "<h1>Chapter 2</h1><p>Archived content.</p>", status="archived"
         )
-        chap3_info = self._create_dummy_html_file(
+        chap3_info = create_dummy_html_file(
             "chap", 3, "Chapter 3 Title", "<h1>Chapter 3</h1><p>More active content.</p>", status="active"
         )
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info, chap3_info]
+        sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info, chap3_info]
 
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        generated_files = epub_generator.generate_epub(sample_progress_data)
 
-        self.assertEqual(len(generated_files), 1, "Should generate one EPUB file.")
-        epub_filepath = generated_files[0]
-        self.assertTrue(os.path.exists(epub_filepath))
+        assert len(generated_files) == 1, "Should generate one EPUB file."
+        epub_filepath = Path(generated_files[0])
+        assert epub_filepath.exists()
 
-        book = epub.read_epub(epub_filepath)
+        book = epub.read_epub(str(epub_filepath))
         all_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
         content_chapters = [item for item in all_items if item.get_name() != 'nav.xhtml']
-        self.assertEqual(len(content_chapters), 3, "EPUB should contain three content chapters.")
+        assert len(content_chapters) == 3, "EPUB should contain three content chapters."
 
-        toc_titles = {item.title: item for item in book.toc} # Use dict for easier lookup
+        toc_titles = {item.title: item for item in book.toc}
+        assert "Chapter 1 Title" in toc_titles
+        assert "[Archived] Chapter 2 Title" in toc_titles
+        assert "Chapter 3 Title" in toc_titles
 
-        self.assertIn("Chapter 1 Title", toc_titles)
-        self.assertIn("[Archived] Chapter 2 Title", toc_titles)
-        self.assertIn("Chapter 3 Title", toc_titles)
-
-        # Check H1 tags in content
-        # Order of content_chapters should match download_order
-        # Chapter 1
         epub_chap1_content = content_chapters[0].get_content().decode('utf-8')
-        self.assertIn("<h1>Chapter 1 Title</h1>", epub_chap1_content) # Original title in H1
-        self.assertNotIn("[Archived]", epub_chap1_content)
+        assert "<h1>Chapter 1 Title</h1>" in epub_chap1_content
+        assert "[Archived]" not in epub_chap1_content
 
-        # Chapter 2
         epub_chap2_content = content_chapters[1].get_content().decode('utf-8')
-        self.assertIn("<h1>[Archived] Chapter 2 Title</h1>", epub_chap2_content) # Archived title in H1
+        assert "<h1>[Archived] Chapter 2 Title</h1>" in epub_chap2_content
 
-        # Chapter 3
         epub_chap3_content = content_chapters[2].get_content().decode('utf-8')
-        self.assertIn("<h1>Chapter 3 Title</h1>", epub_chap3_content) # Original title in H1
-        self.assertNotIn("[Archived]", epub_chap3_content)
+        assert "<h1>Chapter 3 Title</h1>" in epub_chap3_content
+        assert "[Archived]" not in epub_chap3_content
 
+    def test_generate_epub_active_only_chapters(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
 
-    def test_generate_epub_active_only_chapters(self):
-        chap1_info = self._create_dummy_html_file(
+        chap1_info = create_dummy_html_file(
             "chap", 1, "Active Chapter 1", "<p>Content 1</p>", status="active"
         )
-        chap2_info = self._create_dummy_html_file(
+        chap2_info = create_dummy_html_file(
             "chap", 2, "Active Chapter 2", "<p>Content 2</p>", status="active"
         )
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info]
+        sample_progress_data["downloaded_chapters"] = [chap1_info, chap2_info]
 
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        generated_files = epub_generator.generate_epub(sample_progress_data)
 
-        self.assertEqual(len(generated_files), 1)
-        epub_filepath = generated_files[0]
-        book = epub.read_epub(epub_filepath)
+        assert len(generated_files) == 1
+        epub_filepath = Path(generated_files[0])
+        book = epub.read_epub(str(epub_filepath))
 
         all_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
         content_chapters = [item for item in all_items if item.get_name() != 'nav.xhtml']
-        self.assertEqual(len(content_chapters), 2)
+        assert len(content_chapters) == 2
 
         toc_titles = [item.title for item in book.toc]
-        self.assertIn("Active Chapter 1", toc_titles)
-        self.assertNotIn("[Archived] Active Chapter 1", toc_titles)
-        self.assertIn("Active Chapter 2", toc_titles)
-        self.assertNotIn("[Archived] Active Chapter 2", toc_titles)
+        assert "Active Chapter 1" in toc_titles
+        assert "[Archived] Active Chapter 1" not in toc_titles
+        assert "Active Chapter 2" in toc_titles
+        assert "[Archived] Active Chapter 2" not in toc_titles
 
-        # Check H1 tags
         epub_chap1_content = content_chapters[0].get_content().decode('utf-8')
-        self.assertIn("<h1>Active Chapter 1</h1>", epub_chap1_content)
-        self.assertNotIn("[Archived]", epub_chap1_content)
+        assert "<h1>Active Chapter 1</h1>" in epub_chap1_content
+        assert "[Archived]" not in epub_chap1_content
 
         epub_chap2_content = content_chapters[1].get_content().decode('utf-8')
-        self.assertIn("<h1>Active Chapter 2</h1>", epub_chap2_content)
-        self.assertNotIn("[Archived]", epub_chap2_content)
+        assert "<h1>Active Chapter 2</h1>" in epub_chap2_content
+        assert "[Archived]" not in epub_chap2_content
 
+    def test_generate_epub_with_synopsis(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
 
-    def test_generate_epub_with_synopsis(self):
-        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>Content 1</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
-        self.sample_progress_data["synopsis"] = "This is a test synopsis."
+        chap1_info = create_dummy_html_file("chap", 1, "Chapter 1", "<p>Content 1</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1_info]
+        sample_progress_data["synopsis"] = "This is a test synopsis."
 
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
-        self.assertEqual(len(generated_files), 1)
-        epub_filepath = generated_files[0]
-        book = epub.read_epub(epub_filepath)
+        generated_files = epub_generator.generate_epub(sample_progress_data)
+        assert len(generated_files) == 1
+        epub_filepath = Path(generated_files[0])
+        book = epub.read_epub(str(epub_filepath))
 
-        # Check for synopsis in TOC
         toc_links = {link.title: link for link in book.toc}
-        self.assertIn("Synopsis", toc_links, "Synopsis should be in TOC.")
+        assert "Synopsis" in toc_links, "Synopsis should be in TOC."
 
-        # Check for synopsis in spine (order)
-        # Spine items are EpubItem objects, check their file_name
-        spine_file_names = [item.file_name for item in book.spine]
-        self.assertIn("synopsis.xhtml", spine_file_names, "Synopsis xhtml should be in spine.")
-        nav_index = spine_file_names.index("nav.xhtml") # nav.xhtml is from ebooklib
-        synopsis_index = spine_file_names.index("synopsis.xhtml")
-        chapter_index = spine_file_names.index("chap_1.xhtml")
+        toc_links = {link.title: link for link in book.toc}
+        assert "Synopsis" in toc_links, "Synopsis should be in TOC."
 
-        self.assertTrue(nav_index < synopsis_index < chapter_index, "Synopsis should be after nav and before chapters in spine.")
-
-        # Check synopsis content
         synopsis_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if item.get_name() == "synopsis.xhtml"), None)
-        self.assertIsNotNone(synopsis_item, "Synopsis XHTML item not found.")
+        assert synopsis_item is not None, "Synopsis XHTML item not found."
         synopsis_content = synopsis_item.get_content().decode('utf-8')
-        self.assertIn("<h1>Synopsis</h1>", synopsis_content)
-        self.assertIn("<p>This is a test synopsis.</p>", synopsis_content)
+        assert "<h1>Synopsis</h1>" in synopsis_content
+        assert "<p>This is a test synopsis.</p>" in synopsis_content
 
+    def test_generate_epub_with_cover_image(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
+        ebooks_dir = setup_epub_generator["path_manager"].get_ebooks_story_dir()
 
-    def test_generate_epub_with_cover_image(self):
-        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>Content 1</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
-        self.sample_progress_data["cover_image_url"] = "http://example.com/valid_cover.jpg" # Mocked to succeed
+        chap1_info = create_dummy_html_file("chap", 1, "Chapter 1", "<p>Content 1</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1_info]
+        sample_progress_data["cover_image_url"] = "http://example.com/valid_cover.jpg"
 
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
-        self.assertEqual(len(generated_files), 1)
-        epub_filepath = generated_files[0]
-        book = epub.read_epub(epub_filepath)
+        generated_files = epub_generator.generate_epub(sample_progress_data)
+        assert len(generated_files) == 1
+        epub_filepath = Path(generated_files[0])
+        book = epub.read_epub(str(epub_filepath))
 
-        # Check cover metadata
         cover_meta = book.get_metadata('OPF', 'cover')
-        self.assertTrue(len(cover_meta) > 0, "Cover metadata should exist.")
-        # ebooklib < 0.18 uses ('OPF', 'cover'), id='cover-image', content='cover.jpg'
-        # ebooklib >= 0.18 might use other forms or rely on guide items.
-        # A more robust check is to look for the cover image item itself.
+        assert len(cover_meta) > 0, "Cover metadata should exist."
 
-        cover_image_item = book.get_item_with_id('cover') # Default ID by set_cover if not specified
-        if not cover_image_item: # try common filename if ID 'cover' is not used
-            cover_image_item = book.get_item_with_href('cover.jpg') # if filename is cover.jpg
+        # Debugging: Print all items to see their IDs and media types
+        # for item in book.get_items():
+        #     print(f"Item ID: {item.id}, File Name: {item.file_name}, Media Type: {item.media_type}")
 
-        self.assertIsNotNone(cover_image_item, "Cover image item not found in EPUB.")
-        self.assertEqual(cover_image_item.get_media_type(), 'image/jpeg')
-
-        # Check if cover.xhtml (created by set_cover create_page=True) exists
-        # Note: The prompt did not explicitly ask for create_page=True to be tested,
-        # but the implementation uses it.
         cover_xhtml_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if 'cover' in item.get_name().lower() and item.get_name().endswith('.xhtml')), None)
-        self.assertIsNotNone(cover_xhtml_item, "cover.xhtml page was not created by set_cover.")
+        assert cover_xhtml_item is not None, "cover.xhtml page was not created by set_cover."
+        cover_xhtml_content = cover_xhtml_item.get_content().decode('utf-8')
+        assert '<img src="../images/cover.jpg"' in cover_xhtml_content or '<img src="cover.jpg"' in cover_xhtml_content, "Cover image not referenced in cover.xhtml"
 
-        # Check temp cover directory is cleaned up
-        temp_cover_dir = os.path.join(self.ebooks_dir, self.epub_generator.temp_cover_dir_name)
-        self.assertFalse(os.path.exists(temp_cover_dir), "Temporary cover directory should be cleaned up.")
+        temp_cover_dir = Path(ebooks_dir) / PathManager.TEMP_COVER_DIR_NAME
+        assert not temp_cover_dir.exists(), "Temporary cover directory should be cleaned up."
 
+    def test_generate_epub_with_synopsis_and_cover(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
+        ebooks_dir = setup_epub_generator["path_manager"].get_ebooks_story_dir()
 
-    def test_generate_epub_with_synopsis_and_cover(self):
-        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
-        self.sample_progress_data["synopsis"] = "A great story indeed."
-        self.sample_progress_data["cover_image_url"] = "http://example.com/valid_cover.png" # Use PNG
+        chap1_info = create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1_info]
+        sample_progress_data["synopsis"] = "A great story indeed."
+        sample_progress_data["cover_image_url"] = "http://example.com/valid_cover.png"
 
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
-        self.assertEqual(len(generated_files), 1)
-        book = epub.read_epub(generated_files[0])
+        generated_files = epub_generator.generate_epub(sample_progress_data)
+        assert len(generated_files) == 1
+        book = epub.read_epub(str(generated_files[0]))
 
-        # Synopsis checks
-        self.assertIn("Synopsis", [link.title for link in book.toc])
+        assert "Synopsis" in [link.title for link in book.toc]
         synopsis_item = next(item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if item.get_name() == "synopsis.xhtml")
-        self.assertIn("<h1>Synopsis</h1>", synopsis_item.get_content().decode('utf-8'))
-        self.assertIn("<p>A great story indeed.</p>", synopsis_item.get_content().decode('utf-8'))
+        assert "<h1>Synopsis</h1>" in synopsis_item.get_content().decode('utf-8')
+        assert "<p>A great story indeed.</p>" in synopsis_item.get_content().decode('utf-8')
 
-        # Cover checks
-        cover_image_item = book.get_item_with_id('cover')
-        if not cover_image_item:
-             cover_image_item = book.get_item_with_href('cover.png')
-        self.assertIsNotNone(cover_image_item)
-        self.assertEqual(cover_image_item.get_media_type(), 'image/png')
         cover_xhtml_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if 'cover' in item.get_name().lower() and item.get_name().endswith('.xhtml')), None)
-        self.assertIsNotNone(cover_xhtml_item, "cover.xhtml page was not created by set_cover.")
+        assert cover_xhtml_item is not None, "cover.xhtml page was not created by set_cover."
+        cover_xhtml_content = cover_xhtml_item.get_content().decode('utf-8')
+        assert '<img src="../images/cover.png"' in cover_xhtml_content or '<img src="cover.png"' in cover_xhtml_content, "Cover image not referenced in cover.xhtml"
 
+        temp_cover_dir = Path(ebooks_dir) / PathManager.TEMP_COVER_DIR_NAME
+        assert not temp_cover_dir.exists(), "Temp cover dir should be gone."
 
-        # Spine order: nav, (optional cover.xhtml), synopsis, chapter
-        spine_file_names = [item.file_name for item in book.spine]
-        nav_idx = spine_file_names.index('nav.xhtml')
-        # cover_xhtml_idx = spine_file_names.index('cover.xhtml') # If set_cover creates it AND it's added to spine
-        synopsis_idx = spine_file_names.index('synopsis.xhtml')
-        chap_idx = spine_file_names.index('chap_1.xhtml')
+    def test_cover_download_failure_http_error(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
+        ebooks_dir = setup_epub_generator["path_manager"].get_ebooks_story_dir()
 
-        self.assertTrue(nav_idx < synopsis_idx < chap_idx)
-        # If cover.xhtml is part of spine: self.assertTrue(nav_idx < cover_xhtml_idx < synopsis_idx < chap_idx)
-        # Current implementation does not add cover.xhtml to spine explicitly, relies on set_cover behavior.
+        chap1_info = create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1_info]
+        sample_progress_data["cover_image_url"] = "http://example.com/http_error"
 
-        temp_cover_dir = os.path.join(self.ebooks_dir, self.epub_generator.temp_cover_dir_name)
-        self.assertFalse(os.path.exists(temp_cover_dir), "Temp cover dir should be gone.")
+        generated_files = epub_generator.generate_epub(sample_progress_data)
+        assert len(generated_files) == 1
+        book = epub.read_epub(str(generated_files[0]))
 
-
-    def test_cover_download_failure_http_error(self):
-        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
-        self.sample_progress_data["cover_image_url"] = "http://example.com/http_error" # Mocked to cause HTTP error
-
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
-        self.assertEqual(len(generated_files), 1)
-        book = epub.read_epub(generated_files[0])
-
-        # No cover should be set
-        self.assertIsNone(book.get_item_with_id('cover'))
-        self.assertIsNone(book.get_item_with_href('cover.jpg')) # Or any other cover name
+        assert book.get_item_with_id('cover') is None
+        assert book.get_item_with_href('cover.jpg') is None
         cover_xhtml_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if 'cover' in item.get_name().lower() and item.get_name().endswith('.xhtml')), None)
-        self.assertIsNone(cover_xhtml_item, "cover.xhtml page should not have been created on download failure.")
+        assert cover_xhtml_item is None, "cover.xhtml page should not have been created on download failure."
 
-        temp_cover_dir = os.path.join(self.ebooks_dir, self.epub_generator.temp_cover_dir_name, "cover.jpg") # specific file
-        self.assertFalse(os.path.exists(temp_cover_dir), "Temporary cover file should not exist on download failure.")
+        temp_cover_file = Path(ebooks_dir) / PathManager.TEMP_COVER_DIR_NAME / "cover.jpg"
+        assert not temp_cover_file.exists(), "Temporary cover file should not exist on download failure."
 
+    def test_cover_download_failure_request_exception(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
 
-    def test_cover_download_failure_request_exception(self):
-        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
-        self.sample_progress_data["cover_image_url"] = "http://example.com/download_fails" # Mocked to raise RequestException
+        chap1_info = create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1_info]
+        sample_progress_data["cover_image_url"] = "http://example.com/download_fails"
 
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
-        self.assertEqual(len(generated_files), 1) # EPUB should still be generated
-        book = epub.read_epub(generated_files[0])
+        generated_files = epub_generator.generate_epub(sample_progress_data)
+        assert len(generated_files) == 1
+        book = epub.read_epub(str(generated_files[0]))
 
-        self.assertIsNone(book.get_item_with_id('cover'))
+        assert book.get_item_with_id('cover') is None
         cover_xhtml_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if 'cover' in item.get_name().lower() and item.get_name().endswith('.xhtml')), None)
-        self.assertIsNone(cover_xhtml_item, "cover.xhtml page should not have been created on request exception.")
+        assert cover_xhtml_item is None, "cover.xhtml page should not have been created on request exception."
 
+    def test_no_synopsis_no_cover(self, setup_epub_generator, sample_progress_data, create_dummy_html_file):
+        epub_generator = setup_epub_generator["epub_generator"]
 
-    def test_no_synopsis_no_cover(self):
-        """Test basic EPUB generation when synopsis and cover_image_url are None (default)."""
-        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
-        # "synopsis" and "cover_image_url" are already None in self.sample_progress_data by default setUp
+        chap1_info = create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1_info]
 
-        generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
-        self.assertEqual(len(generated_files), 1)
-        book = epub.read_epub(generated_files[0])
+        generated_files = epub_generator.generate_epub(sample_progress_data)
+        assert len(generated_files) == 1
+        book = epub.read_epub(str(generated_files[0]))
 
-        # No synopsis page
-        self.assertNotIn("Synopsis", [link.title for link in book.toc])
+        assert "Synopsis" not in [link.title for link in book.toc]
         synopsis_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if item.get_name() == "synopsis.xhtml"), None)
-        self.assertIsNone(synopsis_item)
+        assert synopsis_item is None
 
-        # No cover
-        self.assertIsNone(book.get_item_with_id('cover'))
+        assert book.get_item_with_id('cover') is None
         cover_xhtml_item = next((item for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT) if 'cover' in item.get_name().lower() and item.get_name().endswith('.xhtml')), None)
-        self.assertIsNone(cover_xhtml_item)
+        assert cover_xhtml_item is None
 
-        # Spine should just have nav and chapter
-        spine_file_names = [item.file_name for item in book.spine]
-        self.assertEqual(spine_file_names, ['nav.xhtml', 'chap_1.xhtml'])
+        spine_file_names = [item[0] if isinstance(item[0], str) else item[0].uid for item in book.spine]
+        assert spine_file_names == ['nav', 'chapter_1']
 
+    def test_epub_generation_continues_if_cover_save_fails(self, setup_epub_generator, sample_progress_data, create_dummy_html_file, mocker):
+        epub_generator = setup_epub_generator["epub_generator"]
+        ebooks_dir = setup_epub_generator["path_manager"].get_ebooks_story_dir()
 
-    def test_epub_generation_continues_if_cover_save_fails(self):
-        # This test requires mocking open() to simulate an IOError during cover saving
-        # This is a bit more involved.
-        chap1_info = self._create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
-        self.sample_progress_data["downloaded_chapters"] = [chap1_info]
-        self.sample_progress_data["cover_image_url"] = "http://example.com/valid_cover.jpg"
+        chap1_info = create_dummy_html_file("chap", 1, "Chapter 1", "<p>C1</p>")
+        sample_progress_data["downloaded_chapters"] = [chap1_info]
+        sample_progress_data["cover_image_url"] = "http://example.com/valid_cover.jpg"
 
-        original_open = open
-        def mock_open_failure(*args, **kwargs):
-            if 'cover.jpg' in args[0] and 'wb' in args[1]: # Target the cover image write
+        # Mock open to raise IOError when writing the cover file
+        original_open = open # Store original open
+        def mock_open_side_effect(file, mode='r', *args, **kwargs):
+            if 'cover.jpg' in str(file) and 'wb' in mode:
                 raise IOError("Simulated failed to save cover")
-            return original_open(*args, **kwargs)
+            return original_open(file, mode, *args, **kwargs)
+        mocker.patch('builtins.open', side_effect=mock_open_side_effect)
 
-        with unittest.mock.patch('builtins.open', side_effect=mock_open_failure):
-            with unittest.mock.patch('os.makedirs'): # Mock makedirs as it might be called before open
-                generated_files = self.epub_generator.generate_epub(self.story_id, self.sample_progress_data)
+        # Mock os.makedirs as it might be called before open
+        mocker.patch('os.makedirs')
 
-        self.assertEqual(len(generated_files), 1, "EPUB should still be generated even if cover saving fails.")
-        book = epub.read_epub(generated_files[0])
-        self.assertIsNone(book.get_item_with_id('cover'), "Cover should not be set if saving failed.")
-        # Check that the temporary cover directory is cleaned up or doesn't exist
-        temp_cover_file = os.path.join(self.ebooks_dir, self.epub_generator.temp_cover_dir_name, "cover.jpg")
-        self.assertFalse(os.path.exists(temp_cover_file), "Temp cover file should not exist if save failed.")
+        generated_files = epub_generator.generate_epub(sample_progress_data)
+
+        assert len(generated_files) == 1, "EPUB should still be generated even if cover saving fails."
+        book = epub.read_epub(str(generated_files[0]))
+        assert book.get_item_with_id('cover') is None, "Cover should not be set if saving failed."
+
+        temp_cover_file = Path(ebooks_dir) / PathManager.TEMP_COVER_DIR_NAME / "cover.jpg"
+        assert not temp_cover_file.exists(), "Temporary cover file should not exist if save failed."

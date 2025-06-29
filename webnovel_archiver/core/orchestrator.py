@@ -84,7 +84,7 @@ def archive_story( # Removed DEFAULT_WORKSPACE_ROOT default for workspace_root
     _call_progress_callback({"status": "info", "message": "Fetching story metadata..."})
     logger.info(f"Fetching story metadata for URL: {story_url}")
     try:
-        metadata = fetcher.get_story_metadata(story_url)
+        metadata = fetcher.get_story_metadata()
         logger.info(f"Successfully fetched metadata. Title: {metadata.original_title}")
         _call_progress_callback({"status": "info", "message": f"Successfully fetched metadata: {metadata.original_title}"})
     except requests.exceptions.RequestException as e:
@@ -100,7 +100,7 @@ def archive_story( # Removed DEFAULT_WORKSPACE_ROOT default for workspace_root
     _call_progress_callback({"status": "info", "message": "Fetching chapter list..."})
     logger.info(f"Fetching chapter list for: {metadata.original_title}")
     try:
-        chapters_info_list = fetcher.get_chapter_urls(story_url)
+        chapters_info_list = fetcher.get_chapter_urls()
         logger.info(f"Found {len(chapters_info_list)} chapters.")
         _call_progress_callback({"status": "info", "message": f"Found {len(chapters_info_list)} chapters."})
         if not chapters_info_list:
@@ -120,11 +120,12 @@ def archive_story( # Removed DEFAULT_WORKSPACE_ROOT default for workspace_root
     # Generate story_id using the new fetcher-first approach
     s_id = None
     try:
-        source_specific_id = fetcher.get_source_specific_id(story_url)
+        source_specific_id = fetcher.get_permanent_id()
         # Determine source prefix. For now, hardcode for RoyalRoadFetcher,
         # ideally, this would be more dynamic (e.g., a property on the fetcher).
         source_prefix = ""
-        if isinstance(fetcher, FetcherFactory.get_fetcher_class("royalroad")): # Check type more robustly
+        # Use FetcherFactory.get_fetcher_class to check type more robustly
+        if isinstance(fetcher, FetcherFactory.get_fetcher_class("royalroad")):
             source_prefix = "royalroad"
 
         if source_prefix and source_specific_id:
@@ -184,7 +185,7 @@ def archive_story( # Removed DEFAULT_WORKSPACE_ROOT default for workspace_root
                 _call_progress_callback({"status": "info", "message": "New chapter detected. Re-fetching chapter list..."})
 
                 # Re-fetch the chapter list
-                chapters_info_list = fetcher.get_chapter_urls(story_url)
+                chapters_info_list = fetcher.get_chapter_urls()
                 logger.info(f"Found {len(chapters_info_list)} chapters after refresh.")
                 _call_progress_callback({"status": "info", "message": f"Found {len(chapters_info_list)} chapters after refresh."})
 

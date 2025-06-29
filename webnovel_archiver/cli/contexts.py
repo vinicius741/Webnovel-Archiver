@@ -181,7 +181,7 @@ class CloudBackupContext:
             self._prepare_story_ids_to_process()
 
         self.cloud_base_folder_id: Optional[str] = None
-        self.base_backup_folder_name: str = "Webnovel Archiver Backups"
+        self.base_backup_folder_name: str = "New Webnovel Archiver Backups"
         if self.sync_service: # Only attempt if sync service is available
             self._ensure_cloud_base_folder()
 

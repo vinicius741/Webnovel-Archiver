@@ -3,12 +3,12 @@ import os
 import logging
 import shutil # For cleaning up created directories/files
 
-from webnovel_archiver.utils.logger import get_logger, LOG_FILE_PATH, WORKSPACE_PATH, DEFAULT_LOGS_DIR_NAME, DEFAULT_LOG_FILE_NAME
+from webnovel_archiver.utils.logger import get_logger, WORKSPACE_PATH, DEFAULT_LOGS_DIR_NAME, main_log_file
 # from webnovel_archiver.core.config_manager import PROJECT_ROOT # WORKSPACE_PATH from logger.py is effectively PROJECT_ROOT/workspace
 
 # Expected log directory and file path based on logger's own constants
 EXPECTED_LOG_DIR = os.path.join(WORKSPACE_PATH, DEFAULT_LOGS_DIR_NAME)
-EXPECTED_LOG_FILE = os.path.join(EXPECTED_LOG_DIR, DEFAULT_LOG_FILE_NAME)
+EXPECTED_LOG_FILE = main_log_file
 
 class TestLogger(unittest.TestCase):
 
@@ -16,9 +16,11 @@ class TestLogger(unittest.TestCase):
         self.log_dir = EXPECTED_LOG_DIR
         self.log_file = EXPECTED_LOG_FILE
 
-        # The logger module creates the directory on import.
-        # For test isolation, we only clean the log file before each test.
-        # The directory is expected to exist from the initial module import.
+        # Ensure the log directory is created by calling setup_logger
+        # This mimics the behavior of the main application
+        from webnovel_archiver.utils.logger import setup_logger, main_log_file, LOG_LEVEL
+        setup_logger('WebnovelArchiver', main_log_file, LOG_LEVEL)
+
         # Close any open file handlers on the target log file before removing it.
         logger_to_test = logging.getLogger("WebnovelArchiver") # Assuming this is the logger with the file handler
         for handler in logger_to_test.handlers:
@@ -27,10 +29,6 @@ class TestLogger(unittest.TestCase):
 
         if os.path.exists(self.log_file):
             os.remove(self.log_file)
-
-        # We will not call os.makedirs(self.log_dir, exist_ok=True) here.
-        # test_log_directory_creation_by_logger_module will assert its existence from module load.
-        # test_log_file_creation_and_content will rely on RotatingFileHandler creating the file in the existing dir.
 
 
     def tearDown(self):
@@ -56,8 +54,8 @@ class TestLogger(unittest.TestCase):
 
         # Debug prints
         print(f"DEBUG: Workspace path (logger.py): {WORKSPACE_PATH}")
-        print(f"DEBUG: Log dir path (logger.py): {os.path.dirname(LOG_FILE_PATH)}")
-        print(f"DEBUG: Log file path (logger.py): {LOG_FILE_PATH}")
+        print(f"DEBUG: Log dir path (logger.py): {os.path.dirname(main_log_file)}")
+        
         print(f"DEBUG: Expected log_dir (test): {self.log_dir}")
         print(f"DEBUG: Expected log_file (test): {self.log_file}")
         print(f"DEBUG: Exists {self.log_dir}? {os.path.exists(self.log_dir)}")

@@ -6,7 +6,6 @@ import time # For timestamp-based ID testing
 import datetime # Added for timestamp manipulation
 from unittest.mock import patch # Added for mocking
 from webnovel_archiver.core.storage.progress_manager import (
-    generate_story_id,
     load_progress,
     save_progress,
     get_progress_filepath,
@@ -32,53 +31,7 @@ class TestProgressManager(unittest.TestCase):
         if os.path.exists(TEST_WORKSPACE_ROOT):
             shutil.rmtree(TEST_WORKSPACE_ROOT)
 
-    def test_generate_story_id(self):
-        # Test with RoyalRoad URLs - these should now be treated as generic URLs
-        # The specific "royalroad-<id>" format is no longer handled by this function.
-        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/12345/some-story-title"), "some-story-title")
-        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/67890"), "67890")
-        self.assertEqual(generate_story_id(url="http://royalroad.com/fiction/123/another"), "another")
-
-        # Test with generic URLs (should use domain and path component, then slugified)
-        self.assertEqual(generate_story_id(url="https://www.somesite.com/stories/my-awesome-story-123/"), "my-awesome-story-123")
-        self.assertEqual(generate_story_id(url="https://example.org/a/b/c/"), "c")
-        self.assertEqual(generate_story_id(url="https://example.org/a/b/c"), "c")
-
-        # Test with titles (should be slugified)
-        self.assertEqual(generate_story_id(title="My Super Awesome Story Title! With Punctuation?"), "my-super-awesome-story-title-with-punctuation")
-        self.assertEqual(generate_story_id(title="Another Story: The Sequel - Part 2"), "another-story-the-sequel---part-2")
-
-        # Test with URL and Title (URL should take precedence, generic parsing applies)
-        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/54321/priority-url", title="This Title Should Be Ignored"), "priority-url")
-        self.assertEqual(generate_story_id(url="https://othersite.com/fic/generic", title="Generic Story Title"), "generic")
-
-        # Assertion for title "Another Story: The Sequel - Part 2" (remains the same)
-        self.assertEqual(generate_story_id(title="Another Story: The Sequel - Part 2"), "another-story-the-sequel---part-2")
-
-
-        # Test with no URL and no title (should generate a timestamp-based ID)
-        generated_id_unknown = generate_story_id() # Example: story_20231027123456789012
-        self.assertTrue(generated_id_unknown.startswith("story_"))
-        try:
-            # Check if the part after "story_" is a valid datetime string format used by the function
-            datetime_part = generated_id_unknown.split('_')[1]
-            time.strptime(datetime_part, '%Y%m%d%H%M%S%f') # This will raise ValueError if format doesn't match
-        except (IndexError, ValueError) as e:
-            self.fail(f"Timestamp-based ID '{generated_id_unknown}' not in expected format story_YYYYMMDDHHMMSSffffff: {e}")
-
-
-        # Test with URLs that might produce edge cases
-        self.assertEqual(generate_story_id(url="https://www.royalroad.com/fiction/12345/some-story-title?query=param#fragment"), "some-story-title")
-        self.assertEqual(generate_story_id(url="https://www.somesite.com/stories/edge_case/?query=true"), "edge_case")
-        # Corrected based on actual slugify logic: multiple slashes are handled by split, empty parts removed.
-        self.assertEqual(generate_story_id(url="https://www.somesite.com/stories//multipleslashes//"), "multipleslashes")
-        # Length truncation is handled by the function (default 50)
-        long_path = "a-very-long-path-segment-that-might-be-problematic-for-some-systems-but-should-be-handled-gracefully-by-slugify-hopefully"
-        self.assertEqual(generate_story_id(url=f"https://www.somesite.com/{long_path}"), long_path[:50])
-
-        # Test with only domain in URL
-        self.assertEqual(generate_story_id(url="https://justdomain.com"), "justdomaincom") # Slugify of domain, dot is removed
-        self.assertEqual(generate_story_id(url="https://justdomain.com/"), "justdomaincom") # Slugify of domain, dot is removed
+    
 
 
     def test_get_progress_filepath(self):

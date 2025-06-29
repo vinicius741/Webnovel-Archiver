@@ -1,5 +1,6 @@
 import os
 from typing import Optional, Dict, Any, Union
+import json
 
 from webnovel_archiver.core.config_manager import ConfigManager, DEFAULT_WORKSPACE_PATH
 from webnovel_archiver.utils.logger import get_logger
@@ -174,6 +175,7 @@ class CloudBackupContext:
 
         self.sync_service: Optional[BaseSyncService] = self._initialize_sync_service()
 
+        self.story_index: Dict[str, str] = self._load_story_index()
         self.story_ids_to_process: list[str] = []
         if self.sync_service: # Only try to list stories if sync service is up, to avoid cascading errors
             self._prepare_story_ids_to_process()
@@ -182,6 +184,18 @@ class CloudBackupContext:
         self.base_backup_folder_name: str = "Webnovel Archiver Backups"
         if self.sync_service: # Only attempt if sync service is available
             self._ensure_cloud_base_folder()
+
+    def _load_story_index(self) -> Dict[str, str]:
+        index_path = os.path.join(self.workspace_root, PathManager.INDEX_FILENAME)
+        if not os.path.exists(index_path):
+            self.error_messages.append(f"Error: Story index file not found at {index_path}. Cannot proceed.")
+            return {}
+        try:
+            with open(index_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            self.error_messages.append(f"Error: Failed to load or parse story index file: {e}")
+            return {}
 
 
     def _resolve_workspace_root(self) -> str:
@@ -209,6 +223,7 @@ class CloudBackupContext:
 
                 service = GDriveSync(credentials_path=self.gdrive_credentials_path, token_path=self.gdrive_token_path)
                 logger.info("Google Drive sync service initialized.")
+                print(f"DEBUG: _initialize_sync_service returning: {service}")
                 return service
             except FileNotFoundError as e: # Should be caught by the check above, but good to be explicit
                 self.error_messages.append(f"Error: GDrive credentials file '{self.gdrive_credentials_path}' not found. Please provide it or ensure it's in the default location.")
@@ -227,28 +242,21 @@ class CloudBackupContext:
             return None
 
     def _prepare_story_ids_to_process(self) -> None:
-        if not self.is_workspace_valid(): # Don't proceed if workspace dirs are bad
+        if not self.story_index:
+            self.warning_messages.append("No stories found in the index to back up.")
             return
 
         if self.story_id_option:
-            # Verify this story_id exists
-            if not os.path.isdir(os.path.join(self.archival_status_dir, self.story_id_option)):
-                self.error_messages.append(f"Error: No archival status found for story ID '{self.story_id_option}' in {self.archival_status_dir}.")
+            if self.story_id_option not in self.story_index:
+                self.error_messages.append(f"Error: Story ID '{self.story_id_option}' not found in the story index.")
                 return
             self.story_ids_to_process.append(self.story_id_option)
         else:
-            try:
-                found_ids = [
-                    d for d in os.listdir(self.archival_status_dir)
-                    if os.path.isdir(os.path.join(self.archival_status_dir, d))
-                ]
-                self.story_ids_to_process = sorted(found_ids) # Sort the IDs
-                if not self.story_ids_to_process:
-                    self.warning_messages.append("No stories found in the archival status directory to back up.")
-                else:
-                    logger.info(f"Found {len(self.story_ids_to_process)} stories to potentially back up.")
-            except OSError as e:
-                self.error_messages.append(f"Error listing stories in {self.archival_status_dir}: {e}")
+            self.story_ids_to_process = sorted(list(self.story_index.keys()))
+            if not self.story_ids_to_process:
+                self.warning_messages.append("No stories found in the index to back up.")
+            else:
+                logger.info(f"Found {len(self.story_ids_to_process)} stories in the index to potentially back up.")
 
     def _ensure_cloud_base_folder(self) -> None:
         if not self.sync_service:

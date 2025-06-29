@@ -30,17 +30,22 @@ This report summarizes the progress made on the "Robust Story Identification Arc
 
 ## Remaining Tasks
 
-### Phase 2: Activating Folder Synchronization
-
-*   **Task 2.1: Implement Folder Renaming and Index Update:**
-    *   **Description:** This task involves enhancing the main archiving workflow (`archive_story` in `orchestrator.py`). After identifying a story via its permanent ID, the system needs to fetch the latest metadata, generate a new "slug" from the current title, and compare it to the folder name currently stored in `index.json`. If these differ, the system must safely rename the story's folder on the filesystem and atomically update the corresponding entry in `index.json` with the new folder name. This ensures local folder names stay synchronized with the story's current title while maintaining the stable permanent ID.
-*   **Task 2.2: Refactor New Story Creation:**
-    *   **Description:** While Phase 1.1 laid the groundwork, this task focuses explicitly on ensuring that when a *new* story is archived for the first time, its local folder is created using the permanent ID-based naming convention, and this creation is seamlessly integrated with adding the entry to `index.json` as a single, cohesive, and robust operation.
-
 ### Phase 3: Finalization and Code Cleanup
 
 *   **Task 3.1: Remove `generate_story_id`:**
-    *   **Description:** The legacy `generate_story_id` function (which generated IDs based on titles) and all its call sites must be completely removed from the codebase. This task should only be performed after Phase 2 is fully implemented and thoroughly tested, as `generate_story_id` currently serves as a fallback. Its removal signifies the full transition to the robust, permanent ID-based system.
+    *   **Status:** Completed.
+    *   **Details:** The `generate_story_id` function and its call sites have been successfully removed from the codebase, signifying the full transition to the robust, permanent ID-based system.
 
 ---
-**Next Step:** I am ready to proceed with Phase 2. Please confirm when you are ready for me to start.
+**Next Step:** All planned phases are complete. Please let me know if there's anything else you'd like me to do.
+
+## Current Progress
+
+### Phase 2: Activating Folder Synchronization (Completed)
+
+*   **Task 2.1: Implement Folder Renaming and Index Update:**
+    *   **Status:** Completed.
+    *   **Details:** The `archive_story` function in `webnovel_archiver/core/orchestrator.py` now fetches the latest metadata, generates a slug from the current title, and compares it to the folder name in `index.json`. If they differ, the story's folder is safely renamed on the filesystem, and `index.json` is atomically updated.
+*   **Task 2.2: Refactor New Story Creation:**
+    *   **Status:** Completed.
+    *   **Details:** New story creation in `archive_story` now uses the permanent ID-based naming convention for local folders and seamlessly integrates with updating `index.json`.

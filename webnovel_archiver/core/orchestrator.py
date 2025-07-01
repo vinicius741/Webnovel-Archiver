@@ -186,7 +186,7 @@ def archive_story(
         logger.info(f"Successfully fetched metadata. Title: {metadata.original_title}")
 
         _call_progress_callback({"status": "info", "message": "Fetching chapter information..."})
-        chapters_info_list = fetcher.get_chapters_info()
+        chapters_info_list = fetcher.get_chapter_urls()
         logger.info(f"Successfully fetched {len(chapters_info_list)} chapters.")
 
     except (UnsupportedSourceError, ValueError, NotImplementedError) as e:

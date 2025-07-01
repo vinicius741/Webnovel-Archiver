@@ -313,7 +313,7 @@ class RoyalRoadFetcher(BaseFetcher):
         Extracts the numerical fiction ID from a RoyalRoad URL.
         Example: "https://www.royalroad.com/fiction/12345/some-story-title" -> "12345"
         """
-        match = re.search(r"royalroad.com/fiction/(\d+)", self.story_url)
+        match = re.search(r"royalroad.com/fiction/(\d+)(?:/.*)?", self.story_url)
         if match:
             return f"royalroad-{match.group(1)}"
         else:

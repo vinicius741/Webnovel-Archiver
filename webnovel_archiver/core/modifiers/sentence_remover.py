@@ -33,16 +33,28 @@ class SentenceRemover:
         """Loads and parses the JSON configuration file."""
         try:
             with open(self.config_filepath, 'r', encoding='utf-8') as f:
-                config: Dict[str, Any] = json.load(f)
+                config: Any = json.load(f)
 
-            self.remove_sentences = config.get("remove_sentences", [])
-            if not isinstance(self.remove_sentences, list) or not all(isinstance(s, str) for s in self.remove_sentences):
-                logger.warning("Config 'remove_sentences' should be a list of strings. Using empty list.")
+            raw_patterns = []
+            if isinstance(config, list):
+                # Handle legacy format where the JSON file is just a list of strings
+                self.remove_sentences = [item for item in config if isinstance(item, str)]
+                if len(self.remove_sentences) != len(config):
+                    logger.warning("Some items in the sentence removal config list were not strings and have been ignored.")
+            elif isinstance(config, dict):
+                # Handle the standard dictionary-based config
+                self.remove_sentences = config.get("remove_sentences", [])
+                if not isinstance(self.remove_sentences, list) or not all(isinstance(s, str) for s in self.remove_sentences):
+                    logger.warning("Config 'remove_sentences' should be a list of strings. Using empty list.")
+                    self.remove_sentences = []
+
+                raw_patterns = config.get("remove_patterns", [])
+                if not isinstance(raw_patterns, list) or not all(isinstance(p, str) for p in raw_patterns):
+                    logger.warning("Config 'remove_patterns' should be a list of strings. Using empty list for patterns.")
+                    raw_patterns = []
+            else:
+                logger.error(f"Unsupported config format in {self.config_filepath}. Expected a dict or a list.")
                 self.remove_sentences = []
-
-            raw_patterns = config.get("remove_patterns", [])
-            if not isinstance(raw_patterns, list) or not all(isinstance(p, str) for p in raw_patterns):
-                logger.warning("Config 'remove_patterns' should be a list of strings. Using empty list for patterns.")
                 raw_patterns = []
 
             for pattern_str in raw_patterns:

@@ -268,6 +268,7 @@ def archive_story(
     progress_data["cover_image_url"] = metadata.cover_image_url
     progress_data["synopsis"] = metadata.synopsis
     progress_data["estimated_total_chapters_source"] = metadata.estimated_total_chapters_source
+    progress_data["effective_title"] = ebook_title_override if ebook_title_override else metadata.original_title
 
     html_cleaner = HTMLCleaner()
     current_time_iso = datetime.datetime.utcnow().isoformat() + "Z"
@@ -277,5 +278,55 @@ def archive_story(
         progress_data, current_time_iso, chapters_info_list, force_reprocessing,
         _call_progress_callback
     )
+    
+    progress_data["last_archived_timestamp"] = current_time_iso
+    save_progress(story_folder_name, progress_data, workspace_root)
+    logger.info(f"Progress saved for {story_folder_name}.")
+
+    # EPUB Generation
+    generated_epub_files = []
+    if successfully_processed_new_or_updated_count > 0 or force_reprocessing:
+        _call_progress_callback({"status": "info", "message": "Generating EPUB..."})
+        epub_generator = EPUBGenerator(pm)
+        
+        # Filter chapters based on epub_contents setting
+        chapters_for_epub = []
+        if epub_contents == 'active-only':
+            chapters_for_epub = [ch for ch in progress_data["downloaded_chapters"] if ch.get("status") == "active"]
+            logger.info(f"EPUB generation set to 'active-only'. Including {len(chapters_for_epub)} active chapters.")
+        else: # 'all' or any other value
+            chapters_for_epub = progress_data["downloaded_chapters"]
+            logger.info(f"EPUB generation set to 'all'. Including {len(chapters_for_epub)} chapters (active and archived). ")
+
+        # Create a temporary progress_data for EPUB generation that only contains the filtered chapters
+        epub_progress_data = copy.deepcopy(progress_data)
+        epub_progress_data["downloaded_chapters"] = chapters_for_epub
+
+        generated_epub_files = epub_generator.generate_epub(epub_progress_data, chapters_per_volume=chapters_per_volume)
+        if generated_epub_files:
+            _call_progress_callback({"status": "info", "message": f"EPUB generated: {len(generated_epub_files)} file(s)."})
+        else:
+            _call_progress_callback({"status": "warning", "message": "EPUB generation completed, but no files were produced."})
+    else:
+        logger.info("No new chapters processed and no force reprocessing. Skipping EPUB generation.")
+        _call_progress_callback({"status": "info", "message": "No new content to process. Skipping EPUB generation."})
+
+    # Clean up temporary files
+    if not keep_temp_files:
+        try:
+            temp_cover_dir = pm.get_temp_cover_story_dir()
+            if os.path.exists(temp_cover_dir):
+                shutil.rmtree(temp_cover_dir)
+                logger.info(f"Cleaned up temporary cover directory: {temp_cover_dir}")
+        except OSError as e:
+            logger.warning(f"Failed to clean up temporary cover directory {temp_cover_dir}: {e}")
+
+    return {
+        "title": progress_data.get("effective_title", progress_data.get("original_title", "Unknown Title")),
+        "story_id": permanent_id,
+        "chapters_processed": successfully_processed_new_or_updated_count,
+        "epub_files": generated_epub_files,
+        "workspace_root": workspace_root
+    }
     
 

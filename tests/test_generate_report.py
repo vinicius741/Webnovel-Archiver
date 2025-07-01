@@ -41,7 +41,7 @@ class TestGenerateReport(unittest.TestCase):
             generate_report_main()
 
         # Check if the report was generated
-        report_path = os.path.join(self.test_dir, "reports", "archive_report.html")
+        report_path = os.path.join(self.test_dir, "reports", "archive_report_new.html")
         self.assertTrue(os.path.exists(report_path))
 
         # Check the content of the report

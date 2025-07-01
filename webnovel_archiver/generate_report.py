@@ -618,7 +618,7 @@ def main():
         index_path = path_manager.index_path
         reports_dir = os.path.join(workspace_root, "reports")
         os.makedirs(reports_dir, exist_ok=True)
-        report_html_path = os.path.join(reports_dir, "archive_report.html")
+        report_html_path = os.path.join(reports_dir, "archive_report_new.html")
 
         logger.info(f"Workspace root: {workspace_root}")
         logger.info(f"Index path: {index_path}")

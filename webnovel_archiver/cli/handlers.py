@@ -289,12 +289,12 @@ def cloud_backup_handler(
     if processed_stories_count > 0:
         click.echo(f"Cloud backup process completed for {processed_stories_count} story/stories.")
 
-    report_path = os.path.join(workspace_root, "reports", "archive_report.html")
+    report_path = os.path.join(workspace_root, "reports", "archive_report_new.html")
     if os.path.exists(report_path):
         click.echo("HTML report found. Attempting to upload...")
         if cloud_base_folder_id and sync_service:
             try:
-                sync_service.upload_file(report_path, cloud_base_folder_id, "archive_report.html")
+                sync_service.upload_file(report_path, cloud_base_folder_id, "archive_report_new.html")
                 click.echo(click.style("✓ Successfully uploaded HTML report", fg="green"))
             except Exception as e:
                 click.echo(click.style(f"Error uploading HTML report: {e}", fg="red"), err=True)

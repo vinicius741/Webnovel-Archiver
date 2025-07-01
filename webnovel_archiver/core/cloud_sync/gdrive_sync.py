@@ -138,16 +138,20 @@ class GDriveSync(BaseSyncService):
             if existing_file_id:
                 # File exists, update it
                 logger.info(f"Updating existing file '{file_name}' (ID: {existing_file_id}) in Drive folder ID '{remote_folder_id}'.")
-                # If updating an existing file, 'parents' should not be in the body.
-                # The Drive API v3 update semantics state that a file's parents are not directly mutable with files.update.
-                # Changes to parents must be done with addParents and removeParents parameters.
-                # Since we are not changing the parent folder here, we remove 'parents' from metadata.
-                if 'parents' in file_metadata:
-                    del file_metadata['parents']
+                # File exists, update it. To move it, we need to get its current parent
+                # and then use addParents and removeParents query parameters.
+                logger.info(f"Updating existing file '{file_name}' (ID: {existing_file_id}) in Drive folder ID '{remote_folder_id}'.")
+
+                # Get current parents to remove them later
+                file_get_response = self.service.files().get(fileId=existing_file_id, fields='parents').execute()
+                previous_parents = ",".join(file_get_response.get('parents', []))
+
                 updated_file = self.service.files().update(
                     fileId=existing_file_id,
-                    body=file_metadata, # parents removed if present
+                    body=file_metadata,
                     media_body=media,
+                    addParents=remote_folder_id,
+                    removeParents=previous_parents,
                     fields='id, name, webViewLink, modifiedTime'
                 ).execute()
                 logger.info(f"File '{updated_file.get('name')}' updated successfully. ID: {updated_file.get('id')}")

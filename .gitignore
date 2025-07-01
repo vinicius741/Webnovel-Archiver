@@ -194,6 +194,9 @@ cython_debug/
 .cursorindexingignore
 
 # Workspace directory for generated content
+workspace/
 credentials.json
 token.json
-workspace/
+
+workspace/raw_content/
+workspace/index.json

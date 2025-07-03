@@ -125,22 +125,15 @@ class GDriveSync(BaseSyncService):
         # Check if file already exists to update it
         existing_file_id = self._get_file_id(file_name, remote_folder_id)
 
-        file_metadata = {
-            'name': file_name,
-            # 'parents': [remote_folder_id] # Set parent folder during create/update
-        }
-        if remote_folder_id: # Add parent only if it's not root (though for this app, it's always specified)
-             file_metadata['parents'] = [remote_folder_id]
-
         media = MediaFileUpload(local_file_path, resumable=True)
 
         try:
             if existing_file_id:
                 # File exists, update it
                 logger.info(f"Updating existing file '{file_name}' (ID: {existing_file_id}) in Drive folder ID '{remote_folder_id}'.")
-                # File exists, update it. To move it, we need to get its current parent
-                # and then use addParents and removeParents query parameters.
-                logger.info(f"Updating existing file '{file_name}' (ID: {existing_file_id}) in Drive folder ID '{remote_folder_id}'.")
+
+                # When updating, the body should not contain 'parents' if using addParents/removeParents.
+                update_metadata = {'name': file_name}
 
                 # Get current parents to remove them later
                 file_get_response = self.service.files().get(fileId=existing_file_id, fields='parents').execute()
@@ -148,7 +141,7 @@ class GDriveSync(BaseSyncService):
 
                 updated_file = self.service.files().update(
                     fileId=existing_file_id,
-                    body=file_metadata,
+                    body=update_metadata,
                     media_body=media,
                     addParents=remote_folder_id,
                     removeParents=previous_parents,
@@ -159,8 +152,15 @@ class GDriveSync(BaseSyncService):
             else:
                 # File does not exist, create it
                 logger.info(f"Uploading new file '{file_name}' to Drive folder ID '{remote_folder_id}'.")
+                
+                create_metadata = {
+                    'name': file_name,
+                }
+                if remote_folder_id:
+                    create_metadata['parents'] = [remote_folder_id]
+
                 new_file = self.service.files().create(
-                    body=file_metadata,
+                    body=create_metadata,
                     media_body=media,
                     fields='id, name, webViewLink, modifiedTime'
                 ).execute()

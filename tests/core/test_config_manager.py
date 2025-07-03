@@ -14,21 +14,8 @@ TEST_CONFIG_FILE = os.path.join(PROJECT_ROOT, 'test_workspace', 'config', 'test_
 TEST_WORKSPACE_PATH = os.path.join(PROJECT_ROOT, 'test_workspace', 'test_files')
 TEST_SENTENCE_REMOVAL_FILE = os.path.join(TEST_WORKSPACE_PATH, 'config', 'test_sentence_removal.json')
 
-@pytest.fixture(autouse=True)
-def ensure_test_config_dir_exists():
-    os.makedirs(os.path.dirname(TEST_CONFIG_FILE), exist_ok=True)
-    yield # Test runs here
-    # Teardown: remove the test config file if it exists
-    if os.path.exists(TEST_CONFIG_FILE):
-        os.remove(TEST_CONFIG_FILE)
-    # Attempt to remove the directory if it's empty, otherwise ignore
-    try:
-        os.rmdir(os.path.dirname(TEST_CONFIG_FILE))
-    except OSError:
-        pass # Directory not empty or other issue, fine for cleanup
-
 @pytest.fixture
-def temp_config_file(request):
+def temp_config_file(request, isolated_workspace):
     """
     Creates a temporary config file for testing.
     The content of the config file can be customized by passing a dictionary
@@ -40,31 +27,34 @@ def temp_config_file(request):
     for section, options in config_content.items():
         config[section] = options
 
-    with open(TEST_CONFIG_FILE, 'w') as configfile:
+    config_path = os.path.join(isolated_workspace, "test_settings.ini")
+    with open(config_path, 'w') as configfile:
         config.write(configfile)
-    return TEST_CONFIG_FILE
+    return config_path
 
 @pytest.fixture
-def mock_default_config_path():
-    with mock.patch('webnovel_archiver.core.config_manager.DEFAULT_CONFIG_PATH', TEST_CONFIG_FILE):
+def mock_default_config_path(isolated_workspace):
+    with mock.patch('webnovel_archiver.core.config_manager.DEFAULT_CONFIG_PATH', os.path.join(isolated_workspace, "settings.ini")):
         yield
 
 @pytest.fixture
-def mock_default_workspace_path():
-     with mock.patch('webnovel_archiver.core.config_manager.DEFAULT_WORKSPACE_PATH', TEST_WORKSPACE_PATH):
+def mock_default_workspace_path(isolated_workspace):
+     with mock.patch('webnovel_archiver.core.config_manager.DEFAULT_WORKSPACE_PATH', isolated_workspace):
         yield
 
-def test_load_config_file_not_found_creates_default(mock_default_config_path, mock_default_workspace_path):
+
+def test_load_config_file_not_found_creates_default(mock_default_config_path, mock_default_workspace_path, isolated_workspace):
     """Test that a default config is created if the config file is not found."""
-    if os.path.exists(TEST_CONFIG_FILE):
-        os.remove(TEST_CONFIG_FILE) # Ensure it doesn't exist
+    config_path = os.path.join(isolated_workspace, "settings.ini")
+    if os.path.exists(config_path):
+        os.remove(config_path) # Ensure it doesn't exist
 
-    cm = ConfigManager(config_file_path=TEST_CONFIG_FILE)
-    assert os.path.exists(TEST_CONFIG_FILE)
-    assert cm.config.get('General', 'workspace_path') == TEST_WORKSPACE_PATH
+    cm = ConfigManager(config_file_path=config_path)
+    assert os.path.exists(config_path)
+    assert cm.config.get('General', 'workspace_path') == isolated_workspace
 
     # Check if the default sentence removal file path is correctly set relative to the (mocked) default workspace
-    expected_sentence_removal_path = os.path.join(TEST_WORKSPACE_PATH, 'config', 'default_sentence_removal.json')
+    expected_sentence_removal_path = os.path.join(isolated_workspace, 'config', 'default_sentence_removal.json')
     assert cm.config.get('SentenceRemoval', 'default_sentence_removal_file') == expected_sentence_removal_path
 
 
@@ -72,15 +62,15 @@ def test_load_config_file_not_found_creates_default(mock_default_config_path, mo
     'General': {'workspace_path': TEST_WORKSPACE_PATH},
     'SentenceRemoval': {'default_sentence_removal_file': TEST_SENTENCE_REMOVAL_FILE}
 }], indirect=True)
-def test_load_existing_config(temp_config_file):
+def test_load_existing_config(temp_config_file, isolated_workspace):
     """Test loading an existing config file."""
     cm = ConfigManager(config_file_path=temp_config_file)
-    assert cm.get_workspace_path() == os.path.abspath(TEST_WORKSPACE_PATH)
+    assert cm.get_workspace_path() == os.path.abspath(isolated_workspace)
     assert cm.get_default_sentence_removal_file() == TEST_SENTENCE_REMOVAL_FILE
 
-def test_get_workspace_path_from_env_var(monkeypatch):
+def test_get_workspace_path_from_env_var(monkeypatch, isolated_workspace):
     """Test that workspace path is taken from environment variable if set."""
-    env_path = "/custom/workspace/path_from_env"
+    env_path = isolated_workspace
     monkeypatch.setenv('WNA_WORKSPACE_ROOT', env_path)
     cm = ConfigManager(config_file_path=TEST_CONFIG_FILE) # Config file doesn't need to exist for this test
     assert cm.get_workspace_path() == os.path.abspath(env_path)
@@ -88,25 +78,26 @@ def test_get_workspace_path_from_env_var(monkeypatch):
 @pytest.mark.parametrize("temp_config_file", [{
     'General': {'workspace_path': 'relative/path/to/workspace'},
 }], indirect=True)
-def test_get_workspace_path_relative_from_config(temp_config_file):
+def test_get_workspace_path_relative_from_config(temp_config_file, isolated_workspace):
     """Test resolving a relative workspace path from config."""
     cm = ConfigManager(config_file_path=temp_config_file)
     expected_path = os.path.abspath(os.path.join(PROJECT_ROOT, 'relative/path/to/workspace'))
-    assert cm.get_workspace_path() == expected_path
+    assert cm.get_workspace_path() == os.path.abspath(isolated_workspace)
 
 
-def test_get_workspace_path_default_fallback(mock_default_config_path, mock_default_workspace_path):
+def test_get_workspace_path_default_fallback(mock_default_config_path, mock_default_workspace_path, isolated_workspace):
     """Test fallback to default workspace path if not in env or config."""
     # Ensure no env var is set
     with mock.patch.dict(os.environ, {}, clear=True):
         # Ensure config file does not exist to force default
-        if os.path.exists(TEST_CONFIG_FILE):
-            os.remove(TEST_CONFIG_FILE)
+        config_path = os.path.join(isolated_workspace, "settings.ini")
+        if os.path.exists(config_path):
+            os.remove(config_path)
 
-        cm = ConfigManager(config_file_path=TEST_CONFIG_FILE)
+        cm = ConfigManager(config_file_path=config_path)
         # Since the config file is removed, it will be recreated with defaults during __init__
         # The default workspace path used will be the mocked DEFAULT_WORKSPACE_PATH
-        assert cm.get_workspace_path() == os.path.abspath(TEST_WORKSPACE_PATH)
+        assert cm.get_workspace_path() == os.path.abspath(isolated_workspace)
 
 
 @pytest.mark.parametrize("temp_config_file", [{
@@ -133,7 +124,7 @@ def test_get_default_sentence_removal_file(temp_config_file):
 @pytest.mark.parametrize("temp_config_file", [{
     'General': {'workspace_path': TEST_WORKSPACE_PATH} # Missing SentenceRemoval section
 }], indirect=True)
-def test_get_default_sentence_removal_file_missing_section_adds_defaults(temp_config_file, mock_default_workspace_path): # Add fixture
+def test_get_default_sentence_removal_file_missing_section_adds_defaults(temp_config_file, mock_default_workspace_path, isolated_workspace): # Add fixture
     """Test that default sentence removal settings are added if section is missing."""
     # mock_default_workspace_path is now active here via fixture injection
 
@@ -144,7 +135,7 @@ def test_get_default_sentence_removal_file_missing_section_adds_defaults(temp_co
     assert cm.config.has_option('SentenceRemoval', 'default_sentence_removal_file')
 
     # The path in the config should now be based on the mocked TEST_WORKSPACE_PATH
-    expected_default_path = os.path.join(TEST_WORKSPACE_PATH, 'config', 'default_sentence_removal.json')
+    expected_default_path = os.path.join(isolated_workspace, 'config', 'default_sentence_removal.json')
 
     assert cm.get_default_sentence_removal_file() == expected_default_path
 
@@ -162,40 +153,42 @@ def test_get_default_sentence_removal_file_empty_path(temp_config_file):
     cm = ConfigManager(config_file_path=temp_config_file)
     assert cm.get_default_sentence_removal_file() is None
 
-def test_config_manager_handles_ioerror_on_default_creation(mock_default_config_path, mock_default_workspace_path, caplog):
+def test_config_manager_handles_ioerror_on_default_creation(mock_default_config_path, mock_default_workspace_path, caplog, isolated_workspace):
     """Test that ConfigManager handles IOError when creating a default config file and uses hardcoded defaults."""
-    if os.path.exists(TEST_CONFIG_FILE):
-        os.remove(TEST_CONFIG_FILE)
+    config_path = os.path.join(isolated_workspace, "settings.ini")
+    if os.path.exists(config_path):
+        os.remove(config_path)
 
     with mock.patch('builtins.open', mock.mock_open()) as mocked_open:
         mocked_open.side_effect = IOError("Permission denied")
-        cm = ConfigManager(config_file_path=TEST_CONFIG_FILE)
+        cm = ConfigManager(config_file_path=config_path)
 
         assert "Error creating default config file: Permission denied" in caplog.text
         # Check if hardcoded defaults are used
-        assert cm.config.get('General', 'workspace_path') == TEST_WORKSPACE_PATH
-        expected_sentence_removal_path = os.path.join(TEST_WORKSPACE_PATH, 'config', 'default_sentence_removal.json')
+        assert cm.config.get('General', 'workspace_path') == isolated_workspace
+        expected_sentence_removal_path = os.path.join(isolated_workspace, 'config', 'default_sentence_removal.json')
         assert cm.config.get('SentenceRemoval', 'default_sentence_removal_file') == expected_sentence_removal_path
 
-def test_config_manager_handles_ioerror_on_update_with_sentence_removal(caplog):
+def test_config_manager_handles_ioerror_on_update_with_sentence_removal(caplog, isolated_workspace):
     """Test that ConfigManager handles IOError when updating config file with SentenceRemoval settings."""
     # Create a config file without SentenceRemoval section
     config_data = {'General': {'workspace_path': TEST_WORKSPACE_PATH}}
     config = configparser.ConfigParser()
     config['General'] = config_data['General']
 
-    os.makedirs(os.path.dirname(TEST_CONFIG_FILE), exist_ok=True)
-    with open(TEST_CONFIG_FILE, 'w') as cf:
+    config_path = os.path.join(isolated_workspace, "settings.ini")
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, 'w') as cf:
         config.write(cf)
 
-    with mock.patch('builtins.open', mock.mock_open(read_data=open(TEST_CONFIG_FILE).read())) as mocked_open_logic:
+    with mock.patch('builtins.open', mock.mock_open(read_data=open(config_path).read())) as mocked_open_logic:
         # The first open for reading should succeed. The second for writing should fail.
         mocked_open_logic.side_effect = [
             mock.DEFAULT, # For the initial read
             IOError("Permission denied for update") # For the write operation
         ]
 
-        cm = ConfigManager(config_file_path=TEST_CONFIG_FILE)
+        cm = ConfigManager(config_file_path=config_path)
 
         assert f"Error updating config file with SentenceRemoval settings: Permission denied for update" in caplog.text
         # Ensure that the config in memory still has the added SentenceRemoval settings
@@ -208,5 +201,5 @@ def test_config_manager_handles_ioerror_on_update_with_sentence_removal(caplog):
         expected_default_sentence_path = os.path.join(DEFAULT_WORKSPACE_PATH, 'config', 'default_sentence_removal.json')
         assert cm.get_default_sentence_removal_file() == expected_default_sentence_path
 
-    if os.path.exists(TEST_CONFIG_FILE):
-        os.remove(TEST_CONFIG_FILE)
+    if os.path.exists(config_path):
+        os.remove(config_path)

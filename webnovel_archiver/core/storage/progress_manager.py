@@ -224,10 +224,19 @@ def add_epub_file_to_progress(progress_data: Dict[str, Any], file_name: str, fil
         file_path = os.path.join(ebook_dir, os.path.basename(file_path)) # Use basename to ensure it's just the file in the target dir
 
     epub_files_list = progress_data["last_epub_processing"].get("generated_epub_files", [])
+    if not os.path.isabs(file_path):
+        logger.warning(f"EPUB file path '{file_path}' for '{file_name}' was not absolute. Converting based on ebook_dir: {ebook_dir}")
+        # PathManager's get_epub_filepath would be ideal if we always construct from filename,
+        # but here file_path might already be a relative path we want to make absolute.
+        file_path = os.path.join(ebook_dir, os.path.basename(file_path)) # Use basename to ensure it's just the file in the target dir
+
+    epub_files_list = progress_data["last_epub_processing"].get("generated_epub_files", [])
     if not any(ep_file['path'] == file_path for ep_file in epub_files_list):
         epub_files_list.append({"name": file_name, "path": file_path})
         progress_data["last_epub_processing"]["generated_epub_files"] = epub_files_list
         logger.debug(f"EPUB file '{file_name}' added for story {story_id}")
+    else:
+        logger.debug(f"EPUB file '{file_name}' with path '{file_path}' already exists in progress data. Skipping add.")
 
 def get_epub_file_details(progress_data: Dict[str, Any], story_id: str, workspace_root: str) -> List[Dict[str, str]]: # Removed DEFAULT_WORKSPACE_ROOT default
     """

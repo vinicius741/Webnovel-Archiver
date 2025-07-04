@@ -7,6 +7,7 @@ import shutil # Added for saving cover image
 from typing import Optional, List, Dict, Any
 from webnovel_archiver.utils.logger import get_logger
 from webnovel_archiver.core.path_manager import PathManager # Added PathManager
+from webnovel_archiver.core.storage.progress_manager import add_epub_file_to_progress
 
 logger = get_logger(__name__)
 
@@ -252,7 +253,7 @@ class EPUBGenerator:
 
             try:
                 epub.write_epub(epub_filepath, book, {})
-                generated_epub_files.append(epub_filepath)
+                add_epub_file_to_progress(progress_data, epub_filename, epub_filepath, story_id, self.pm.get_workspace_root())
                 logger.info(f"Successfully generated EPUB: {epub_filepath}")
             except Exception as e:
                 logger.error(f"Failed to write EPUB file {epub_filepath} for story {self.pm.get_story_id()}: {e}")
@@ -272,5 +273,7 @@ class EPUBGenerator:
                     except OSError as e:
                         logger.warning(f"Could not clean up temporary cover file/directory for story {story_id} after EPUB generation: {e}")
 
+        return progress_data
 
-        return generated_epub_files
+
+        return progress_data

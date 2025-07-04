@@ -39,6 +39,7 @@ def setup_logger(logger_name, log_file, level=logging.INFO, add_console_handler=
     # Console Handler
     if add_console_handler:
         console_handler = logging.StreamHandler()
+        console_handler.setLevel(level) # Set level for console handler
         console_formatter = logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT)
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)

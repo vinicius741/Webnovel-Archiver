@@ -217,34 +217,9 @@ def archive_story(
             return None
 
     story_folder_name = index.get(permanent_id)
-    pm = PathManager(workspace_root, story_folder_name)
 
-    expected_folder_slug = generate_slug(metadata.original_title)
-
-    if story_folder_name:
-        logger.info(f"Found existing story. Permanent ID: {permanent_id}, Current Folder: {story_folder_name}")
-        if story_folder_name != expected_folder_slug:
-            old_story_path = os.path.join(workspace_root, story_folder_name)
-            new_story_path = os.path.join(workspace_root, expected_folder_slug)
-            
-            if os.path.exists(old_story_path):
-                try:
-                    shutil.move(old_story_path, new_story_path)
-                    logger.info(f"Renamed story folder from '{story_folder_name}' to '{expected_folder_slug}'.")
-                    _call_progress_callback({"status": "info", "message": f"Renamed story folder to '{expected_folder_slug}'."})
-                    story_folder_name = expected_folder_slug
-                except OSError as e:
-                    logger.error(f"Failed to rename folder from '{old_story_path}' to '{new_story_path}': {e}", exc_info=True)
-                    _call_progress_callback({"status": "error", "message": f"Failed to rename story folder: {e}"})
-                    return None
-            else:
-                logger.warning(f"Expected story folder '{old_story_path}' not found. Creating new folder with expected slug.")
-                story_folder_name = expected_folder_slug
-        else:
-            logger.info(f"Story folder name '{story_folder_name}' is already synchronized with title slug.")
-    else:
-        logger.info(f"New story detected. Permanent ID: {permanent_id}. Initializing with folder: {expected_folder_slug}")
-        story_folder_name = expected_folder_slug
+    if not story_folder_name:
+        story_folder_name = permanent_id
     
     # Update index with the potentially new or confirmed folder name
     if index.get(permanent_id) != story_folder_name:
@@ -279,12 +254,7 @@ def archive_story(
         _call_progress_callback
     )
     
-    progress_data["last_archived_timestamp"] = current_time_iso
-    save_progress(story_folder_name, progress_data, workspace_root)
-    logger.info(f"Progress saved for {story_folder_name}.")
-
     # EPUB Generation
-    generated_epub_files = []
     if successfully_processed_new_or_updated_count > 0 or force_reprocessing:
         _call_progress_callback({"status": "info", "message": "Generating EPUB..."})
         epub_generator = EPUBGenerator(pm)
@@ -298,18 +268,23 @@ def archive_story(
             chapters_for_epub = progress_data["downloaded_chapters"]
             logger.info(f"EPUB generation set to 'all'. Including {len(chapters_for_epub)} chapters (active and archived). ")
 
-        # Create a temporary progress_data for EPUB generation that only contains the filtered chapters
-        epub_progress_data = copy.deepcopy(progress_data)
-        epub_progress_data["downloaded_chapters"] = chapters_for_epub
+        # The problem was here: epub_generator.generate_epub was receiving a deepcopy
+        # Now it receives the original progress_data
+        progress_data = epub_generator.generate_epub(progress_data, chapters_per_volume=chapters_per_volume)
+        
 
-        generated_epub_files = epub_generator.generate_epub(epub_progress_data, chapters_per_volume=chapters_per_volume)
-        if generated_epub_files:
-            _call_progress_callback({"status": "info", "message": f"EPUB generated: {len(generated_epub_files)} file(s)."})
+        if progress_data["last_epub_processing"]["generated_epub_files"]:
+            num_generated_epubs = len(progress_data["last_epub_processing"]["generated_epub_files"])
+            _call_progress_callback({"status": "info", "message": f"EPUB generated: {num_generated_epubs} file(s)."})
         else:
             _call_progress_callback({"status": "warning", "message": "EPUB generation completed, but no files were produced."})
     else:
         logger.info("No new chapters processed and no force reprocessing. Skipping EPUB generation.")
         _call_progress_callback({"status": "info", "message": "No new content to process. Skipping EPUB generation."})
+
+    progress_data["last_archived_timestamp"] = current_time_iso
+    save_progress(story_folder_name, progress_data, workspace_root)
+    logger.info(f"Progress saved for {story_folder_name}.")
 
     # Clean up temporary files
     if not keep_temp_files:
@@ -325,7 +300,7 @@ def archive_story(
         "title": progress_data.get("effective_title", progress_data.get("original_title", "Unknown Title")),
         "story_id": permanent_id,
         "chapters_processed": successfully_processed_new_or_updated_count,
-        "epub_files": generated_epub_files,
+        "epub_files": progress_data["last_epub_processing"]["generated_epub_files"],
         "workspace_root": workspace_root
     }
     

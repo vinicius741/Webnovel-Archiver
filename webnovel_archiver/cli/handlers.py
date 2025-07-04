@@ -127,15 +127,15 @@ def archive_story_handler(
             click.echo(f"  Chapters processed in this run: {summary['chapters_processed']}")
             if summary['epub_files']:
                 click.echo("  Generated EPUB file(s):")
-                for epub_file_path in summary['epub_files']:
-                    click.echo(f"    - {epub_file_path}")
+                for epub_file_entry in summary['epub_files']:
+                    click.echo(f"    - {epub_file_entry['path']}")
             else:
                 click.echo("  No EPUB files were generated in this run.")
             click.echo(f"  Workspace: {summary['workspace_root']}")
             logger.info(
                 f"Successfully completed archival for '{summary['title']}' (ID: {summary['story_id']}). "
                 f"Processed {summary['chapters_processed']} chapters. "
-                f"EPUBs: {', '.join(summary['epub_files']) if summary['epub_files'] else 'None'}. "
+                f"EPUBs: {', '.join([e['path'] for e in summary['epub_files']]) if summary['epub_files'] else 'None'}. "
                 f"Workspace: {summary['workspace_root']}"
             )
         else:

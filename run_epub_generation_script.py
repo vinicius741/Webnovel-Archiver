@@ -80,7 +80,9 @@ def main():
     chapters_per_volume = None # Set to None for single volume, or a number for multi-volume
 
     logger.info(f"Calling EPUBGenerator with chapters_per_volume={chapters_per_volume}")
-    generated_files = epub_generator.generate_epub(progress_data, chapters_per_volume=chapters_per_volume)
+    progress_data = epub_generator.generate_epub(progress_data, chapters_per_volume=chapters_per_volume)
+
+    generated_files = [epub['filepath'] for epub in progress_data.get('epubs', [])]
 
     if generated_files:
         logger.info("EPUB generation successful. Generated files:")

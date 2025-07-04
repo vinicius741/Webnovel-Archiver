@@ -253,7 +253,7 @@ class EPUBGenerator:
 
             try:
                 epub.write_epub(epub_filepath, book, {})
-                add_epub_file_to_progress(progress_data, epub_filename, epub_filepath, story_id, self.pm.get_workspace_root())
+                progress_data = add_epub_file_to_progress(progress_data, epub_filename, epub_filepath, story_id, self.pm.get_workspace_root())
                 logger.info(f"Successfully generated EPUB: {epub_filepath}")
             except Exception as e:
                 logger.error(f"Failed to write EPUB file {epub_filepath} for story {self.pm.get_story_id()}: {e}")
@@ -272,8 +272,5 @@ class EPUBGenerator:
                                 logger.debug(f"Temporary cover directory {temp_cover_dir} is not empty, not removing.")
                     except OSError as e:
                         logger.warning(f"Could not clean up temporary cover file/directory for story {story_id} after EPUB generation: {e}")
-
-        return progress_data
-
 
         return progress_data

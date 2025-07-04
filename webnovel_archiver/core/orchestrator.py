@@ -236,6 +236,8 @@ def archive_story(
     pm = PathManager(workspace_root, story_folder_name)
 
     progress_data = load_progress(story_folder_name, workspace_root)
+    if "last_epub_processing" not in progress_data or progress_data["last_epub_processing"] is None:
+        progress_data["last_epub_processing"] = {"timestamp": None, "generated_epub_files": []}
     progress_data["story_id"] = permanent_id
     progress_data["story_url"] = story_url
     progress_data["original_title"] = metadata.original_title
@@ -273,7 +275,7 @@ def archive_story(
         progress_data = epub_generator.generate_epub(progress_data, chapters_per_volume=chapters_per_volume)
         
 
-        if progress_data["last_epub_processing"]["generated_epub_files"]:
+        if progress_data.get("last_epub_processing") and progress_data["last_epub_processing"].get("generated_epub_files"):
             num_generated_epubs = len(progress_data["last_epub_processing"]["generated_epub_files"])
             _call_progress_callback({"status": "info", "message": f"EPUB generated: {num_generated_epubs} file(s)."})
         else:
@@ -281,6 +283,11 @@ def archive_story(
     else:
         logger.info("No new chapters processed and no force reprocessing. Skipping EPUB generation.")
         _call_progress_callback({"status": "info", "message": "No new content to process. Skipping EPUB generation."})
+        if "last_epub_processing" not in progress_data:
+            progress_data["last_epub_processing"] = {
+                "timestamp": None,
+                "generated_epub_files": []
+            }
 
     progress_data["last_archived_timestamp"] = current_time_iso
     save_progress(story_folder_name, progress_data, workspace_root)
@@ -296,11 +303,14 @@ def archive_story(
         except OSError as e:
             logger.warning(f"Failed to clean up temporary cover directory {temp_cover_dir}: {e}")
 
+    last_epub_processing = progress_data.get("last_epub_processing")
+    generated_epub_files = last_epub_processing.get("generated_epub_files") if last_epub_processing else []
+
     return {
         "title": progress_data.get("effective_title", progress_data.get("original_title", "Unknown Title")),
         "story_id": permanent_id,
         "chapters_processed": successfully_processed_new_or_updated_count,
-        "epub_files": progress_data["last_epub_processing"]["generated_epub_files"],
+        "epub_files": generated_epub_files,
         "workspace_root": workspace_root
     }
     

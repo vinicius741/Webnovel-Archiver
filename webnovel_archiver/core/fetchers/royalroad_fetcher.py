@@ -50,7 +50,7 @@ class RoyalRoadFetcher(BaseFetcher):
         metadata.story_url = self.story_url
 
         # Title
-        title_tag = soup.find('h1', class_='font-white')
+        title_tag = soup.find('h1', class_='font-alt')
         if title_tag:
             metadata.original_title = title_tag.text.strip()
         else: # Fallback to meta property
@@ -70,7 +70,7 @@ class RoyalRoadFetcher(BaseFetcher):
 
 
         # Author
-        author_link = soup.select_one('h4.font-white a[href*="/profile/"]')
+        author_link = soup.find('span', property='name')
         if author_link:
             metadata.original_author = author_link.text.strip()
         else: # Fallback to meta property
@@ -83,7 +83,7 @@ class RoyalRoadFetcher(BaseFetcher):
                     metadata.original_author = content[0] if content else None
 
         # Cover Image URL
-        cover_img_tag = soup.select_one('div.cover-art-container img.thumbnail')
+        cover_img_tag = soup.select_one('div.cover-art-container img')
         if cover_img_tag:
             src_content = cover_img_tag.get('src')
             if isinstance(src_content, str):

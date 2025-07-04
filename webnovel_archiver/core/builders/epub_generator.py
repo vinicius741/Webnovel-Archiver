@@ -62,7 +62,7 @@ class EPUBGenerator:
             return None
 
 
-    def generate_epub(self, progress_data: Dict[Any, Any], chapters_per_volume: Optional[int] = None) -> List[str]:
+    def generate_epub(self, progress_data: Dict[Any, Any], chapters_per_volume: Optional[int] = None) -> Dict[Any, Any]:
         # story_id is available via self.pm.get_story_id()
         # workspace_root is available via self.pm.get_workspace_root()
         story_id = self.pm.get_story_id()

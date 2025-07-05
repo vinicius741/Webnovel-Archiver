@@ -222,8 +222,8 @@ class CloudBackupContext:
                     self.warning_messages.append(f"Warning: Google Drive credentials ('{self.gdrive_credentials_path}') or token ('{self.gdrive_token_path}') not found. Authentication may fail or require interaction.")
 
                 service = GDriveSync(credentials_path=self.gdrive_credentials_path, token_path=self.gdrive_token_path)
-                logger.info("Google Drive sync service initialized.")
-                print(f"DEBUG: _initialize_sync_service returning: {service}")
+                logger.debug("Google Drive sync service initialized.")
+                
                 return service
             except FileNotFoundError as e: # Should be caught by the check above, but good to be explicit
                 self.error_messages.append(f"Error: GDrive credentials file '{self.gdrive_credentials_path}' not found. Please provide it or ensure it's in the default location.")

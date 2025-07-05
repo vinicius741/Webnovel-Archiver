@@ -86,7 +86,7 @@ class GDriveSync(BaseSyncService):
 
         try:
             self.service = build('drive', 'v3', credentials=creds)
-            logger.info("Google Drive API service built successfully.")
+            logger.debug("Google Drive API service built successfully.")
         except Exception as e:
             logger.error(f"Failed to build Google Drive service: {e}")
             self.service = None # Ensure service is None if build fails
@@ -243,7 +243,7 @@ class GDriveSync(BaseSyncService):
                     return None
         except HttpError as error:
             if error.resp.status == 404:
-                logger.info(f"File not found (file_id: {file_id}, file_name: {file_name}, folder_id: {folder_id}).")
+                logger.debug(f"File not found (file_id: {file_id}, file_name: {file_name}, folder_id: {folder_id}).")
                 return None
             logger.error(f"An API error occurred while getting file metadata: {error}")
             # Consider re-raising for certain errors or returning None for others
@@ -272,7 +272,7 @@ class GDriveSync(BaseSyncService):
                 page_token = response.get('nextPageToken', None)
                 if page_token is None:
                     break
-            logger.info(f"Found {len(files_list)} files in folder ID '{folder_id}'.")
+            logger.debug(f"Found {len(files_list)} files in folder ID '{folder_id}'.")
             return files_list
         except HttpError as error:
             logger.error(f"An API error occurred while listing files in folder '{folder_id}': {error}")

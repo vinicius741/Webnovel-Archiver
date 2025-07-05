@@ -127,15 +127,15 @@ def archive_story_handler(
             click.echo(f"  Chapters processed in this run: {summary['chapters_processed']}")
             if summary['epub_files']:
                 click.echo("  Generated EPUB file(s):")
-                for epub_file_path in summary['epub_files']:
-                    click.echo(f"    - {epub_file_path}")
+                for epub_file_entry in summary['epub_files']:
+                    click.echo(f"    - {epub_file_entry['path']}")
             else:
                 click.echo("  No EPUB files were generated in this run.")
             click.echo(f"  Workspace: {summary['workspace_root']}")
             logger.info(
                 f"Successfully completed archival for '{summary['title']}' (ID: {summary['story_id']}). "
                 f"Processed {summary['chapters_processed']} chapters. "
-                f"EPUBs: {', '.join(summary['epub_files']) if summary['epub_files'] else 'None'}. "
+                f"EPUBs: {', '.join([e['path'] for e in summary['epub_files']]) if summary['epub_files'] else 'None'}. "
                 f"Workspace: {summary['workspace_root']}"
             )
         else:
@@ -180,14 +180,11 @@ def cloud_backup_handler(
         logger.error(f"CloudBackupContext validation failed. Errors: {context.error_messages}")
         return
 
-    # Use context properties from here
-    sync_service = context.sync_service # Already initialized and validated
+    sync_service = context.sync_service
     workspace_root = context.workspace_root
-    # archival_status_dir = context.archival_status_dir # Used by context internally for story_ids
-    # ebooks_base_dir = context.ebooks_base_dir # Used by context internally
-    story_ids_to_process = context.story_ids_to_process
+    story_index = context.story_index
     cloud_base_folder_id = context.cloud_base_folder_id
-    base_backup_folder_name = context.base_backup_folder_name # For messaging
+    base_backup_folder_name = context.base_backup_folder_name
 
     # Automatically generate the report before backup
     click.echo("Generating latest report before backup...")
@@ -198,267 +195,109 @@ def cloud_backup_handler(
         click.echo(click.style(f"Warning: Report generation failed: {e}. Continuing with backup.", fg="yellow"), err=True)
         logger.warning(f"Report generation failed before backup: {e}", exc_info=True)
 
-    if not story_ids_to_process and not context.story_id_option : # No specific story and none found
-        click.echo("No stories found to back up.")
-        # Check for HTML report upload even if no stories are processed
-        # This part is moved to the end of the function to run regardless of story processing outcome.
-    elif not story_ids_to_process and context.story_id_option:
-        # This case implies story_id_option was given, but it was invalid and error was already printed by context.
-        # No further message needed here, as context.is_valid() would have caught it or _prepare_story_ids_to_process added error.
-        pass # Error already handled by context reporting
-    else:
-        click.echo(f"Found {len(story_ids_to_process)} stories to potentially back up: {', '.join(story_ids_to_process)}")
+    stories_to_process = story_index.items()
+    if story_id:
+        if story_id not in story_index:
+            click.echo(click.style(f"Error: Story ID '{story_id}' not found in the index.", fg="red"), err=True)
+            return
+        stories_to_process = [(story_id, story_index[story_id])]
 
+    if not stories_to_process:
+        click.echo("No stories found to back up.")
+    else:
+        click.echo(f"Found {len(stories_to_process)} stories to potentially back up.")
 
     processed_stories_count = 0
-    for current_story_id in story_ids_to_process:
-        any_epub_uploaded_for_this_story = False # Initialize EPUB upload flag
-        # an_upload_occurred = False # Renamed to actual_files_uploaded_this_story for clarity
-        click.echo(f"Processing story: {current_story_id}")
+    for permanent_id, story_folder_name in stories_to_process:
+        click.echo(f"Processing story: {story_folder_name} (ID: {permanent_id})")
 
-        progress_file_path = pm.get_progress_filepath(current_story_id, workspace_root)
+        progress_file_path = pm.get_progress_filepath(story_folder_name, workspace_root)
 
         if not os.path.exists(progress_file_path):
-            click.echo(f"Warning: Progress file not found for story {current_story_id} at {progress_file_path}. Skipping.", err=True)
-            logger.warning(f"Progress file not found for story {current_story_id}, skipping backup.")
+            click.echo(f"Warning: Progress file not found for story {story_folder_name} at {progress_file_path}. Skipping.", err=True)
+            logger.warning(f"Progress file not found for story {story_folder_name}, skipping backup.")
             continue
 
-        progress_data = pm.load_progress(current_story_id, workspace_root)
+        progress_data = pm.load_progress(story_folder_name, workspace_root)
         if not progress_data:
-            click.echo(f"Error: Failed to load progress data for story {current_story_id}. Skipping.", err=True)
+            click.echo(f"Error: Failed to load progress data for story {story_folder_name}. Skipping.", err=True)
             continue
 
-        # Determine if this story needs backup
         story_requires_backup = False
         last_archived_ts_str = progress_data.get("last_archived_timestamp")
         cloud_backup_status = pm.get_cloud_backup_status(progress_data)
         last_successful_backup_ts_str = cloud_backup_status.get("last_successful_backup_timestamp")
 
-        if context.force_full_upload: # Use context.force_full_upload
+        if context.force_full_upload:
             story_requires_backup = True
-            click.echo(f"Story {current_story_id}: Forced full upload.")
-            logger.info(f"Story {current_story_id}: Forced full upload.")
         elif not last_successful_backup_ts_str:
             story_requires_backup = True
-            click.echo(f"Story {current_story_id}: No previous successful backup found. Requires backup.")
-            logger.info(f"Story {current_story_id}: No previous successful backup. Queued for backup.")
-        elif last_archived_ts_str:
-            try:
-                if last_archived_ts_str > last_successful_backup_ts_str:
-                    story_requires_backup = True
-                    click.echo(f"Story {current_story_id}: Archived more recently ({last_archived_ts_str}) than last backup ({last_successful_backup_ts_str}). Requires backup.")
-                    logger.info(f"Story {current_story_id}: Archived ({last_archived_ts_str}) after last backup ({last_successful_backup_ts_str}). Queued for backup.")
-                else:
-                    click.echo(f"Story {current_story_id}: Last archive ({last_archived_ts_str}) is not newer than last backup ({last_successful_backup_ts_str}). Skipping backup.")
-                    logger.info(f"Story {current_story_id}: Last archive ({last_archived_ts_str}) not newer than last backup ({last_successful_backup_ts_str}). Skipping.")
-            except TypeError as te:
-                logger.error(f"Story {current_story_id}: Timestamp comparison error - last_archived: {last_archived_ts_str}, last_backup: {last_successful_backup_ts_str}. Error: {te}. Assuming backup is needed.", exc_info=True)
-                click.echo(f"Warning: Timestamp comparison error for story {current_story_id}. Proceeding with backup as a precaution.", err=True)
-                story_requires_backup = True
-        else:
-            click.echo(f"Story {current_story_id}: Has a last backup timestamp ({last_successful_backup_ts_str}) but no last_archived_timestamp. Skipping unless forced.")
-            logger.info(f"Story {current_story_id}: Has last backup ({last_successful_backup_ts_str}) but no last_archived_timestamp. Skipping.")
-
+        elif last_archived_ts_str and last_archived_ts_str > last_successful_backup_ts_str:
+            story_requires_backup = True
 
         if not story_requires_backup:
-            processed_stories_count +=1
-            click.echo(f"Finished processing story (skipped backup): {current_story_id}\n")
-            continue
-
-        click.echo(f"Story {current_story_id}: Preparing for cloud backup.")
-
-        if not cloud_base_folder_id: # Should be caught by context.is_valid, but defensive
-            click.echo(click.style(f"Critical Error: Base cloud folder ID not available for story {current_story_id}. Skipping.", fg="red"), err=True)
-            logger.error(f"Critical: cloud_base_folder_id is None when processing story {current_story_id}.")
+            click.echo(f"Skipping story {story_folder_name}: No new changes to back up.")
             continue
 
         story_cloud_folder_id: Optional[str] = None
         try:
-            story_cloud_folder_id = sync_service.create_folder_if_not_exists(current_story_id, parent_folder_id=cloud_base_folder_id)
+            story_cloud_folder_id = sync_service.create_folder_if_not_exists(permanent_id, parent_folder_id=cloud_base_folder_id)
             if not story_cloud_folder_id:
-                click.echo(click.style(f"Error: Failed to create or retrieve cloud folder for story '{current_story_id}'. Skipping story.", fg="red"), err=True)
-                logger.error(f"Failed to create/retrieve story folder for {current_story_id} under parent {cloud_base_folder_id}.")
+                click.echo(click.style(f"Error: Failed to create or retrieve cloud folder for story '{permanent_id}'. Skipping story.", fg="red"), err=True)
                 continue
-            click.echo(f"Ensured cloud folder structure: '{base_backup_folder_name}/{current_story_id}' (Story Folder ID: {story_cloud_folder_id})")
+            click.echo(f"Ensured cloud folder structure: '{base_backup_folder_name}/{permanent_id}'")
         except ConnectionError as e:
-            click.echo(f"Error creating/verifying cloud folder for story {current_story_id}: {e}. Skipping story.", err=True)
-            logger.error(f"Cloud folder creation error for {current_story_id}: {e}")
+            click.echo(f"Error creating/verifying cloud folder for story {permanent_id}: {e}. Skipping story.", err=True)
             continue
 
         files_to_upload_info: List[Dict[str, str]] = []
         files_to_upload_info.append({'local_path': progress_file_path, 'name': "progress_status.json"})
-        # workspace_root is from context
-        epub_file_entries = pm.get_epub_file_details(progress_data, current_story_id, workspace_root)
-
-        if not epub_file_entries:
-             click.echo(f"No EPUB files listed in progress status for story {current_story_id}.")
+        epub_file_entries = pm.get_epub_file_details(progress_data, story_folder_name, workspace_root)
 
         for epub_entry in epub_file_entries:
-            epub_filename = epub_entry.get('name')
-            epub_local_abs_path = epub_entry.get('path')
-            if not epub_filename or not epub_local_abs_path:
-                logger.warning(f"Skipping EPUB entry with missing name or path in {current_story_id}: {epub_entry}")
-                continue
-            if not os.path.exists(epub_local_abs_path):
-                click.echo(f"Warning: EPUB file {epub_local_abs_path} not found for story {current_story_id}. Skipping this EPUB.", err=True)
-                logger.warning(f"EPUB file {epub_local_abs_path} not found, skipping upload for this EPUB.")
-                continue
-            files_to_upload_info.append({'local_path': epub_local_abs_path, 'name': epub_filename})
+            files_to_upload_info.append({'local_path': epub_entry['path'], 'name': epub_entry['name']})
 
         backup_files_results: List[Dict[str, Any]] = []
-        actual_files_uploaded_this_story = False
-
-        for file_info_to_upload in files_to_upload_info:
-            local_path = file_info_to_upload['local_path']
-            upload_name = file_info_to_upload['name']
-            file_should_be_uploaded_due_to_overwrite_or_missing_remote = True
-
-            if not context.force_full_upload: # Use context.force_full_upload
-                try:
-                    remote_metadata = sync_service.get_file_metadata(file_name=upload_name, folder_id=story_cloud_folder_id)
-                    if remote_metadata and remote_metadata.get('modifiedTime'):
-                        if not sync_service.is_remote_older(local_path, remote_metadata['modifiedTime']):
-                            file_should_be_uploaded_due_to_overwrite_or_missing_remote = False
-                            click.echo(f"Skipping '{upload_name}': Remote file is not older than local.")
-                            logger.info(f"Skipping upload of {upload_name} for story {current_story_id} as remote is not older.")
-                            backup_files_results.append({
-                                'local_path': local_path,
-                                'cloud_file_name': upload_name,
-                                'cloud_file_id': remote_metadata.get('id'),
-                                'last_backed_up_timestamp': remote_metadata.get('modifiedTime'),
-                                'status': 'skipped_up_to_date'
-                            })
-                        else:
-                             click.echo(f"Local file '{upload_name}' is newer. Uploading...")
-                    else:
-                        click.echo(f"Remote file '{upload_name}' not found or no timestamp. Uploading...")
-                except ConnectionError as e:
-                    click.echo(f"Warning: Could not get remote metadata for '{upload_name}': {e}. Will attempt upload.", err=True)
-                    logger.warning(f"Could not get remote metadata for {upload_name} (story {current_story_id}): {e}")
-                except Exception as e:
-                    click.echo(f"Warning: Error checking remote status for '{upload_name}': {e}. Will attempt upload.", err=True)
-                    logger.warning(f"Error checking remote status for {upload_name} (story {current_story_id}): {e}", exc_info=True)
-
-            if file_should_be_uploaded_due_to_overwrite_or_missing_remote:
-                try:
-                    click.echo(f"Uploading '{upload_name}' for story {current_story_id}...")
-                    uploaded_file_meta = sync_service.upload_file(local_path, story_cloud_folder_id, remote_file_name=upload_name)
-                    click.echo(f"Successfully uploaded '{uploaded_file_meta.get('name')}' (ID: {uploaded_file_meta.get('id')}).")
-                    actual_files_uploaded_this_story = True
-                    backup_files_results.append({
-                        'local_path': local_path,
-                        'cloud_file_name': uploaded_file_meta.get('name'),
-                        'cloud_file_id': uploaded_file_meta.get('id'),
-                        'last_backed_up_timestamp': uploaded_file_meta.get('modifiedTime') or datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        'status': 'uploaded'
-                    })
-                    if upload_name.endswith('.epub'):
-                        any_epub_uploaded_for_this_story = True
-                except FileNotFoundError:
-                    click.echo(f"Error: Local file {local_path} vanished before upload. Skipping this file.", err=True)
-                    logger.error(f"Local file {local_path} not found for upload (story {current_story_id}).")
-                    backup_files_results.append({ 'local_path': local_path, 'cloud_file_name': upload_name, 'status': 'failed', 'error': 'Local file not found' })
-                except ConnectionError as e:
-                    click.echo(f"Error uploading '{upload_name}' for story {current_story_id}: {e}", err=True)
-                    logger.error(f"Upload failed for {local_path} to story {current_story_id} folder: {e}")
-                    backup_files_results.append({ 'local_path': local_path, 'cloud_file_name': upload_name, 'status': 'failed', 'error': str(e) })
-                except Exception as e:
-                    click.echo(f"An unexpected error occurred uploading '{upload_name}': {e}", err=True)
-                    logger.error(f"Unexpected error uploading {local_path} for story {current_story_id}: {e}", exc_info=True)
-                    backup_files_results.append({ 'local_path': local_path, 'cloud_file_name': upload_name, 'status': 'failed', 'error': str(e) })
+        for file_info in files_to_upload_info:
+            try:
+                uploaded_file_meta = sync_service.upload_file(file_info['local_path'], story_cloud_folder_id, remote_file_name=file_info['name'])
+                backup_files_results.append({
+                    'local_path': file_info['local_path'],
+                    'cloud_file_name': uploaded_file_meta.get('name'),
+                    'cloud_file_id': uploaded_file_meta.get('id'),
+                    'last_backed_up_timestamp': uploaded_file_meta.get('modifiedTime'),
+                    'status': 'uploaded'
+                })
+            except Exception as e:
+                backup_files_results.append({ 'local_path': file_info['local_path'], 'cloud_file_name': file_info['name'], 'status': 'failed', 'error': str(e) })
 
         if backup_files_results:
-            click.echo(f"Updating progress file for story {current_story_id} with backup operation results.")
-            current_utc_time_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            all_attempted_ops_successful_or_skipped = all(
-                f.get('status') in ['uploaded', 'skipped_up_to_date'] for f in backup_files_results
-            )
-            new_last_successful_ts = last_successful_backup_ts_str
-            if all_attempted_ops_successful_or_skipped and actual_files_uploaded_this_story :
-                successful_upload_timestamps = [
-                    f['last_backed_up_timestamp'] for f in backup_files_results
-                    if f.get('status') == 'uploaded' and f.get('last_backed_up_timestamp')
-                ]
-                if successful_upload_timestamps:
-                    new_last_successful_ts = max(successful_upload_timestamps)
-                else:
-                    new_last_successful_ts = current_utc_time_iso
-                click.echo(f"Story {current_story_id}: Backup attempt successful. Updating last_successful_backup_timestamp to {new_last_successful_ts}.")
-                logger.info(f"Story {current_story_id}: Backup successful. New last_successful_backup_timestamp: {new_last_successful_ts}.")
-
-            cloud_backup_update_data = {
-                'last_backup_attempt_timestamp': current_utc_time_iso,
-                'last_successful_backup_timestamp': new_last_successful_ts,
-                'service': context.cloud_service_name.lower(), # Use context
+            pm.update_cloud_backup_status(progress_data, {
+                'last_backup_attempt_timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'last_successful_backup_timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'service': context.cloud_service_name.lower(),
                 'base_cloud_folder_name': base_backup_folder_name,
-                'story_cloud_folder_name': current_story_id,
+                'story_cloud_folder_name': permanent_id,
                 'cloud_base_folder_id': cloud_base_folder_id,
                 'story_cloud_folder_id': story_cloud_folder_id,
                 'backed_up_files': backup_files_results
-            }
-            try:
-                pm.update_cloud_backup_status(progress_data, cloud_backup_update_data)
-                pm.save_progress(current_story_id, progress_data, workspace_root) # workspace_root from context
-                click.echo(f"Successfully updated and saved local progress status for story {current_story_id}.")
-            except Exception as e:
-                click.echo(f"Error updating/saving progress file for story {current_story_id}: {e}", err=True)
-                logger.error(f"Failed to update/save progress_status.json for {current_story_id} after backup ops: {e}", exc_info=True)
-        else:
-             click.echo(f"No file operations (upload/skip/fail) were performed for story {current_story_id}. Progress file not updated for backup status.")
-             logger.info(f"No file operations for story {current_story_id}. Progress file not updated with backup status.")
+            })
+            pm.save_progress(story_folder_name, progress_data, workspace_root)
 
-        processed_stories_count +=1
-        click.echo(f"Finished processing story: {current_story_id}\n")
+        processed_stories_count += 1
 
     if processed_stories_count > 0:
         click.echo(f"Cloud backup process completed for {processed_stories_count} story/stories.")
-    elif not story_ids_to_process and context.story_id_option: # Specific story ID was given but it was invalid (already handled by context)
-        pass
-    elif not story_ids_to_process: # No stories found and no specific ID given
-        # Message "No stories found to back up." was already printed if applicable.
-        # If we reach here and story_ids_to_process is empty, it means no stories were found, or an initial error occurred.
-        # The initial "No stories found..." message covers the former.
-        # If context was invalid, we wouldn't reach this loop.
-        # This path is primarily for when no stories are found.
-        pass
-    else: # stories_ids_to_process was not empty, but processed_stories_count is 0 (e.g. all skipped due to errors)
-        click.echo("Cloud backup process completed, but no stories were actually backed up in this run (check individual story logs).")
 
-
-    # --- HTML Report Upload Logic --- (Moved to run after story loop)
-    report_path = os.path.join(workspace_root, "reports", "archive_report.html") # workspace_root from context
-    logger.info(f"Checking for HTML report at: {report_path}")
-
+    report_path = os.path.join(workspace_root, "reports", "archive_report_new.html")
     if os.path.exists(report_path):
         click.echo("HTML report found. Attempting to upload...")
-        logger.info("Attempting to upload HTML report...")
-
-        if not cloud_base_folder_id: # cloud_base_folder_id from context
-            click.echo(click.style(f"Warning: Base cloud folder ID ('{base_backup_folder_name}') not available. Cannot upload HTML report to it. This might be due to earlier errors.", fg="yellow"), err=True)
-            logger.warning(f"HTML report upload skipped: cloud_base_folder_id is not set (base folder: '{base_backup_folder_name}').")
-        elif sync_service: # sync_service from context
+        if cloud_base_folder_id and sync_service:
             try:
-                logger.info(f"Uploading report '{report_path}' to cloud folder ID '{cloud_base_folder_id}'.")
-                uploaded_report_meta = sync_service.upload_file(
-                    local_file_path=report_path,
-                    remote_folder_id=cloud_base_folder_id,
-                    remote_file_name="archive_report.html"
-                )
-                click.echo(click.style(f"✓ Successfully uploaded HTML report: {uploaded_report_meta.get('name')}", fg="green"))
-                logger.info(f"HTML report uploaded successfully: {uploaded_report_meta.get('name')} (ID: {uploaded_report_meta.get('id')})")
-            except FileNotFoundError:
-                click.echo(click.style(f"Error: Report file {report_path} not found at time of upload. Skipping.", fg="red"), err=True)
-                logger.error(f"Report file {report_path} not found during upload attempt.")
-            except ConnectionError as e:
-                click.echo(click.style(f"Error uploading HTML report: {e}", fg="red"), err=True)
-                logger.error(f"Connection error during HTML report upload: {e}", exc_info=True)
+                sync_service.upload_file(report_path, cloud_base_folder_id, "archive_report_new.html")
+                click.echo(click.style("✓ Successfully uploaded HTML report", fg="green"))
             except Exception as e:
-                click.echo(click.style(f"An unexpected error occurred during HTML report upload: {e}", fg="red"), err=True)
-                logger.error(f"Unexpected error during HTML report upload: {e}", exc_info=True)
-    else:
-        click.echo(f"HTML report not found at {report_path}, skipping upload.")
-        logger.info(f"HTML report not found at {report_path}, skipping upload.")
-    # --- End of HTML Report Upload Logic ---
+                click.echo(click.style(f"Error uploading HTML report: {e}", fg="red"), err=True)
 
 
 # Migration Handler

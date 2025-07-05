@@ -208,43 +208,10 @@ def save_progress(story_id: str, progress_data: Dict[str, Any], workspace_root: 
         logger.error(f"Unexpected error saving progress for story {story_id} to {filepath}: {e}", exc_info=True)
 
 
-def generate_story_id(url: Optional[str] = None, title: Optional[str] = None) -> str:
-    """
-    Generates a URL-safe/filename-safe ID from the story URL or title.
-    Prefers URL for uniqueness if available.
-    """
-    if url:
-        parsed_url = urlparse(url)
-        path_parts = [part for part in parsed_url.path.split('/') if part]
 
-        # Removed RoyalRoad specific logic:
-        # if "royalroad.com" in parsed_url.netloc and len(path_parts) >= 2 and path_parts[0] == "fiction":
-        #     numerical_id = path_parts[1]
-        #     return f"royalroad-{numerical_id}"
-
-        if path_parts:
-            # Use the last part of the path as the base for the ID
-            base_id = path_parts[-1]
-        else:
-            # If no path, use the netloc (domain) and remove "www." if present
-            base_id = parsed_url.netloc.replace("www.", "")
-    elif title:
-        base_id = title
-    else:
-        # Fallback to a timestamp-based ID if no URL or title is provided
-        return f"story_{datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-
-    # Slugify the base_id
-    s_id = base_id.lower()
-    s_id = re.sub(r'\s+', '-', s_id)
-    s_id = re.sub(r'[^a-z0-9_-]', '', s_id)
-    s_id = s_id[:50]
-    if not s_id:
-        return f"story_{datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-    return s_id.strip('-_')
 
 # --- Methods for EPUB files ---
-def add_epub_file_to_progress(progress_data: Dict[str, Any], file_name: str, file_path: str, story_id: str, workspace_root: str) -> None: # Removed DEFAULT_WORKSPACE_ROOT default
+def add_epub_file_to_progress(progress_data: Dict[str, Any], file_name: str, file_path: str, story_id: str, workspace_root: str) -> Dict[str, Any]: # Removed DEFAULT_WORKSPACE_ROOT default
     """Adds an EPUB file to the progress data. Ensures path is absolute."""
     # workspace_root must be provided
     pm = PathManager(workspace_root, story_id)
@@ -256,11 +223,23 @@ def add_epub_file_to_progress(progress_data: Dict[str, Any], file_name: str, fil
         # but here file_path might already be a relative path we want to make absolute.
         file_path = os.path.join(ebook_dir, os.path.basename(file_path)) # Use basename to ensure it's just the file in the target dir
 
+    if "last_epub_processing" not in progress_data or progress_data["last_epub_processing"] is None:
+        progress_data["last_epub_processing"] = {"timestamp": None, "chapters_included_in_last_volume": None, "generated_epub_files": []}
+
     epub_files_list = progress_data["last_epub_processing"].get("generated_epub_files", [])
+    if not os.path.isabs(file_path):
+        logger.warning(f"EPUB file path '{file_path}' for '{file_name}' was not absolute. Converting based on ebook_dir: {ebook_dir}")
+        # PathManager's get_epub_filepath would be ideal if we always construct from filename,
+        # but here file_path might already be a relative path we want to make absolute.
+        file_path = os.path.join(ebook_dir, os.path.basename(file_path)) # Use basename to ensure it's just the file in the target dir
+
     if not any(ep_file['path'] == file_path for ep_file in epub_files_list):
         epub_files_list.append({"name": file_name, "path": file_path})
         progress_data["last_epub_processing"]["generated_epub_files"] = epub_files_list
         logger.debug(f"EPUB file '{file_name}' added for story {story_id}")
+    else:
+        logger.debug(f"EPUB file '{file_name}' with path '{file_path}' already exists in progress data. Skipping add.")
+    return progress_data
 
 def get_epub_file_details(progress_data: Dict[str, Any], story_id: str, workspace_root: str) -> List[Dict[str, str]]: # Removed DEFAULT_WORKSPACE_ROOT default
     """
@@ -368,7 +347,7 @@ if __name__ == '__main__':
     logger.info("--- Testing ProgressManager functions ---") # Use logger
 
     rr_url = "https://www.royalroad.com/fiction/117255/rend-a-tale-of-something"
-    test_story_id = generate_story_id(url=rr_url)
+    test_story_id = "royalroad-117255"
     test_workspace = os.path.abspath("_test_pm_workspace") # Make workspace path absolute
     pm_for_test = PathManager(test_workspace, test_story_id) # PathManager for test setup
 

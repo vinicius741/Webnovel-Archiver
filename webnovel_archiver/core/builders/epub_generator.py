@@ -4,9 +4,11 @@ import os
 import datetime
 import requests # Added for downloading cover image
 import shutil # Added for saving cover image
+import imghdr
 from typing import Optional, List, Dict, Any
 from webnovel_archiver.utils.logger import get_logger
 from webnovel_archiver.core.path_manager import PathManager # Added PathManager
+from webnovel_archiver.core.storage.progress_manager import add_epub_file_to_progress
 
 logger = get_logger(__name__)
 
@@ -34,22 +36,26 @@ class EPUBGenerator:
             temp_cover_path = self.pm.get_temp_cover_story_dir()
             os.makedirs(temp_cover_path, exist_ok=True)
 
+            local_filename = f"cover.tmp"
+            file_path = str(self.pm.get_cover_image_filepath(local_filename))
+
             # Determine file extension
-            content_type = response.headers.get('content-type')
-            if content_type and 'jpeg' in content_type:
-                ext = '.jpg'
-            elif content_type and 'png' in content_type:
-                ext = '.png'
-            else: # Fallback or assume jpg
-                ext = '.jpg'
-                logger.warning(f"Could not determine cover image type for {story_id} from content-type '{content_type}'. Assuming JPG.")
-
-            local_filename = f"cover{ext}"
-            # file_path = os.path.join(temp_cover_path, local_filename) # Replaced
-            file_path = self.pm.get_cover_image_filepath(local_filename)
-
             with open(file_path, 'wb') as f:
-                shutil.copyfileobj(response.raw, f)
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            image_type = imghdr.what(file_path)
+            if image_type:
+                ext = f'.{image_type}'
+                # Rename the file if the extension is different
+                if not file_path.endswith(ext):
+                    new_file_path = os.path.splitext(file_path)[0] + ext
+                    os.rename(file_path, new_file_path)
+                    file_path = new_file_path
+            else:
+                ext = '.jpg' # Fallback
+                logger.warning(f"Could not determine cover image type for {story_id}. Assuming JPG.")
+
             logger.info(f"Cover image downloaded for story {self.pm.get_story_id()} to {file_path}")
             return file_path
         except requests.exceptions.RequestException as e:
@@ -60,7 +66,7 @@ class EPUBGenerator:
             return None
 
 
-    def generate_epub(self, progress_data: Dict[Any, Any], chapters_per_volume: Optional[int] = None) -> List[str]:
+    def generate_epub(self, progress_data: Dict[Any, Any], chapters_per_volume: Optional[int] = None) -> Dict[Any, Any]:
         # story_id is available via self.pm.get_story_id()
         # workspace_root is available via self.pm.get_workspace_root()
         story_id = self.pm.get_story_id()
@@ -150,7 +156,7 @@ class EPUBGenerator:
             if synopsis:
                 synopsis_xhtml_title = "Synopsis"
                 synopsis_file_name = "synopsis.xhtml"
-                epub_synopsis = epub.EpubHtml(title=synopsis_xhtml_title, file_name=synopsis_file_name, lang='en')
+                epub_synopsis = epub.EpubHtml(title=synopsis_xhtml_title, file_name=synopsis_file_name, lang='en', uid="synopsis")
                 epub_synopsis.content = f"<h1>{synopsis_xhtml_title}</h1><p>{synopsis}</p>"
                 book.add_item(epub_synopsis)
                 epub_items_for_book.append(epub_synopsis) # Add to items list for spine
@@ -184,7 +190,8 @@ class EPUBGenerator:
                 epub_chapter = epub.EpubHtml(
                     title=chapter_title,
                     file_name=f"chap_{chapter_info.get('download_order', 'unknown')}.xhtml",
-                    lang='en'
+                    lang='en',
+                    uid=f"chapter_{chapter_info.get('download_order', 'unknown')}"
                 )
                 html_content = f"<h1>{chapter_title}</h1>{html_content}"
                 epub_chapter.content = html_content
@@ -250,7 +257,7 @@ class EPUBGenerator:
 
             try:
                 epub.write_epub(epub_filepath, book, {})
-                generated_epub_files.append(epub_filepath)
+                progress_data = add_epub_file_to_progress(progress_data, epub_filename, epub_filepath, story_id, self.pm.get_workspace_root())
                 logger.info(f"Successfully generated EPUB: {epub_filepath}")
             except Exception as e:
                 logger.error(f"Failed to write EPUB file {epub_filepath} for story {self.pm.get_story_id()}: {e}")
@@ -270,5 +277,4 @@ class EPUBGenerator:
                     except OSError as e:
                         logger.warning(f"Could not clean up temporary cover file/directory for story {story_id} after EPUB generation: {e}")
 
-
-        return generated_epub_files
+        return progress_data

@@ -8,321 +8,14 @@ from urllib.parse import urljoin
 
 from .base_fetcher import BaseFetcher, StoryMetadata, ChapterInfo
 
-# Placeholder for the example HTML content provided in the issue
-# In a real scenario, this would be fetched via an HTTP request
-EXAMPLE_STORY_PAGE_HTML = """
-<!DOCTYPE html>
-<!--[if IE 8]> <html lang="en" class="ie8 no-js"> <![endif]-->
-<!--[if IE 9]> <html lang="en" class="ie9 no-js"> <![endif]-->
-<!--[if !IE]><!-->
-<html lang="en">
-<!--<![endif]-->
-<head>
-    <meta charset="utf-8"/>
-    <title>REND | Royal Road</title>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-
-
-    <meta name="keywords" content="REND; Temple; free books online; web fiction; free; book; novel; royal road; royalroadl; rrl; legends; fiction">
-    <meta name="description" content="Erind Hartwell: dutiful daughter, law student, psychopath, film enthusiast&#x2014;one of these makes her not normal. Was it the psychopath thing? Maybe. Still, (...)">
-    <meta property="fb:app_id" content="1585608748421060"/>
-    <meta property="og:type" content="books.book">
-    <meta property="og:url" content="https://www.royalroad.com/fiction/117255/rend">
-    <meta property="og:image" content="https://www.royalroadcdn.com/public/covers-large/117255-rend.jpg?time=1748727569">
-    <meta property="og:site_name" content="Royal Road">
-    <meta property="og:description" content="Erind Hartwell: dutiful daughter, law student, psychopath, film enthusiast&#x2014;one of these makes her not normal. Was it the psychopath thing? Maybe. Still, she&#x27;s relatively normal in a world where superhumans fight eldritch horrors that turn people into monsters.&#xA;Viewing life as a movie, Erind&#x2019;s wish to become the main character is granted unexpectedly: (...)">
-    <meta property="books:rating:value" content="4.898785"/>
-    <meta property="books:rating:scale" content="5"/>
-    <meta property="books:author" content="Temple"/>
-    <meta property="books:isbn" content=""/>
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:site" content="@RoyalRoadL">
-    <meta name="twitter:creator" content="Temple">
-    <meta name="twitter:title" content="REND">
-    <meta name="twitter:description" content="Erind Hartwell: dutiful daughter, law student, psychopath, film enthusiast&#x2014;one of these makes her not normal. Was it the psychopath thing? Maybe. Still, she&#x27;s relatively normal in a world where superhumans (...)">
-    <meta name="twitter:image" content="https://www.royalroadcdn.com/public/covers-large/117255-rend.jpg?time=1748727569">
-    <link rel="canonical" href="https://www.royalroad.com/fiction/117255/rend"/>
-    <link rel="alternate" type="application/rss+xml" title="Updates for REND" href="/syndication/117255"/>
-
-    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
-    <link type="text/css" rel="stylesheet" href="/dist/vendor.css?v=Twkv0-0SZkUAMvQBlPbXWCBEntpE1nxTV27fJ3DR4M4" />
-    <link type="text/css" rel="stylesheet" href="/dist/site-light.css?v=UUh22Cvu8gmehId2hg0CW3WSKym_KlnGjVLx-cJsq_s" />
-
-    <style>
-        #cover-lightbox.modal {
-          text-align: center;
-        }
-
-        @media screen and (min-width: 768px) {
-          #cover-lightbox.modal:before {
-            display: inline-block;
-            vertical-align: middle;
-            content: " ";
-            height: 100%;
-          }
-        }
-
-        #cover-lightbox .modal-dialog {
-          display: inline-block;
-          text-align: left;
-          vertical-align: middle;
-        }
-    </style>
-    <script type="application/ld+json">{"@context":"https://schema.org","@type":"Book","name":"REND","description":"<p>Erind Hartwell: dutiful daughter, law student, psychopath, film enthusiast—one of these makes her not normal. Was it the psychopath thing? Maybe. Still, she's relatively normal in a world where superhumans fight eldritch horrors that turn people into monsters.</p>\n<p>Viewing life as a movie, Erind’s wish to become the main character is granted unexpectedly: on the brink of death, an otherworldly entity offers her powers. Becoming a monster doesn’t sound like how a main character should be, but there isn’t much of a choice, as she was dying, impaled by a spike. She can probably make this monster thing work.</p>\n<p>Follow an endearing psychopath and her shenanigans in the middle of a battle between superhumans, hi-tech government agents, monsters, mutants, and wannabe heroes for Earth and the future of humanity.</p>\n<hr>\n<p>This is a rewrite of <a href=\"https://www.royalroad.com/fiction/32615/rend\" rel=\"noopener ugc nofollow\">REND: Prior Cycle (Old Version)</a>. 90+% different from the original. <br>Cover art by ChristianAC</p>","image":"https://www.royalroadcdn.com/public/covers-large/117255-rend.jpg?time=1748727569","mainEntityOfPage":"https://www.royalroad.com/fiction/117255/rend","potentialAction":{"@type":"ReadAction","name":"REND","target":{"@type":"EntryPoint","actionPlatform":["http://schema.org/DesktopWebPlatform","http://schema.org/MobileWebPlatform","http://schema.org/AndroidPlatform","http://schema.org/iOSPlatform"],"urlTemplate":"https://www.royalroad.com/fiction/117255/rend"}},"url":"https://www.royalroad.com/fiction/117255/rend","aggregateRating":{"@type":"AggregateRating","bestRating":5,"ratingValue":4.89878511428833,"worstRating":0.5,"ratingCount":247},"author":{"@type":"Person","name":"Temple"},"genre":["Action","Comedy","Fantasy","Psychological","Anti-Hero Lead","Female Lead","Low Fantasy","Progression","Secret Identity","Strong Lead","Super Heroes","Supernatural","Urban Fantasy","Villainous Lead"],"headline":"REND","publisher":{"@type":"Organization","name":"Royal Road","url":"https://www.royalroad.com/","logo":"https://www.royalroad.com/dist/img/logo/rr-logo-square-silver-gold-large.png"},"numberOfPages":115}</script>
-
-    <link rel="icon" href="/icons/android-chrome-192x192.png?v=20200125" sizes="192x192" />
-    <link rel="shortcut icon" href="/icons/favicon.ico?v=20200125" sizes="16x16 24x24 32x32"/>
-    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-icon-180x180.png?v=20200125">
-    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png?v=20200125">
-    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png?v=20200125">
-    <link rel="manifest" href="/manifest.json">
-    <meta name="msapplication-TileColor" content="#ffffff">
-    <meta name="msapplication-TileImage" content="/icons/ms-icon-144x144.png">
-    <meta name="theme-color" content="#FFFFFF">
-        <meta name="sentry-trace" content="25608656142b476ca0f8682a181d16e9-8c41d707a9fc6385"/>
-        <meta name="baggage" content="sentry-trace_id=25608656142b476ca0f8682a181d16e9, sentry-public_key=de5ce8f509e7458780cbb83f5b040bf0, sentry-release=RoyalRoad.Web.Website%404.1.20250603.1, sentry-environment=production">
-    <script type="text/javascript">
-        window.royalroad = window.royalroad || {init: []};
-        window.royalroad.isPremium = false;
-        window.royalroad.version = "RoyalRoad.Web.Website@"+"4.1.20250603.1";
-        window.royalroad.userId = 0;
-        window.royalroad.environment = "Production";
-        window.royalroad.actionRoute = "Fictions.Index";
-        window.royalroad.username = "";
-        window.royalroad.betaFeatures = false;
-
-        window.dateFormat = "yyyy-MM-dd";
-        window.dateTimeFormat = "yyyy-MM-dd HH:mm";
-    </script>
-    <script type="text/javascript" src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=default%2Ces6"></script>
-<script>('WeakMap' in window && 'IntersectionObserver' in window && 'assign' in Object && 'fetch' in window||document.write("\u003Cscript type=\u0022text/javascript\u0022 src=\u0022/dist/polyfill.js\u0022\u003E\u003C/script\u003E"));</script>
-
-<script type="text/javascript">var AdblockPlus=new function(){this.detect=function(n,e){var o=!1,r=2,c=!1,t=!1;if("function"==typeof e){n+="?ch=*&rn=*";var a=11*Math.random(),i=new Image;i.onload=u,i.onerror=function(){c=!0,u()},i.src=n.replace(/\*/,1).replace(/\*/,a);var f=new Image;f.onload=u,f.onerror=function(){t=!0,u()},f.src=n.replace(/\*/,2).replace(/\*/,a),function n(e,c){0==r||c>1e3?e(0==r&&o):setTimeout(function(){n(e,2*c)},2*c)}(e,250)}function u(){--r||(o=!c&&t)}}};</script><script type="text/javascript">window.nitroAds=window.nitroAds||{createAd:function(){return new Promise(e=>{window.nitroAds.queue.push(["createAd",arguments,e])})},addUserToken:function(){window.nitroAds.queue.push(["addUserToken",arguments])},queue:[]};</script><script async="async" src="https://s.nitropay.com/ads-137.js" type="text/javascript"></script></head>
-<body class="page-container-bg-solid light-theme">
-<div class="page-container">
-    <div class="page-content-wrapper">
-        <div class="page-content">
-            <div class="container fiction-page">
-<div class="row fic-header">
-    <div class="col-md-3 text-center cover-col">
-        <div class="cover-art-container">
-            <img class="thumbnail inline-block" data-type="cover" onLoad="this.dataset.loaded = 1" onError="this.onerror=null; this.src=&#x27;/dist/img/nocover-new-min.png&#x27;" alt="REND" src="https://www.royalroadcdn.com/public/covers-large/117255-rend.jpg?time=1748727569"></img>
-        </div>
-    </div>
-    <div class="col-md-5 col-lg-6 text-center md-text-left fic-title">
-        <div class="col">
-            <h1 class="font-white">REND</h1>
-            <h4 class="font-white">
-                <span class="small font-white">by </span>
-                <span>
-                    <a href="/profile/165560" class="font-white">Temple</a>
-                </span>
-            </h4>
-        </div>
-    </div>
-</div>
-<div class="fiction row">
-<div class="col-sm-12">
-<div class="fiction-info">
-<div class="portlet light row" style="min-height: 180px;">
-    <div class="col-md-4"></div>
-    <div class="col-md-8">
-        <div class="description">
-            <input type="checkbox" value="" id="showMore"/>
-            <div class="hidden-content">
-                <p>Erind Hartwell: dutiful daughter, law student, psychopath, film enthusiast—one of these makes her not normal. Was it the psychopath thing? Maybe. Still, she's relatively normal in a world where superhumans fight eldritch horrors that turn people into monsters.</p>
-<p>Viewing life as a movie, Erind’s wish to become the main character is granted unexpectedly: on the brink of death, an otherworldly entity offers her powers. Becoming a monster doesn’t sound like how a main character should be, but there isn’t much of a choice, as she was dying, impaled by a spike. She can probably make this monster thing work.</p>
-<p>Follow an endearing psychopath and her shenanigans in the middle of a battle between superhumans, hi-tech government agents, monsters, mutants, and wannabe heroes for Earth and the future of humanity.</p>
-<hr>
-<p>This is a rewrite of <a href="https://www.royalroad.com/fiction/32615/rend" rel="noopener ugc nofollow">REND: Prior Cycle (Old Version)</a>. 90+% different from the original. <br>Cover art by ChristianAC</p>
-            </div>
-            <label for="showMore" class="bold uppercase small"></label>
-        </div>
-    </div>
-</div>
-<div class="portlet light">
-    <div class="portlet-body">
-        <table class="table no-border" id="chapters" data-chapters="12">
-            <thead>
-            <tr>
-                <th data-priority="1">
-                    Chapter Name
-                </th>
-                <th class="text-right min-tablet-p" data-priority="2">
-                    Release Date
-                </th>
-            </tr>
-            </thead>
-            <tbody>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2291798/11-crappy-monday" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2291798/11-crappy-monday">
-                            1.1 Crappy Monday
-                        </a>
-                    </td>
-                    <td data-content="0" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2291798/11-crappy-monday" data-content="0">
-                            <time unixtime="1747702533" title="Tuesday, May 20, 2025 12:55:33&#x202F;AM" datetime="2025-05-20T00:55:33.0000000&#x2B;00:00" format="agoshort">14 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2292710/12-crappy-monday" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2292710/12-crappy-monday">
-                            1.2 Crappy Monday
-                        </a>
-                    </td>
-                    <td data-content="1" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2292710/12-crappy-monday" data-content="1">
-                            <time unixtime="1747744209" title="Tuesday, May 20, 2025 12:30:09&#x202F;PM" datetime="2025-05-20T12:30:09.0000000&#x2B;00:00" format="agoshort">14 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2295018/13-crappy-monday" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2295018/13-crappy-monday">
-                            1.3 Crappy Monday
-                        </a>
-                    </td>
-                    <td data-content="2" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2295018/13-crappy-monday" data-content="2">
-                            <time unixtime="1747832621" title="Wednesday, May 21, 2025 1:03:41&#x202F;PM" datetime="2025-05-21T13:03:41.0000000&#x2B;00:00" format="agoshort">13 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2296785/14-crappy-monday" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2296785/14-crappy-monday">
-                            1.4 Crappy Monday
-                        </a>
-                    </td>
-                    <td data-content="3" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2296785/14-crappy-monday" data-content="3">
-                            <time unixtime="1747889398" title="Thursday, May 22, 2025 4:49:58&#x202F;AM" datetime="2025-05-22T04:49:58.0000000&#x2B;00:00" format="agoshort">12 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2299364/21-new-semester-new-me" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2299364/21-new-semester-new-me">
-                            2.1 New Semester, New Me
-                        </a>
-                    </td>
-                    <td data-content="4" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2299364/21-new-semester-new-me" data-content="4">
-                            <time unixtime="1747986363" title="Friday, May 23, 2025 7:46:03&#x202F;AM" datetime="2025-05-23T07:46:03.0000000&#x2B;00:00" format="agoshort">11 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2301568/22-new-semester-new-me" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2301568/22-new-semester-new-me">
-                            2.2 New Semester, New Me
-                        </a>
-                    </td>
-                    <td data-content="5" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2301568/22-new-semester-new-me" data-content="5">
-                            <time unixtime="1748048108" title="Saturday, May 24, 2025 12:55:08&#x202F;AM" datetime="2025-05-24T00:55:08.0000000&#x2B;00:00" format="agoshort">10 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2303699/23-new-semester-new-me" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2303699/23-new-semester-new-me">
-                            2.3 New Semester, New Me
-                        </a>
-                    </td>
-                    <td data-content="6" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2303699/23-new-semester-new-me" data-content="6">
-                            <time unixtime="1748137542" title="Sunday, May 25, 2025 1:45:42&#x202F;AM" datetime="2025-05-25T01:45:42.0000000&#x2B;00:00" format="agoshort">9 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2305732/24-new-semester-new-me" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2305732/24-new-semester-new-me">
-                            2.4 New Semester, New Me
-                        </a>
-                    </td>
-                    <td data-content="7" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2305732/24-new-semester-new-me" data-content="7">
-                            <time unixtime="1748226404" title="Monday, May 26, 2025 2:26:44&#x202F;AM" datetime="2025-05-26T02:26:44.0000000&#x2B;00:00" format="agoshort">8 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2311648/31-those-above-the-law" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2311648/31-those-above-the-law">
-                            3.1 Those Above the Law
-                        </a>
-                    </td>
-                    <td data-content="8" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2311648/31-those-above-the-law" data-content="8">
-                            <time unixtime="1748440338" title="Wednesday, May 28, 2025 1:52:18&#x202F;PM" datetime="2025-05-28T13:52:18.0000000&#x2B;00:00" format="agoshort">6 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2316851/32-those-above-the-law" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2316851/32-those-above-the-law">
-                            3.2 Those Above the Law
-                        </a>
-                    </td>
-                    <td data-content="9" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2316851/32-those-above-the-law" data-content="9">
-                            <time unixtime="1748612175" title="Friday, May 30, 2025 1:36:15&#x202F;PM" datetime="2025-05-30T13:36:15.0000000&#x2B;00:00" format="agoshort">4 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2319836/33-those-above-the-law" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2319836/33-those-above-the-law">
-                            3.3 Those Above the Law
-                        </a>
-                    </td>
-                    <td data-content="10" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2319836/33-those-above-the-law" data-content="10">
-                            <time unixtime="1748707292" title="Saturday, May 31, 2025 4:01:32&#x202F;PM" datetime="2025-05-31T16:01:32.0000000&#x2B;00:00" format="agoshort">3 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-                <tr style="cursor: pointer" data-url="/fiction/117255/rend/chapter/2322033/41-a-memorial-to-remember" data-volume-id="null" class="chapter-row">
-                    <td>
-                        <a href="/fiction/117255/rend/chapter/2322033/41-a-memorial-to-remember">
-                            4.1 A Memorial To Remember
-                        </a>
-                    </td>
-                    <td data-content="11" class="text-right">
-                        <a href="/fiction/117255/rend/chapter/2322033/41-a-memorial-to-remember" data-content="11">
-                            <time unixtime="1748789627" title="Sunday, June 1, 2025 2:53:47&#x202F;PM" datetime="2025-06-01T14:53:47.0000000&#x2B;00:00" format="agoshort">2 days </time> ago
-                        </a>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-</div>
-</div>
-</div>
-</div>
-            </div>
-        </div>
-    </div>
-</div>
-</body>
-</html>
-""" # Truncated for brevity, full HTML is very long
-
 # Setup basic logging
 logger = logging.getLogger(__name__)
 
 class RoyalRoadFetcher(BaseFetcher):
+    def __init__(self, story_url: str):
+        super().__init__(story_url)
+
     def _fetch_html_content(self, url: str) -> BeautifulSoup:
-        # Use example HTML for the specific story page URL to avoid excessive requests during metadata/chapter list parsing tests
-        if url == "https://www.royalroad.com/fiction/117255/rend":
-            logger.info(f"Using example HTML for URL: {url}")
-            return BeautifulSoup(EXAMPLE_STORY_PAGE_HTML, 'html.parser')
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -348,16 +41,16 @@ class RoyalRoadFetcher(BaseFetcher):
             raise HTTPError(f"An unexpected error occurred for {url}: {e}")
 
 
-    def get_story_metadata(self, url: str) -> StoryMetadata:
+    def get_story_metadata(self) -> StoryMetadata:
         # Fetch live content or use example based on URL.
         # _fetch_html_content will handle if it's the specific example URL.
-        soup = self._fetch_html_content(url)
+        soup = self._fetch_html_content(self.story_url)
 
         metadata = StoryMetadata()
-        metadata.story_url = url
+        metadata.story_url = self.story_url
 
         # Title
-        title_tag = soup.find('h1', class_='font-white')
+        title_tag = soup.find('h1', class_='font-alt')
         if title_tag:
             metadata.original_title = title_tag.text.strip()
         else: # Fallback to meta property
@@ -377,7 +70,7 @@ class RoyalRoadFetcher(BaseFetcher):
 
 
         # Author
-        author_link = soup.select_one('h4.font-white a[href*="/profile/"]')
+        author_link = soup.find('span', property='name')
         if author_link:
             metadata.original_author = author_link.text.strip()
         else: # Fallback to meta property
@@ -390,7 +83,7 @@ class RoyalRoadFetcher(BaseFetcher):
                     metadata.original_author = content[0] if content else None
 
         # Cover Image URL
-        cover_img_tag = soup.select_one('div.cover-art-container img.thumbnail')
+        cover_img_tag = soup.select_one('div.cover-art-container img')
         if cover_img_tag:
             src_content = cover_img_tag.get('src')
             if isinstance(src_content, str):
@@ -458,9 +151,9 @@ class RoyalRoadFetcher(BaseFetcher):
 
         return metadata
 
-    def get_chapter_urls(self, story_url: str) -> List[ChapterInfo]:
+    def get_chapter_urls(self) -> List[ChapterInfo]:
         # Fetch live content or use example based on URL.
-        soup = self._fetch_html_content(story_url)
+        soup = self._fetch_html_content(self.story_url)
 
         chapters: List[ChapterInfo] = []
         chapter_table_tag = soup.find('table', id='chapters')
@@ -615,33 +308,29 @@ class RoyalRoadFetcher(BaseFetcher):
             logger.warning(f"Could not find the next chapter link on {chapter_page_url} after trying selectors: {', '.join(selectors_tried)}")
             return None
 
-    def get_source_specific_id(self, url: str) -> str:
+    def get_permanent_id(self) -> str:
         """
         Extracts the numerical fiction ID from a RoyalRoad URL.
         Example: "https://www.royalroad.com/fiction/12345/some-story-title" -> "12345"
         """
-        # Regex to match royalroad.com domain and extract fiction ID
-        match = re.search(r"royalroad.com/fiction/(\d+)", url)
+        match = re.search(r"royalroad.com/fiction/(\d+)(?:/.*)?", self.story_url)
         if match:
-            return match.group(1)
+            return f"royalroad-{match.group(1)}"
         else:
-            logger.warning(f"Could not extract fiction ID from RoyalRoad URL: {url}")
-            # Raise an error or return a specific value indicating failure,
-            # depending on how the caller (Orchestrator) should handle this.
-            # For now, let's raise ValueError as the Orchestrator might fall back.
-            raise ValueError(f"Could not parse RoyalRoad fiction ID from URL: {url}")
+            logger.warning(f"Could not extract fiction ID from RoyalRoad URL: {self.story_url}")
+            raise ValueError(f"Could not parse RoyalRoad fiction ID from URL: {self.story_url}")
 
 if __name__ == '__main__':
     # Setup basic logging for the __main__ block
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
     # Example usage for testing (will be part of actual test files later)
-    fetcher = RoyalRoadFetcher()
-    story_url_example = "https://www.royalroad.com/fiction/117255/rend" # Uses example HTML via _fetch_html_content logic
+    story_url_example = "https://www.royalroad.com/fiction/117255/rend"
+    fetcher = RoyalRoadFetcher(story_url_example)
 
     logger.info("--- Story Metadata ---")
     try:
-        metadata = fetcher.get_story_metadata(story_url_example)
+        metadata = fetcher.get_story_metadata()
         logger.info(f"Title: {metadata.original_title}")
         logger.info(f"Author: {metadata.original_author}")
         logger.info(f"Cover URL: {metadata.cover_image_url}")
@@ -655,7 +344,7 @@ if __name__ == '__main__':
 
     logger.info("\n--- Chapter List ---")
     try:
-        chapters = fetcher.get_chapter_urls(story_url_example)
+        chapters = fetcher.get_chapter_urls()
         if chapters:
             for i, chap in enumerate(chapters[:2]): # Print first 2 chapters for brevity
                 logger.info(f"Order: {chap.download_order}, Source ID: {chap.source_chapter_id}, Title: {chap.chapter_title}, URL: {chap.chapter_url}")

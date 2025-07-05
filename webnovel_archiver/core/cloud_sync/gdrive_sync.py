@@ -86,7 +86,7 @@ class GDriveSync(BaseSyncService):
 
         try:
             self.service = build('drive', 'v3', credentials=creds)
-            logger.info("Google Drive API service built successfully.")
+            logger.debug("Google Drive API service built successfully.")
         except Exception as e:
             logger.error(f"Failed to build Google Drive service: {e}")
             self.service = None # Ensure service is None if build fails
@@ -125,29 +125,26 @@ class GDriveSync(BaseSyncService):
         # Check if file already exists to update it
         existing_file_id = self._get_file_id(file_name, remote_folder_id)
 
-        file_metadata = {
-            'name': file_name,
-            # 'parents': [remote_folder_id] # Set parent folder during create/update
-        }
-        if remote_folder_id: # Add parent only if it's not root (though for this app, it's always specified)
-             file_metadata['parents'] = [remote_folder_id]
-
         media = MediaFileUpload(local_file_path, resumable=True)
 
         try:
             if existing_file_id:
                 # File exists, update it
                 logger.info(f"Updating existing file '{file_name}' (ID: {existing_file_id}) in Drive folder ID '{remote_folder_id}'.")
-                # If updating an existing file, 'parents' should not be in the body.
-                # The Drive API v3 update semantics state that a file's parents are not directly mutable with files.update.
-                # Changes to parents must be done with addParents and removeParents parameters.
-                # Since we are not changing the parent folder here, we remove 'parents' from metadata.
-                if 'parents' in file_metadata:
-                    del file_metadata['parents']
+
+                # When updating, the body should not contain 'parents' if using addParents/removeParents.
+                update_metadata = {'name': file_name}
+
+                # Get current parents to remove them later
+                file_get_response = self.service.files().get(fileId=existing_file_id, fields='parents').execute()
+                previous_parents = ",".join(file_get_response.get('parents', []))
+
                 updated_file = self.service.files().update(
                     fileId=existing_file_id,
-                    body=file_metadata, # parents removed if present
+                    body=update_metadata,
                     media_body=media,
+                    addParents=remote_folder_id,
+                    removeParents=previous_parents,
                     fields='id, name, webViewLink, modifiedTime'
                 ).execute()
                 logger.info(f"File '{updated_file.get('name')}' updated successfully. ID: {updated_file.get('id')}")
@@ -155,8 +152,15 @@ class GDriveSync(BaseSyncService):
             else:
                 # File does not exist, create it
                 logger.info(f"Uploading new file '{file_name}' to Drive folder ID '{remote_folder_id}'.")
+                
+                create_metadata = {
+                    'name': file_name,
+                }
+                if remote_folder_id:
+                    create_metadata['parents'] = [remote_folder_id]
+
                 new_file = self.service.files().create(
-                    body=file_metadata,
+                    body=create_metadata,
                     media_body=media,
                     fields='id, name, webViewLink, modifiedTime'
                 ).execute()
@@ -239,7 +243,7 @@ class GDriveSync(BaseSyncService):
                     return None
         except HttpError as error:
             if error.resp.status == 404:
-                logger.info(f"File not found (file_id: {file_id}, file_name: {file_name}, folder_id: {folder_id}).")
+                logger.debug(f"File not found (file_id: {file_id}, file_name: {file_name}, folder_id: {folder_id}).")
                 return None
             logger.error(f"An API error occurred while getting file metadata: {error}")
             # Consider re-raising for certain errors or returning None for others
@@ -268,7 +272,7 @@ class GDriveSync(BaseSyncService):
                 page_token = response.get('nextPageToken', None)
                 if page_token is None:
                     break
-            logger.info(f"Found {len(files_list)} files in folder ID '{folder_id}'.")
+            logger.debug(f"Found {len(files_list)} files in folder ID '{folder_id}'.")
             return files_list
         except HttpError as error:
             logger.error(f"An API error occurred while listing files in folder '{folder_id}': {error}")

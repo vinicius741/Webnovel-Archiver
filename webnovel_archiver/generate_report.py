@@ -541,9 +541,7 @@ def process_story_for_report(progress_data, workspace_root):
     epub_generation_timestamp_raw = progress_data.get('last_epub_processing', {}).get('timestamp')
     epub_generation_timestamp = format_timestamp(epub_generation_timestamp_raw)
 
-    print(f"DEBUG [process_story]: story_id for get_epub_file_details: {story_id}, workspace_root: {workspace_root}")
     epub_files = get_epub_file_details(progress_data, story_id, workspace_root)
-    print(f"DEBUG [process_story]: epub_files returned: {epub_files}")
 
 
     # Cloud Backup Status
@@ -605,84 +603,62 @@ def process_story_for_report(progress_data, workspace_root):
     }
 
 def main():
-    # logger.info(f"WNA_WORKSPACE_ROOT env var from within main(): {os.getenv('WNA_WORKSPACE_ROOT')}") # Removed temp debug
     logger.info("HTML report generation script started.")
 
-    logger.info("Determining workspace and report output paths...")
     try:
         config_manager = ConfigManager()
         workspace_root = config_manager.get_workspace_path()
-        # workspace_root = "/app/test_workspace" # TEMP OVERRIDE FOR TESTING - REMOVED
-        # logger.info(f"Using TEMPORARY workspace_root override: {workspace_root}") # Removed temp debug
-
-
-        if not workspace_root: # Should not happen with default fallback in ConfigManager
+        if not workspace_root:
             logger.error("Workspace root could not be determined. Exiting.")
             return
 
-        archival_status_path = os.path.join(workspace_root, PathManager.ARCHIVAL_STATUS_DIR_NAME) # Use PathManager constant
-        reports_dir = os.path.join(workspace_root, "reports") # This can remain as "reports" is a direct subdir for this script's output
-
-        # Create reports directory if it doesn't exist
+        path_manager = PathManager(workspace_root)
+        index_path = path_manager.index_path
+        reports_dir = os.path.join(workspace_root, "reports")
         os.makedirs(reports_dir, exist_ok=True)
-        logger.info(f"Ensured reports directory exists at: {reports_dir}")
-
-        report_html_path = os.path.join(reports_dir, "archive_report.html")
+        report_html_path = os.path.join(reports_dir, "archive_report_new.html")
 
         logger.info(f"Workspace root: {workspace_root}")
-        logger.info(f"Archival status path: {archival_status_path}")
-        logger.info(f"Reports directory: {reports_dir}")
-        logger.info(f"Report HTML will be saved to: {report_html_path}")
+        logger.info(f"Index path: {index_path}")
+        logger.info(f"Report will be saved to: {report_html_path}")
 
     except Exception as e:
         logger.error(f"Error during path determination: {e}", exc_info=True)
         return
 
-    # Further implementation will go here (story discovery, processing, HTML generation)
-
-    logger.info("Discovering and loading story progress data...")
-    all_story_data = []
-
-    if not os.path.exists(archival_status_path) or not os.path.isdir(archival_status_path):
-        logger.error(f"Archival status path does not exist or is not a directory: {archival_status_path}")
-        logger.info("No stories to process. Exiting.")
+    if not os.path.exists(index_path):
+        logger.error(f"Index file not found at {index_path}. Cannot generate report.")
+        print(f"Error: Story index '{index_path}' not found. Please run the archiver at least once to create it.")
         return
 
-    story_ids = [name for name in os.listdir(archival_status_path)
-                 if os.path.isdir(os.path.join(archival_status_path, name))]
+    try:
+        with open(index_path, 'r', encoding='utf-8') as f:
+            story_index = json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        logger.error(f"Failed to load or parse index file: {e}", exc_info=True)
+        return
 
-    if not story_ids:
-        logger.info(f"No story subdirectories found in {archival_status_path}.")
-        # Generate an empty report later, or just exit for now
-        # For now, let's log and proceed to generate an empty report.
-    else:
-        logger.info(f"Found {len(story_ids)} potential story directories.")
-        # print(f"DEBUG: Found {len(story_ids)} story IDs: {story_ids}") # TEMP DEBUG PRINT - REMOVED
+    if not story_index:
+        logger.info("Story index is empty. No stories to report.")
+        story_index = {}
 
-    for story_id in story_ids:
-        logger.debug(f"Processing story_id: {story_id}")
+    logger.info(f"Found {len(story_index)} stories in the index.")
+
+    all_story_data = []
+    for permanent_id, story_folder_name in story_index.items():
+        logger.debug(f"Processing story: Permanent ID: {permanent_id}, Folder: {story_folder_name}")
         try:
-            # Pass workspace_root to load_progress as it's needed for resolving potential relative paths
-            # within the progress file if any, or for default values.
-            progress_data = load_progress(story_id, workspace_root)
-            # print(f"DEBUG: Loaded progress for {story_id}: {progress_data.get('title', 'NO TITLE LOADED')} - Keys: {list(progress_data.keys())}") # TEMP DEBUG PRINT - REMOVED
-
-            # Ensure that loaded_data is not None and contains story_id,
-            # which load_progress should guarantee by returning a new structure if file is missing/corrupt.
+            progress_data = load_progress(story_folder_name, workspace_root)
             if progress_data and progress_data.get("story_id"):
+                # Add permanent_id to the data for use in the report
+                progress_data['permanent_id'] = permanent_id
                 all_story_data.append(progress_data)
-                logger.debug(f"Successfully loaded progress for story_id: {story_id}")
             else:
-                # This case should ideally not be hit if load_progress always returns a valid structure
-                logger.warning(f"Failed to load valid progress data for story_id: {story_id} or data is malformed. Skipping.")
+                logger.warning(f"Failed to load valid progress data for story: {story_folder_name}. Skipping.")
         except Exception as e:
-            logger.error(f"Error loading progress for story_id {story_id}: {e}", exc_info=True)
-            # Decide if you want to skip this story or halt. For a report, skipping is better.
+            logger.error(f"Error loading progress for story {story_folder_name}: {e}", exc_info=True)
 
-    logger.info(f"Successfully loaded data for {len(all_story_data)} out of {len(story_ids)} stories found.")
-
-    # Store workspace_root and report_html_path to be accessible by other functions if needed
-    # For now, they are local to main, which is fine as we'll pass them around.
+    logger.info(f"Successfully loaded data for {len(all_story_data)} stories.")
 
     processed_stories = []
     if all_story_data:
@@ -697,7 +673,6 @@ def main():
     else:
         logger.info("No story data to process for the report.")
 
-    final_html = ""
     story_cards_html_list = []
     if not processed_stories:
         story_cards_html = "<p class=\"no-items\">No stories found in the archive to report.</p>"
@@ -733,7 +708,7 @@ def main():
     final_html = get_html_skeleton("Webnovel Archive Report", css_styles, main_body_content, js_code)
     logger.info("Successfully generated HTML content string.")
 
-    if final_html: # Ensure final_html was actually generated
+    if final_html:
         logger.info(f"Attempting to write HTML report to: {report_html_path}")
         try:
             with open(report_html_path, 'w', encoding='utf-8') as f:
@@ -746,10 +721,10 @@ def main():
             except Exception as e_browser:
                 logger.error(f"Failed to open report in browser: {e_browser}", exc_info=True)
                 print(f"Note: Could not open report in browser. Error: {e_browser}")
-        except IOError as e: # More specific exception for file I/O
+        except IOError as e:
             logger.error(f"Failed to write HTML report due to IOError {report_html_path}: {e}", exc_info=True)
             print(f"Error: Could not write HTML report to {report_html_path}. Check logs for details.")
-        except Exception as e: # General exception
+        except Exception as e:
             logger.error(f"An unexpected error occurred while writing HTML report to {report_html_path}: {e}", exc_info=True)
             print(f"Error: An unexpected error occurred while writing HTML report. Check logs for details.")
     else:

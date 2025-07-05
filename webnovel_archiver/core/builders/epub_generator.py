@@ -4,6 +4,7 @@ import os
 import datetime
 import requests # Added for downloading cover image
 import shutil # Added for saving cover image
+import imghdr
 from typing import Optional, List, Dict, Any
 from webnovel_archiver.utils.logger import get_logger
 from webnovel_archiver.core.path_manager import PathManager # Added PathManager
@@ -35,23 +36,26 @@ class EPUBGenerator:
             temp_cover_path = self.pm.get_temp_cover_story_dir()
             os.makedirs(temp_cover_path, exist_ok=True)
 
-            # Determine file extension
-            content_type = response.headers.get('content-type')
-            if content_type and 'jpeg' in content_type:
-                ext = '.jpg'
-            elif content_type and 'png' in content_type:
-                ext = '.png'
-            else: # Fallback or assume jpg
-                ext = '.jpg'
-                logger.warning(f"Could not determine cover image type for {story_id} from content-type '{content_type}'. Assuming JPG.")
-
-            local_filename = f"cover{ext}"
-            # file_path = os.path.join(temp_cover_path, local_filename) # Replaced
+            local_filename = f"cover.tmp"
             file_path = str(self.pm.get_cover_image_filepath(local_filename))
 
+            # Determine file extension
             with open(file_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
+
+            image_type = imghdr.what(file_path)
+            if image_type:
+                ext = f'.{image_type}'
+                # Rename the file if the extension is different
+                if not file_path.endswith(ext):
+                    new_file_path = os.path.splitext(file_path)[0] + ext
+                    os.rename(file_path, new_file_path)
+                    file_path = new_file_path
+            else:
+                ext = '.jpg' # Fallback
+                logger.warning(f"Could not determine cover image type for {story_id}. Assuming JPG.")
+
             logger.info(f"Cover image downloaded for story {self.pm.get_story_id()} to {file_path}")
             return file_path
         except requests.exceptions.RequestException as e:
@@ -241,7 +245,7 @@ class EPUBGenerator:
                  pass # Cover is handled by metadata and `set_cover(create_page=True)`
 
             spine_items.extend(epub_items_for_book)
-            book.spine = [(item, 'no') for item in spine_items]
+            book.spine = spine_items
 
             if len(volume_chapters_list) > 1:
                 epub_filename = f"{sanitized_story_title}_vol_{volume_number}.epub"

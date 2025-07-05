@@ -541,9 +541,7 @@ def process_story_for_report(progress_data, workspace_root):
     epub_generation_timestamp_raw = progress_data.get('last_epub_processing', {}).get('timestamp')
     epub_generation_timestamp = format_timestamp(epub_generation_timestamp_raw)
 
-    print(f"DEBUG [process_story]: story_id for get_epub_file_details: {story_id}, workspace_root: {workspace_root}")
     epub_files = get_epub_file_details(progress_data, story_id, workspace_root)
-    print(f"DEBUG [process_story]: epub_files returned: {epub_files}")
 
 
     # Cloud Backup Status

@@ -19,13 +19,33 @@ Webnovel Archiver is built with a "preservation-first" approach. This means:
 
 ## Installation
 
-To install the Webnovel Archiver CLI, ensure you have Python 3.7 or higher. You can then install it using pip:
+It is recommended to install the Webnovel Archiver CLI in a virtual environment.
 
-```bash
-pip install webnovel-archiver
-```
+1.  **Create and Activate a Virtual Environment:**
 
-It is recommended to install it in a virtual environment.
+    Open your terminal, navigate to the project directory, and run the following commands:
+
+    ```bash
+    # Create a virtual environment named 'venv'
+    python3 -m venv venv
+    ```
+
+    Activate the virtual environment:
+    *   **On macOS/Linux:**
+        ```bash
+        source venv/bin/activate
+        ```
+    *   **On Windows:**
+        ```bash
+        .\venv\Scripts\activate
+        ```
+
+2.  **Install the Package:**
+
+    Once the virtual environment is activated, install the required packages from `requirements.txt`:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 ## Basic Usage
 

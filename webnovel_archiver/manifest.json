@@ -1,0 +1,28 @@
+{
+    "name": "Webnovel Archive Report",
+    "short_name": "Webnovel Archive",
+    "description": "View your archived webnovels with a modern, responsive interface",
+    "start_url": "./archive_report_new.html",
+    "display": "standalone",
+    "background_color": "#fef7ff",
+    "theme_color": "#6750a4",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%236750a4'/><text x='50' y='70' font-size='60' text-anchor='middle' fill='white'>📚</text></svg>",
+            "sizes": "192x192",
+            "type": "image/svg+xml"
+        },
+        {
+            "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%236750a4'/><text x='50' y='70' font-size='60' text-anchor='middle' fill='white'>📚</text></svg>",
+            "sizes": "512x512",
+            "type": "image/svg+xml"
+        }
+    ],
+    "categories": [
+        "books",
+        "productivity"
+    ],
+    "lang": "en",
+    "dir": "ltr"
+}

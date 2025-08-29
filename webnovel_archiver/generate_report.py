@@ -84,115 +84,371 @@ def generate_backup_files_html(backup_files_list, format_timestamp_func):
 def get_embedded_css():
     return '''
     :root {
-        --primary-color: #007bff;
-        --primary-hover-color: #0056b3;
-        --secondary-color: #6c757d;
-        --background-color: #f8f9fa;
-        --card-background-color: #ffffff;
-        --text-color: #212529;
-        --light-text-color: #6c757d;
-        --border-color: #dee2e6;
-        --shadow-color: rgba(0, 0, 0, 0.05);
-        --success-color: #28a745;
-        --warning-color: #ffc107;
-        --danger-color: #dc3545;
-        --info-color: #17a2b8;
+        /* Material Design 3 Color System */
+        --primary-color: #6750a4;
+        --primary-hover-color: #5a4a8a;
+        --primary-container: #eaddff;
+        --on-primary: #ffffff;
+        --on-primary-container: #21005e;
+        
+        --secondary-color: #625b71;
+        --secondary-container: #e8def8;
+        --on-secondary: #ffffff;
+        --on-secondary-container: #1d192b;
+        
+        --tertiary-color: #7d5260;
+        --tertiary-container: #ffd8e4;
+        --on-tertiary: #ffffff;
+        --on-tertiary-container: #31111d;
+        
+        --background-color: #fef7ff;
+        --surface-color: #fef7ff;
+        --surface-variant: #e7e0ec;
+        --on-surface: #1c1b1f;
+        --on-surface-variant: #49454f;
+        
+        --outline: #79747e;
+        --outline-variant: #cac4d0;
+        
+        --error-color: #ba1a1a;
+        --error-container: #ffdad6;
+        --on-error: #ffffff;
+        --on-error-container: #410002;
+        
+        --success-color: #0d904f;
+        --success-container: #d1f4e0;
+        --warning-color: #f57c00;
+        --warning-container: #ffe0b2;
+        --info-color: #1976d2;
+        --info-container: #e3f2fd;
+        
+        /* Status Colors */
+        --status-complete: var(--success-color);
+        --status-ongoing: var(--warning-color);
+        --status-unknown: var(--secondary-color);
+        --status-possibly-complete: var(--info-color);
+        
+        /* Backup Status Colors */
+        --backup-ok: var(--success-color);
+        --backup-failed: var(--error-color);
+        --backup-never: var(--secondary-color);
+        --backup-partial: var(--warning-color);
+        --backup-ok-no-timestamp: var(--info-color);
+        
+        /* Shadows */
+        --shadow-1: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+        --shadow-2: 0 3px 6px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.23);
+        --shadow-3: 0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23);
+        --shadow-4: 0 14px 28px rgba(0,0,0,0.25), 0 10px 10px rgba(0,0,0,0.22);
+        
+        /* Spacing */
+        --spacing-xs: 0.25rem;
+        --spacing-sm: 0.5rem;
+        --spacing-md: 1rem;
+        --spacing-lg: 1.5rem;
+        --spacing-xl: 2rem;
+        --spacing-2xl: 3rem;
+        
+        /* Border Radius */
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --radius-xl: 24px;
+        
+        /* Typography */
+        --font-size-xs: 0.75rem;
+        --font-size-sm: 0.875rem;
+        --font-size-base: 1rem;
+        --font-size-lg: 1.125rem;
+        --font-size-xl: 1.25rem;
+        --font-size-2xl: 1.5rem;
+        --font-size-3xl: 1.875rem;
+        --font-size-4xl: 2.25rem;
+        
+        /* Z-Fold 7 Breakpoints */
+        --fold-cover-width: 904px;
+        --fold-main-width: 1812px;
     }
+    
+    /* Dark Mode Support */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --background-color: #141218;
+            --surface-color: #141218;
+            --surface-variant: #49454f;
+            --on-surface: #e6e1e5;
+            --on-surface-variant: #cac4d0;
+            
+            --primary-container: #4f378b;
+            --on-primary-container: #eaddff;
+            --secondary-container: #4a4458;
+            --on-secondary-container: #e8def8;
+            --tertiary-container: #633b48;
+            --on-tertiary-container: #ffd8e4;
+            
+            --outline: #938f99;
+            --outline-variant: #49454f;
+        }
+    }
+    
+    * {
+        box-sizing: border-box;
+    }
+    
     body {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         margin: 0;
+        padding: 0;
         background-color: var(--background-color);
-        color: var(--text-color);
-        font-size: 16px;
+        color: var(--on-surface);
+        font-size: var(--font-size-base);
         line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        overflow-x: hidden;
     }
+    
+    /* Container and Layout */
     .container {
-        max-width: 1400px;
-        margin: 2rem auto;
-        padding: 1rem;
+        max-width: min(100vw, 1400px);
+        margin: 0 auto;
+        padding: var(--spacing-lg);
+        min-height: 100vh;
     }
-    .report-title {
+    
+    .report-header {
         text-align: center;
-        color: var(--text-color);
-        margin-bottom: 2rem;
-        font-size: 3em;
-        font-weight: 600;
+        margin-bottom: var(--spacing-2xl);
+        padding: var(--spacing-xl) 0;
     }
+    
+    .report-title {
+        font-size: clamp(var(--font-size-3xl), 5vw, var(--font-size-4xl));
+        font-weight: 700;
+        color: var(--on-surface);
+        margin: 0 0 var(--spacing-md) 0;
+        letter-spacing: -0.025em;
+    }
+    
+    .report-subtitle {
+        font-size: var(--font-size-lg);
+        color: var(--on-surface-variant);
+        margin: 0;
+        font-weight: 400;
+    }
+    
+    /* Search and Filter Controls */
+    .search-sort-filter {
+        background-color: var(--surface-color);
+        border: 1px solid var(--outline-variant);
+        border-radius: var(--radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-md);
+        align-items: center;
+        box-shadow: var(--shadow-1);
+        backdrop-filter: blur(10px);
+    }
+    
+    .search-sort-filter input,
+    .search-sort-filter select {
+        padding: var(--spacing-md) var(--spacing-lg);
+        border: 1px solid var(--outline-variant);
+        border-radius: var(--radius-md);
+        font-size: var(--font-size-base);
+        background-color: var(--surface-color);
+        color: var(--on-surface);
+        transition: all 0.2s ease;
+        min-height: 48px;
+    }
+    
+    .search-sort-filter input:focus,
+    .search-sort-filter select:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(103, 80, 164, 0.1);
+    }
+    
+    .search-sort-filter input[type="text"] {
+        flex: 1;
+        min-width: 200px;
+    }
+    
+    .search-sort-filter select {
+        min-width: 180px;
+    }
+    
+    /* Story Grid */
     #storyListContainer {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-        gap: 1.5rem;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-2xl);
     }
+    
+    /* Z-Fold 7 Optimizations */
+    @media (max-width: 904px) {
+        /* Cover screen */
+        #storyListContainer {
+            grid-template-columns: 1fr;
+            gap: var(--spacing-md);
+        }
+        
+        .container {
+            padding: var(--spacing-md);
+        }
+        
+        .search-sort-filter {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        
+        .search-sort-filter input[type="text"] {
+            min-width: auto;
+        }
+    }
+    
+    @media (min-width: 905px) and (max-width: 1812px) {
+        /* Main screen */
+        #storyListContainer {
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        }
+    }
+    
+    @media (min-width: 1813px) {
+        /* Large screens */
+        #storyListContainer {
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+        }
+    }
+    
+    /* Story Cards */
     .story-card {
-        border: 1px solid var(--border-color);
-        background-color: var(--card-background-color);
-        border-radius: 12px;
-        box-shadow: 0 4px 12px var(--shadow-color);
-        display: flex;
-        flex-direction: column;
+        background-color: var(--surface-color);
+        border: 1px solid var(--outline-variant);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-1);
         overflow: hidden;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+        position: relative;
     }
+    
     .story-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-3);
+        border-color: var(--primary-color);
     }
+    
+    .story-card:active {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-2);
+    }
+    
     .story-card-summary {
         display: flex;
-        gap: 1rem;
-        padding: 1.5rem;
-        align-items: center;
+        gap: var(--spacing-lg);
+        padding: var(--spacing-lg);
+        align-items: flex-start;
     }
+    
+    .story-cover {
+        flex-shrink: 0;
+    }
+    
     .story-cover img {
-        width: 100px;
-        height: 140px;
+        width: 80px;
+        height: 120px;
         object-fit: cover;
-        border-radius: 8px;
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-2);
+        transition: transform 0.2s ease;
     }
+    
+    .story-card:hover .story-cover img {
+        transform: scale(1.05);
+    }
+    
     .story-summary-info {
-        flex-grow: 1;
+        flex: 1;
         min-width: 0;
     }
+    
     .story-summary-info h2 {
-        margin-top: 0;
-        font-size: 1.4em;
+        margin: 0 0 var(--spacing-sm) 0;
+        font-size: var(--font-size-xl);
         font-weight: 600;
         color: var(--primary-color);
-        margin-bottom: 0.5rem;
-        white-space: nowrap;
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
         overflow: hidden;
-        text-overflow: ellipsis;
     }
+    
     .story-summary-info h2 a {
         text-decoration: none;
         color: inherit;
+        transition: color 0.2s ease;
     }
+    
     .story-summary-info h2 a:hover {
-        text-decoration: underline;
+        color: var(--primary-hover-color);
     }
+    
     .story-summary-info p {
-        margin: 0.25rem 0;
-        color: var(--light-text-color);
-        font-size: 0.95em;
+        margin: var(--spacing-xs) 0;
+        font-size: var(--font-size-sm);
+        color: var(--on-surface-variant);
+        line-height: 1.4;
     }
+    
+    .story-summary-info .story-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+    }
+    
+    .story-meta-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        font-size: var(--font-size-xs);
+        color: var(--on-surface-variant);
+    }
+    
     .view-details-btn {
-        padding: 0.75rem 1.5rem;
         background-color: var(--primary-color);
-        color: white !important;
+        color: var(--on-primary);
         border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        margin-top: 1rem;
-        font-size: 1em;
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm) var(--spacing-lg);
+        font-size: var(--font-size-sm);
         font-weight: 500;
+        cursor: pointer;
+        margin-top: var(--spacing-md);
+        transition: all 0.2s ease;
         text-decoration: none;
-        display: inline-block;
-        text-align: center;
-        transition: background-color 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        min-height: 40px;
     }
+    
     .view-details-btn:hover {
         background-color: var(--primary-hover-color);
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-2);
     }
+    
+    .view-details-btn:active {
+        transform: translateY(0);
+    }
+    
+    /* Modal */
     .modal {
         display: none;
         position: fixed;
@@ -201,119 +457,394 @@ def get_embedded_css():
         top: 0;
         width: 100%;
         height: 100%;
-        overflow: auto;
-        background-color: rgba(0,0,0,0.5);
-        animation: fadeIn 0.3s;
+        background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+        animation: fadeIn 0.3s ease;
     }
+    
     @keyframes fadeIn {
-        from {opacity: 0;}
-        to {opacity: 1;}
+        from { opacity: 0; }
+        to { opacity: 1; }
     }
+    
     .modal-content {
-        background-color: var(--card-background-color);
+        background-color: var(--surface-color);
         margin: 5% auto;
-        padding: 2rem;
-        border: 1px solid var(--border-color);
+        padding: var(--spacing-xl);
+        border-radius: var(--radius-xl);
         width: 90%;
         max-width: 800px;
-        border-radius: 12px;
+        max-height: 90vh;
         position: relative;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        animation: slideIn 0.4s;
+        box-shadow: var(--shadow-4);
+        animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        overflow: hidden;
     }
+    
     @keyframes slideIn {
-        from {transform: translateY(-50px);}
-        to {transform: translateY(0);}
+        from { 
+            transform: translateY(-50px) scale(0.95);
+            opacity: 0;
+        }
+        to { 
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
     }
+    
     .modal-close-btn {
-        color: var(--light-text-color);
         position: absolute;
-        top: 1rem;
-        right: 1.5rem;
-        font-size: 2rem;
-        font-weight: bold;
+        top: var(--spacing-lg);
+        right: var(--spacing-lg);
+        background: none;
+        border: none;
+        font-size: var(--font-size-2xl);
+        color: var(--on-surface-variant);
         cursor: pointer;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        z-index: 10;
     }
-    .modal-close-btn:hover,
-    .modal-close-btn:focus {
-        color: var(--text-color);
+    
+    .modal-close-btn:hover {
+        background-color: var(--surface-variant);
+        color: var(--on-surface);
     }
+    
     #modalBodyContent {
-        max-height: 80vh;
+        max-height: calc(90vh - 120px);
         overflow-y: auto;
+        padding-right: var(--spacing-sm);
     }
+    
+    #modalBodyContent::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    #modalBodyContent::-webkit-scrollbar-track {
+        background: var(--surface-variant);
+        border-radius: 3px;
+    }
+    
+    #modalBodyContent::-webkit-scrollbar-thumb {
+        background: var(--outline);
+        border-radius: 3px;
+    }
+    
+    /* Modal Content Styles */
+    .modal-header {
+        text-align: center;
+        margin-bottom: var(--spacing-xl);
+        padding-bottom: var(--spacing-lg);
+        border-bottom: 1px solid var(--outline-variant);
+    }
+    
+    .modal-header h1 {
+        font-size: var(--font-size-2xl);
+        font-weight: 700;
+        color: var(--on-surface);
+        margin: 0 0 var(--spacing-sm) 0;
+        line-height: 1.2;
+    }
+    
+    .modal-subtitle {
+        font-size: var(--font-size-lg);
+        color: var(--on-surface-variant);
+        margin: 0;
+        font-weight: 400;
+    }
+    
     .section-title {
         font-weight: 600;
-        margin-top: 1.5rem;
-        margin-bottom: 1rem;
-        font-size: 1.2em;
-        color: var(--text-color);
+        margin: var(--spacing-xl) 0 var(--spacing-md) 0;
+        font-size: var(--font-size-lg);
+        color: var(--on-surface);
         border-bottom: 2px solid var(--primary-color);
-        padding-bottom: 0.5rem;
+        padding-bottom: var(--spacing-sm);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
     }
+    
+    .section-title:first-child {
+        margin-top: 0;
+    }
+    
+    .synopsis {
+        background-color: var(--surface-variant);
+        padding: var(--spacing-lg);
+        border-radius: var(--radius-md);
+        margin-bottom: var(--spacing-sm);
+        line-height: 1.6;
+        position: relative;
+        overflow: hidden;
+        max-height: 120px;
+        transition: max-height 0.3s ease;
+    }
+    
+    .synopsis.expanded {
+        max-height: none;
+    }
+    
+    .synopsis-toggle {
+        color: var(--primary-color);
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+        font-weight: 500;
+        user-select: none;
+    }
+    
+    .synopsis-toggle:hover {
+        text-decoration: underline;
+    }
+    
+    /* File Lists */
     .file-list {
         list-style: none;
-        padding-left: 0;
+        padding: 0;
+        margin: 0;
     }
+    
     .file-list li {
-        font-size: 1em;
-        margin-bottom: 0.5rem;
-        padding: 0.75rem 1rem;
-        background-color: var(--background-color);
+        background-color: var(--surface-variant);
+        margin-bottom: var(--spacing-sm);
+        padding: var(--spacing-md);
+        border-radius: var(--radius-md);
         border-left: 4px solid var(--primary-color);
-        border-radius: 4px;
+        transition: all 0.2s ease;
     }
+    
+    .file-list li:hover {
+        background-color: var(--primary-container);
+        transform: translateX(4px);
+    }
+    
     .file-list li a {
         text-decoration: none;
-        color: var(--primary-hover-color);
+        color: var(--primary-color);
+        font-weight: 500;
+        word-break: break-word;
+    }
+    
+    .file-list li a:hover {
+        text-decoration: underline;
+    }
+    
+    .chapter-list li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-md);
+        border-radius: var(--radius-md);
+        transition: background-color 0.2s ease;
+    }
+    
+    .chapter-list li:hover {
+        background-color: var(--surface-variant);
+    }
+    
+    .chapter-title {
+        flex: 1;
+        min-width: 0;
+        word-break: break-word;
+    }
+    
+    .chapter-title a {
+        color: var(--primary-color);
+        text-decoration: none;
         font-weight: 500;
     }
-    .badge {
-        display: inline-block;
-        padding: .4em .75em;
-        font-size: .8em;
-        font-weight: 600;
-        line-height: 1;
-        text-align: center;
+    
+    .chapter-title a:hover {
+        text-decoration: underline;
+    }
+    
+    .chapter-status {
+        font-size: var(--font-size-xs);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        border-radius: var(--radius-sm);
+        font-weight: 500;
         white-space: nowrap;
-        vertical-align: baseline;
-        border-radius: 20px;
+        flex-shrink: 0;
     }
-    .status-complete { background-color: var(--success-color); color: white; }
-    .status-ongoing { background-color: var(--warning-color); color: var(--text-color); }
-    .status-possibly-complete-total-unknown { background-color: var(--info-color); color: white; }
-    .status-unknown-no-chapters-downloaded-total-unknown { background-color: var(--secondary-color); color: white; }
-    .backup-ok { background-color: var(--success-color); color: white; }
-    .backup-failed { background-color: var(--danger-color); color: white; }
-    .backup-never-backed-up { background-color: var(--secondary-color); color: white; }
-    .backup-partial-unknown { background-color: var(--warning-color); color: var(--text-color); }
-    .backup-ok-timestamp-missing { background-color: var(--info-color); color: white; }
-    .search-sort-filter {
-        margin-bottom: 2rem;
-        padding: 1.5rem;
-        background-color: var(--card-background-color);
-        border: 1px solid var(--border-color);
-        border-radius: 12px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1rem;
+    
+    .chapter-status.archived {
+        background-color: var(--secondary-container);
+        color: var(--on-secondary-container);
+    }
+    
+    .chapter-status.downloaded {
+        background-color: var(--success-container);
+        color: var(--success-color);
+    }
+    
+    .chapter-status.not-downloaded {
+        background-color: var(--error-container);
+        color: var(--error-color);
+    }
+    
+    /* Badges */
+    .badge {
+        display: inline-flex;
         align-items: center;
+        padding: var(--spacing-xs) var(--spacing-sm);
+        font-size: var(--font-size-xs);
+        font-weight: 600;
+        border-radius: var(--radius-sm);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
-    .search-sort-filter input, .search-sort-filter select {
-        padding: 0.75rem 1rem;
-        border-radius: 8px;
-        border: 1px solid var(--border-color);
-        font-size: 1em;
-        background-color: #fff;
+    
+    .status-complete { 
+        background-color: var(--success-container); 
+        color: var(--success-color); 
     }
-    .search-sort-filter input:focus, .search-sort-filter select:focus {
-        border-color: var(--primary-color);
-        box-shadow: 0 0 0 3px rgba(0,123,255,.25);
-        outline: none;
+    
+    .status-ongoing { 
+        background-color: var(--warning-container); 
+        color: var(--warning-color); 
     }
-    .search-sort-filter input[type="text"] {
-        flex-grow: 1;
-        min-width: 250px;
+    
+    .status-possibly-complete-total-unknown { 
+        background-color: var(--info-container); 
+        color: var(--info-color); 
+    }
+    
+    .status-unknown-no-chapters-downloaded-total-unknown { 
+        background-color: var(--secondary-container); 
+        color: var(--secondary-color); 
+    }
+    
+    .backup-ok { 
+        background-color: var(--success-container); 
+        color: var(--success-color); 
+    }
+    
+    .backup-failed { 
+        background-color: var(--error-container); 
+        color: var(--error-color); 
+    }
+    
+    .backup-never-backed-up { 
+        background-color: var(--secondary-container); 
+        color: var(--secondary-color); 
+    }
+    
+    .backup-partial-unknown { 
+        background-color: var(--warning-container); 
+        color: var(--warning-color); 
+    }
+    
+    .backup-ok-timestamp-missing { 
+        background-color: var(--info-container); 
+        color: var(--info-color); 
+    }
+    
+    /* Progress Bar */
+    .progress-container {
+        margin: var(--spacing-md) 0;
+    }
+    
+    .progress-bar {
+        width: 100%;
+        height: 8px;
+        background-color: var(--surface-variant);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--primary-color), var(--primary-hover-color));
+        border-radius: 4px;
+        transition: width 0.3s ease;
+    }
+    
+    .progress-text {
+        font-size: var(--font-size-sm);
+        color: var(--on-surface-variant);
+        text-align: center;
+    }
+    
+    /* Empty State */
+    .no-items {
+        text-align: center;
+        color: var(--on-surface-variant);
+        font-style: italic;
+        padding: var(--spacing-xl);
+    }
+    
+    /* Loading State */
+    .loading {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: var(--spacing-2xl);
+    }
+    
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid var(--surface-variant);
+        border-top: 4px solid var(--primary-color);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    /* Touch Optimizations */
+    @media (hover: none) and (pointer: coarse) {
+        .story-card:hover {
+            transform: none;
+            box-shadow: var(--shadow-1);
+        }
+        
+        .view-details-btn {
+            min-height: 48px;
+            padding: var(--spacing-md) var(--spacing-lg);
+        }
+        
+        .modal-close-btn {
+            width: 48px;
+            height: 48px;
+        }
+    }
+    
+    /* Print Styles */
+    @media print {
+        .search-sort-filter,
+        .view-details-btn,
+        .modal-close-btn {
+            display: none;
+        }
+        
+        .story-card {
+            break-inside: avoid;
+            box-shadow: none;
+            border: 1px solid #ccc;
+        }
+        
+        .modal {
+            position: static;
+            background: none;
+        }
+        
+        .modal-content {
+            box-shadow: none;
+            border: 1px solid #ccc;
+        }
     }
     '''
 
@@ -336,11 +867,26 @@ def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#6750a4">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Webnovel Archive">
+    <meta name="description" content="Webnovel Archive Report - View your archived webnovels">
+    <meta name="format-detection" content="telephone=no">
     <title>{html.escape(title_text)}</title>
+    
+    <!-- Preload critical resources -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+    
+    <!-- Web App Manifest -->
+    <link rel="manifest" href="manifest.json">
+    
     <style>
         {css_styles}
     </style>
@@ -350,7 +896,7 @@ def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
 
     <div id="storyDetailModal" class="modal">
         <div class="modal-content">
-            <span class="modal-close-btn">&times;</span>
+            <button class="modal-close-btn" aria-label="Close modal">&times;</button>
             <div id="modalBodyContent">
                 <!-- Story details will be injected here by JavaScript -->
             </div>
@@ -405,15 +951,23 @@ def generate_story_card_html(story_data, format_timestamp_func):
             status = chapter.get('status', 'active')
             downloaded = chapter.get('downloaded', False)
 
-            status_marker = ""
-            if status == 'archived':
-                status_marker = " [Archived]"
+            # Determine status class and icon
+            status_class = "archived" if status == 'archived' else ("downloaded" if downloaded else "not-downloaded")
+            status_icon = "📚" if status == 'archived' else ("✅" if downloaded else "⏳")
+            status_text = "Archived" if status == 'archived' else ("Downloaded" if downloaded else "Not Downloaded")
 
-            download_status_display = " (Downloaded)" if downloaded else " (Not Downloaded)"
+            chapter_content = f'<span class="chapter-title">{title}</span>'
             if url and url != '#':
-                chapter_items.append(f'<li><a href="{url}" target="_blank">{title}</a>{status_marker}{download_status_display}</li>')
-            else:
-                chapter_items.append(f'<li>{title}{status_marker}{download_status_display}</li>')
+                chapter_content = f'<a href="{url}" target="_blank" rel="noopener">{title}</a>'
+
+            chapter_items.append(f'''
+                <li>
+                    {chapter_content}
+                    <span class="chapter-status {status_class}">
+                        {status_icon} {status_text}
+                    </span>
+                </li>
+            ''')
 
         if chapter_items:
             chapters_html = f'''
@@ -425,42 +979,75 @@ def generate_story_card_html(story_data, format_timestamp_func):
     else:
         chapters_html = '<p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>'
 
+    # Calculate progress percentage for progress bar
+    progress_percentage = story_data.get('progress_percentage', 0)
+    
     card_html = f'''
     <div class="story-card" data-title="{data_title}" data-author="{data_author}" data-status="{data_status}" data-last-updated="{data_last_updated}" data-progress="{data_progress}">
         <div class="story-card-summary">
             <div class="story-cover">
-                <img src="{cover_image_url}" alt="Cover for {title}">
+                <img src="{cover_image_url}" alt="Cover for {title}" loading="lazy">
             </div>
             <div class="story-summary-info">
-                <h2><a href="{story_url}" target="_blank">{title}</a></h2>
+                <h2><a href="{story_url}" target="_blank" rel="noopener">{title}</a></h2>
                 <p><strong>Author:</strong> {author}</p>
                 <p><strong>Story ID:</strong> {story_id_display}</p>
-                <p><strong>Progress:</strong> {progress_text}</p>
-                <button class="view-details-btn" data-story-id="{story_id_for_modal}">View Details</button>
+                
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {progress_percentage}%"></div>
+                    </div>
+                    <div class="progress-text">{progress_text}</div>
+                </div>
+                
+                <div class="story-meta">
+                    <div class="story-meta-item">
+                        <span class="badge status-{status_class}">{status_display_text}</span>
+                    </div>
+                    <div class="story-meta-item">
+                        <span>📅 {last_updated}</span>
+                    </div>
+                </div>
+                
+                <button class="view-details-btn" data-story-id="{story_id_for_modal}">
+                    <span>📖</span>
+                    View Details
+                </button>
             </div>
         </div>
         <div class="story-card-modal-content" style="display: none;">
-            <p class="section-title">Synopsis:</p>
+            <div class="modal-header">
+                <h1>{title}</h1>
+                <p class="modal-subtitle">by {author}</p>
+            </div>
+            
+            <p class="section-title">📝 Synopsis</p>
             <div class="synopsis" onclick="toggleSynopsis(this)">{synopsis}</div>
             <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
 
-            <p class="section-title">Download Progress:</p>
-            <p>{progress_text}</p>
+            <p class="section-title">📊 Download Progress</p>
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {progress_percentage}%"></div>
+                </div>
+                <div class="progress-text">{progress_text}</div>
+            </div>
             <p><strong>Story Status:</strong> <span class="badge status-{status_class}">{status_display_text}</span></p>
 
             {chapters_html}
 
-            <p class="section-title">Local EPUBs (Generated: {epub_gen_ts}):</p>
+            <p class="section-title">📚 Local EPUBs</p>
+            <p><em>Generated: {epub_gen_ts}</em></p>
             {epub_list_html}
 
-            <p class="section-title">Cloud Backup:</p>
+            <p class="section-title">☁️ Cloud Backup</p>
             <p><strong>Status:</strong> <span class="badge backup-{backup_summary_class}">{backup_summary_display_text}</span>
-               (Service: {backup_service})
+               <br><em>Service: {backup_service}</em>
             </p>
-            <p>Last Successful Backup: {backup_last_success_ts}</p>
+            <p><strong>Last Successful Backup:</strong> {backup_last_success_ts}</p>
             {generate_backup_files_html(backup_files_detail_list, format_timestamp)}
 
-            <p class="section-title">Last Local Update:</p>
+            <p class="section-title">🕒 Last Local Update</p>
             <p>{last_updated}</p>
         </div>
     </div>
@@ -689,18 +1276,26 @@ def main():
     css_styles = get_embedded_css()
     header_controls = """
     <div class="search-sort-filter">
-        <input type="text" id="searchInput" onkeyup="filterStories()" placeholder="Search by title or author..." aria-label="Search stories">
-        <select id="sortSelect" onchange="sortStories()" aria-label="Sort stories by">
-            <option value="title">Sort by Title (A-Z)</option>
-            <option value="last_updated_desc">Sort by Last Updated (Newest First)</option>
-            <option value="last_updated_asc">Sort by Last Updated (Oldest First)</option>
-            <option value="progress_desc">Sort by Progress (Highest First)</option>
+        <input type="text" id="searchInput" placeholder="Search by title, author, or status..." aria-label="Search stories">
+        <select id="sortSelect" aria-label="Sort stories by">
+            <option value="title">📖 Title (A-Z)</option>
+            <option value="author">✍️ Author (A-Z)</option>
+            <option value="last_updated_desc">🕒 Last Updated (Newest)</option>
+            <option value="last_updated_asc">🕒 Last Updated (Oldest)</option>
+            <option value="progress_desc">📊 Progress (Highest)</option>
+            <option value="progress_asc">📊 Progress (Lowest)</option>
         </select>
     </div>
     """
 
+    # Get current timestamp for the report
+    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
     main_body_content = f'''<div class="container">
-        <h1 class="report-title">Webnovel Archive Report</h1>
+        <div class="report-header">
+            <h1 class="report-title">Webnovel Archive Report</h1>
+            <p class="report-subtitle">Generated on {current_time} • {len(processed_stories)} stories archived</p>
+        </div>
         {header_controls}
         <div id="storyListContainer">{story_cards_html}</div>
     </div>'''

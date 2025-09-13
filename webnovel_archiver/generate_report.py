@@ -933,7 +933,13 @@ def generate_story_card_html(story_data, format_timestamp_func):
     data_title = html.escape(story_data.get('title') or '')
     data_author = html.escape(story_data.get('author') or '')
     data_status = html.escape(story_data.get('status') or '')
-    data_last_updated = html.escape(story_data.get('last_updated_timestamp') or '')
+    data_last_updated = html.escape(
+        story_data.get('last_download_timestamp') or
+        story_data.get('last_updated_timestamp') or
+        story_data.get('last_archived_timestamp') or
+        story_data.get('epub_generation_timestamp_raw') or
+        ''
+    )
     data_progress = html.escape(str(story_data.get('progress_percentage', 0)))
 
     status_class = sanitize_for_css_class(story_data.get('status'))
@@ -1068,7 +1074,7 @@ def process_story_for_report(progress_data, workspace_root):
 
     if chapters: # If 'chapters' list exists and is not empty
         for chapter in chapters:
-            is_downloaded = chapter.get('content_file') is not None # Assuming content_file means downloaded
+            is_downloaded = chapter.get('local_processed_filename') is not None # Assuming local_processed_filename means downloaded
             if is_downloaded:
                 downloaded_chapters_count +=1
 
@@ -1156,8 +1162,41 @@ def process_story_for_report(progress_data, workspace_root):
     last_updated_ts_raw = progress_data.get('last_updated_timestamp')
     formatted_last_updated_ts = format_timestamp(last_updated_ts_raw)
 
+    # Calculate last download timestamp (most recent chapter download)
+    last_download_ts_raw = None
+    if chapters:
+        # Find the maximum download_timestamp among downloaded chapters
+        download_timestamps = []
+        for chapter in chapters:
+            if chapter.get('local_processed_filename') and chapter.get('download_timestamp'):
+                download_timestamps.append(chapter.get('download_timestamp'))
+        if download_timestamps:
+            last_download_ts_raw = max(download_timestamps)
+    formatted_last_download_ts = format_timestamp(last_download_ts_raw)
+
     # Chapters for detailed listing (already processed)
     # processed_chapters_for_report is defined above
+
+    # Calculate last download timestamp (most recent chapter download)
+    last_download_ts_raw = None
+    if chapters:
+        # Find the maximum download_timestamp among downloaded chapters
+        download_timestamps = []
+        for chapter in chapters:
+            if chapter.get('local_processed_filename') and chapter.get('download_timestamp'):
+                download_timestamps.append(chapter.get('download_timestamp'))
+        if download_timestamps:
+            last_download_ts_raw = max(download_timestamps)
+    else:
+        # Fallback for old format using 'downloaded_chapters'
+        download_timestamps = []
+        for chapter in progress_data.get('downloaded_chapters', []):
+            if chapter.get('download_timestamp'):
+                download_timestamps.append(chapter.get('download_timestamp'))
+        if download_timestamps:
+            last_download_ts_raw = max(download_timestamps)
+
+    formatted_last_download_ts = format_timestamp(last_download_ts_raw)
 
     # Other Fields
     cover_image_url = progress_data.get('cover_image_url')
@@ -1184,6 +1223,8 @@ def process_story_for_report(progress_data, workspace_root):
         'story_cloud_folder_id': story_cloud_folder_id,
         'backup_files_status': backup_files_status,
         'formatted_last_updated_ts': formatted_last_updated_ts,
+        'last_download_timestamp': last_download_ts_raw,
+        'formatted_last_download_ts': formatted_last_download_ts,
         'chapters_for_report': processed_chapters_for_report, # Add this line
         'active_chapters_count': active_chapters_count, # Add this line
         'archived_chapters_count': archived_chapters_count, # Add this line
@@ -1280,8 +1321,8 @@ def main():
         <select id="sortSelect" aria-label="Sort stories by">
             <option value="title">📖 Title (A-Z)</option>
             <option value="author">✍️ Author (A-Z)</option>
-            <option value="last_updated_desc">🕒 Last Updated (Newest)</option>
-            <option value="last_updated_asc">🕒 Last Updated (Oldest)</option>
+            <option value="last_updated_desc" selected>🕒 Last Download (Newest)</option>
+            <option value="last_updated_asc">🕒 Last Download (Oldest)</option>
             <option value="progress_desc">📊 Progress (Highest)</option>
             <option value="progress_asc">📊 Progress (Lowest)</option>
         </select>

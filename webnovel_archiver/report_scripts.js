@@ -52,11 +52,41 @@ function updateDisplayedCards() {
             case "last_updated_desc":
                 valA = a.dataset.lastUpdated || "";
                 valB = b.dataset.lastUpdated || "";
-                return valB.localeCompare(valA);
+                if (!valA && !valB) {
+                    // Secondary sort by title when dates are equal
+                    return (a.dataset.title || "").localeCompare(
+                        b.dataset.title || ""
+                    );
+                }
+                if (!valA) return 1;
+                if (!valB) return -1;
+                const dateDiff = new Date(valB) - new Date(valA);
+                if (dateDiff === 0) {
+                    // Secondary sort by title when dates are equal
+                    return (a.dataset.title || "").localeCompare(
+                        b.dataset.title || ""
+                    );
+                }
+                return dateDiff;
             case "last_updated_asc":
                 valA = a.dataset.lastUpdated || "";
                 valB = b.dataset.lastUpdated || "";
-                return valA.localeCompare(valB);
+                if (!valA && !valB) {
+                    // Secondary sort by title when dates are equal
+                    return (a.dataset.title || "").localeCompare(
+                        b.dataset.title || ""
+                    );
+                }
+                if (!valA) return 1;
+                if (!valB) return -1;
+                const dateDiffAsc = new Date(valA) - new Date(valB);
+                if (dateDiffAsc === 0) {
+                    // Secondary sort by title when dates are equal
+                    return (a.dataset.title || "").localeCompare(
+                        b.dataset.title || ""
+                    );
+                }
+                return dateDiffAsc;
             case "progress_desc":
                 valA = parseInt(a.dataset.progress || 0);
                 valB = parseInt(b.dataset.progress || 0);

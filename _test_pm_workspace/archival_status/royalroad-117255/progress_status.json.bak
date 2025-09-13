@@ -1,0 +1,38 @@
+{
+  "version": "1.1",
+  "story_id": "royalroad-117255",
+  "story_url": "https://www.royalroad.com/fiction/117255/rend-a-tale-of-something",
+  "original_title": "REND",
+  "original_author": "Temple",
+  "cover_image_url": null,
+  "synopsis": null,
+  "tags": [],
+  "story_id_from_source": null,
+  "estimated_total_chapters_source": null,
+  "last_downloaded_chapter_url": null,
+  "next_chapter_to_download_url": null,
+  "downloaded_chapters": [],
+  "last_epub_processing": {
+    "timestamp": null,
+    "chapters_included_in_last_volume": null,
+    "generated_epub_files": [
+      {
+        "name": "REND_Vol_1.epub",
+        "path": "/app/_test_pm_workspace/ebooks/royalroad-117255/REND_Vol_1.epub"
+      }
+    ]
+  },
+  "sentence_removal_config_used": null,
+  "cloud_backup_status": {
+    "last_backup_attempt_timestamp": null,
+    "last_successful_backup_timestamp": null,
+    "service": null,
+    "base_cloud_folder_name": null,
+    "story_cloud_folder_name": null,
+    "cloud_base_folder_id": null,
+    "story_cloud_folder_id": null,
+    "backed_up_files": []
+  },
+  "last_updated_timestamp": "2025-09-13T04:00:01.494221+00:00",
+  "last_archived_timestamp": null
+}

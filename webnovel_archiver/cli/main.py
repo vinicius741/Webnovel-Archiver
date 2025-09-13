@@ -1,6 +1,6 @@
 import click
 from typing import Optional
-from webnovel_archiver.cli.handlers import archive_story_handler, generate_report_handler, handle_restore_from_epubs
+from webnovel_archiver.cli.handlers import archive_story_handler, generate_report_handler, handle_restore_from_epubs, cloud_backup_handler, migration_handler
 from webnovel_archiver.generate_report import main as generate_report_main
 from webnovel_archiver.cli.migration import trigger_migration_if_needed
 
@@ -81,9 +81,6 @@ def cloud_backup(
     # click.echo(f"Credentials file: {credentials_file}")
     # click.echo(f"Token file: {token_file}")
 
-    # Dynamically import the handler to avoid circular imports if handlers grow complex
-    from webnovel_archiver.cli.handlers import cloud_backup_handler
-
     cloud_backup_handler(
         story_id=story_id,
         cloud_service_name=cloud_service,
@@ -108,10 +105,6 @@ def migrate(story_id: Optional[str], migration_type: str):
     Otherwise, all relevant story archives will be scanned.
     The --type option specifies the migration logic to apply.
     """
-    # Dynamically import the handler to avoid potential circular imports
-    # and to keep imports minimal at the top level if handlers.py grows.
-    from webnovel_archiver.cli.handlers import migration_handler # Assuming this will be the handler's name
-
     migration_handler(
         story_id=story_id,
         migration_type=migration_type

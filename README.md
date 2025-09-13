@@ -63,18 +63,24 @@ webnovel-archiver archive-story "https://www.royalroad.com/fiction/xxxxx/some-st
 
 **Key Options for `archive-story`:**
 
-*   `--epub-contents [all|active-only]`
+*   `--epub-contents [all|active-only]` (Default: `all`)
     *   Determines which chapters are included in the generated EPUB file(s).
     *   `all`: Includes all chapters that have been downloaded, regardless of their current status (active or archived). This is useful if you want a complete EPUB of everything you've ever captured for the story.
-    *   `active-only` (Default): Includes only chapters currently marked as 'active'. This means chapters that were once downloaded but have since been marked 'archived' (e.g., because they were removed from the source) will not be included. This is typically what you want for ongoing reading, as it reflects the current state of the story on the source.
-    *   **Example (archive and create EPUB with active chapters only):**
-        ```bash
-        webnovel-archiver archive-story "STORY_URL" --epub-contents active-only
-        ```
-    *   **Example (archive and create EPUB with all ever-downloaded chapters):**
-        ```bash
-        webnovel-archiver archive-story "STORY_URL" --epub-contents all
-        ```
+    *   `active-only`: Includes only chapters currently marked as 'active'. This means chapters that were once downloaded but have since been marked 'archived' (e.g., because they were removed from the source) will not be included. This is typically what you want for ongoing reading, as it reflects the current state of the story on the source.
+*   `--output-dir PATH`
+    *   Specifies a directory to save the archive, overriding the default workspace setting.
+*   `--ebook-title-override TEXT`
+    *   Overrides the title of the generated EPUB file(s).
+*   `--chapters-per-volume INTEGER`
+    *   Splits the EPUB into multiple volumes, each containing the specified number of chapters. If not set, a single EPUB file will be created for the entire story.
+*   `--force-reprocessing`
+    *   Forces the tool to re-process already downloaded chapter content.
+*   `--sentence-removal-file PATH`
+    *   Specifies a path to a custom JSON file with sentence removal rules.
+*   `--no-sentence-removal`
+    *   Disables the sentence removal feature, even if a default or custom rule file is available.
+*   `--keep-temp-files`
+    *   Prevents the deletion of temporary files (like raw HTML and processed chapter content) after the archiving process is complete.
 
 See `webnovel-archiver archive-story --help` for all available options.
 
@@ -134,6 +140,29 @@ To back up all stories:
 webnovel-archiver cloud-backup
 ```
 
+### Migrating an Existing Archive
+
+The `migrate` command helps update existing story archives to new formats or fix identifiers without re-downloading content. This is useful for handling site-specific changes, like updates to URL formats.
+
+```bash
+webnovel-archiver migrate [STORY_ID] --type <MIGRATION_TYPE>
+```
+
+**Arguments:**
+
+*   `[STORY_ID]` (Optional): The specific ID of the story to migrate. If omitted, the tool will scan all archives and apply the migration where applicable.
+
+**Options:**
+
+*   `--type [royalroad-legacy-id]` (Required): Specifies the migration to perform.
+    *   `royalroad-legacy-id`: This migration is for Royal Road stories that were archived using a numeric fiction ID in their URL. It updates the internal story identifier to the new slug-based format used by the site.
+
+**Example:**
+
+To apply the Royal Road legacy ID migration to all relevant stories:
+```bash
+webnovel-archiver migrate --type royalroad-legacy-id
+```
 
 ### Generating an Archive Report
 
@@ -153,6 +182,15 @@ webnovel-archiver generate-report
 *   **Functionality:**
     *   The report includes features like searching by title/author, sorting, and filtering by status directly within the HTML page using JavaScript.
 
+### Restoring from EPUBs
+
+The `restore-from-epubs` command provides a way to rebuild parts of your archive's metadata from existing EPUB files. This is particularly useful in recovery scenarios, for example, if your `progress_status.json` file was deleted but you still have the generated EPUBs.
+
+```bash
+webnovel-archiver restore-from-epubs
+```
+
+This command will scan the `ebooks` directory, and for any story, if it finds EPUBs but no corresponding `progress_status.json` file, it will create a new progress file and populate it with the chapter information it can extract from the EPUB's contents.
 
 ## Configuration
 
@@ -176,6 +214,7 @@ default_sentence_removal_file = workspace/config/default_sentence_removal.json
     *   Defines the primary directory where the application stores archived content, eBooks, and status files.
     *   If the path in `settings.ini` is relative, it's considered relative to the project root.
     *   Default: `workspace/` (a directory named `workspace` in the project root).
+    *   **Note:** You can override this setting by setting the `WNA_WORKSPACE_ROOT` environment variable. If this environment variable is set, its value will be used as the workspace path, ignoring the value in `settings.ini`.
 
 *   **`default_sentence_removal_file`**: (Under `[SentenceRemoval]` section)
     *   Specifies the path to a JSON file containing patterns for sentences to be removed during content processing.

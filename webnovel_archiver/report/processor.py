@@ -105,18 +105,6 @@ def process_story_for_report(progress_data, workspace_root):
     last_updated_ts_raw = progress_data.get('last_updated_timestamp')
     formatted_last_updated_ts = format_timestamp(last_updated_ts_raw)
 
-    # Calculate last download timestamp (most recent chapter download)
-    last_download_ts_raw = None
-    if chapters:
-        # Find the maximum download_timestamp among downloaded chapters
-        download_timestamps = []
-        for chapter in chapters:
-            if chapter.get('local_processed_filename') and chapter.get('download_timestamp'):
-                download_timestamps.append(chapter.get('download_timestamp'))
-        if download_timestamps:
-            last_download_ts_raw = max(download_timestamps)
-    formatted_last_download_ts = format_timestamp(last_download_ts_raw)
-
     # Chapters for detailed listing (already processed)
     # processed_chapters_for_report is defined above
 

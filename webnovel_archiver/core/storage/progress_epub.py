@@ -11,11 +11,6 @@ def add_epub_file_to_progress(progress_data: Dict[str, Any], file_name: str, fil
     pm = PathManager(workspace_root, story_id)
     ebook_dir = pm.get_ebooks_story_dir()
 
-    if not os.path.isabs(file_path):
-        logger.warning(f"EPUB file path '{file_path}' for '{file_name}' was not absolute. Converting based on ebook_dir: {ebook_dir}")
-        # PathManager's get_epub_filepath would be ideal if we always construct from filename,
-        # but here file_path might already be a relative path we want to make absolute.
-        file_path = os.path.join(ebook_dir, os.path.basename(file_path)) # Use basename to ensure it's just the file in the target dir
 
     if "last_epub_processing" not in progress_data or progress_data["last_epub_processing"] is None:
         progress_data["last_epub_processing"] = {"timestamp": None, "chapters_included_in_last_volume": None, "generated_epub_files": []}

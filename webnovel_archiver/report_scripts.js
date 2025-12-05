@@ -143,36 +143,47 @@ function openModalWithStoryData(buttonElement) {
     );
     if (!modalContentSource) return;
 
-    // Set modal content
+    // 1. Update Header
+    const headerData = modalContentSource.querySelector(".hidden-header-data");
+    if (headerData) {
+        const titleEl = document.getElementById("modalTitle");
+        const authorEl = document.getElementById("modalSubtitle");
+        if (titleEl) titleEl.textContent = headerData.dataset.title || "Untitled";
+        if (authorEl) authorEl.textContent = `by ${headerData.dataset.author || "Unknown"}`;
+    }
+
+    // 2. Set modal content
+    // We clone the nodes to avoid moving them, or just innerHTML. 
+    // InnerHTML is fine but we want to exclude the hidden header data if possible, 
+    // though CSS display:none handles it visually. 
     modalBodyContent.innerHTML = modalContentSource.innerHTML;
 
     // Show modal with animation
+    modal.classList.add("active");
     modal.style.display = "block";
-    modal.style.opacity = "0";
-
+    
+    // Animate content scale
     setTimeout(() => {
-        modal.style.opacity = "1";
-        modal.querySelector(".modal-content").style.transform = "scale(1)";
+        // Class based animation is handled by CSS .modal.active
     }, 10);
 
     // Prevent body scroll
     document.body.style.overflow = "hidden";
 
     // Focus management for accessibility
-    modalCloseBtn.focus();
+    if(modalCloseBtn) modalCloseBtn.focus();
 }
 
 // Close modal
 function closeModal() {
     if (!modal) return;
 
-    modal.style.opacity = "0";
-    modal.querySelector(".modal-content").style.transform = "scale(0.95)";
+    modal.classList.remove("active");
 
     setTimeout(() => {
         modal.style.display = "none";
         document.body.style.overflow = "";
-        modalBodyContent.innerHTML = "";
+        if (modalBodyContent) modalBodyContent.innerHTML = "";
     }, 300);
 }
 

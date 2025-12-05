@@ -3,14 +3,14 @@ from .utils import sanitize_for_css_class, format_timestamp
 
 def generate_epub_list_html(epub_files, story_id_sanitized):
     if not epub_files:
-        return "<p class=\"no-items\">No EPUB files found.</p>"
+        return "<p class=\"text-content\" style=\"font-style: italic;\">No EPUB files found.</p>"
 
     EPUB_DISPLAY_THRESHOLD = 3
     total_epubs = len(epub_files)
     output_html = "<ul class=\"file-list\">"
 
     for i, file_data in enumerate(epub_files):
-        item_html = f"<li><a href=\"file:///{html.escape(file_data['path'])}\" title=\"{html.escape(file_data['path'])}\">{html.escape(file_data['name'])}</a></li>"
+        item_html = f"<li><span>📄 {html.escape(file_data['name'])}</span> <a href=\"file:///{html.escape(file_data['path'])}\" title=\"{html.escape(file_data['path'])}\" class=\"btn-primary\" style=\"font-size: 0.8rem; padding: 4px 10px;\">Open</a></li>"
         if i < EPUB_DISPLAY_THRESHOLD:
             output_html += item_html
         else:
@@ -22,26 +22,32 @@ def generate_epub_list_html(epub_files, story_id_sanitized):
 
     if total_epubs > EPUB_DISPLAY_THRESHOLD:
         if total_epubs - 1 < EPUB_DISPLAY_THRESHOLD : # only one hidden item, close first ul
-             output_html += "</ul>" # close the main list if hidden part was not created
-        # Add the button/link to toggle visibility
+             output_html += "</ul>"
+        
         remaining_count = total_epubs - EPUB_DISPLAY_THRESHOLD
-        button_text = f"Show all {total_epubs} EPUBs" # Initial text shows total
-        output_html += f"<button type=\"button\" class=\"toggle-epubs-btn\" onclick=\"toggleExtraEpubs('{story_id_sanitized}', this, {total_epubs}, {EPUB_DISPLAY_THRESHOLD})\">{button_text}</button>"
+        button_text = f"Show all {total_epubs} EPUBs"
+        output_html += f"<button type=\"button\" class=\"btn-primary\" style=\"margin-top: 10px; background: transparent; border: 1px solid var(--glass-border); width: 100%;\" onclick=\"toggleExtraEpubs('{story_id_sanitized}', this, {total_epubs}, {EPUB_DISPLAY_THRESHOLD})\">{button_text}</button>"
     else:
-        output_html += "</ul>" # Close the main list if no hidden part
+        output_html += "</ul>"
 
     return output_html
 
 def generate_backup_files_html(backup_files_list, format_timestamp_func):
     if not backup_files_list:
-        return "<p class=\"no-items\">No backup file details.</p>"
+        return "<p class=\"text-content\">No backup file details.</p>"
     items = ""
     for bf in backup_files_list:
         ts = format_timestamp_func(bf.get('last_backed_up_timestamp')) or 'N/A'
         local_path_display = html.escape(bf.get('local_path', 'N/A'))
         cloud_file_name_display = html.escape(bf.get('cloud_file_name', 'N/A'))
         status_display = html.escape(bf.get('status', 'N/A'))
-        items += f"<li>{local_path_display} ({cloud_file_name_display}): {status_display} - Last backed up: {ts}</li>"
+        
+        # Determine status color
+        status_color = "var(--status-info)"
+        if "success" in status_display.lower(): status_color = "var(--status-success)"
+        elif "fail" in status_display.lower(): status_color = "var(--status-error)"
+
+        items += f"<li><div style='display:flex; flex-direction:column; gap:4px;'><strong>{cloud_file_name_display}</strong><span style='font-size:0.8rem; color:var(--text-muted);'>{local_path_display}</span></div> <span style='color:{status_color}; font-size:0.8rem;'>{status_display} ({ts})</span></li>"
     return f"<ul class=\"file-list\">{items}</ul>"
 
 def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
@@ -51,24 +57,18 @@ def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#6750a4">
+    <meta name="theme-color" content="#0f0c29">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="Webnovel Archive">
-    <meta name="description" content="Webnovel Archive Report - View your archived webnovels">
-    <meta name="format-detection" content="telephone=no">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>{html.escape(title_text)}</title>
 
-    <!-- Preload critical resources -->
+    <!-- Google Fonts: Outfit for headings, Inter for body -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-
-    <!-- Web App Manifest -->
-    <link rel="manifest" href="manifest.json">
 
     <style>
         {css_styles}
@@ -79,9 +79,13 @@ def get_html_skeleton(title_text, css_styles, body_content, js_script=""):
 
     <div id="storyDetailModal" class="modal">
         <div class="modal-content">
-            <button class="modal-close-btn" aria-label="Close modal">&times;</button>
-            <div id="modalBodyContent">
-                <!-- Story details will be injected here by JavaScript -->
+            <div class="modal-header-bg">
+                <h1 id="modalTitle" style="margin:0; font-family:'Outfit';">Story Title</h1>
+                <p id="modalSubtitle" style="margin:4px 0 0; color:var(--text-muted);">by Author</p>
+                <button class="modal-close-btn" aria-label="Close modal">&times;</button>
+            </div>
+            <div id="modalBodyContent" class="modal-body">
+                <!-- Story details injected here -->
             </div>
         </div>
     </div>
@@ -97,7 +101,10 @@ def generate_story_card_html(story_data, format_timestamp_func):
     title = html.escape(story_data.get('title') or 'Untitled')
     author = html.escape(story_data.get('author') or 'Unknown Author')
     story_url = html.escape(story_data.get('story_url') or '#')
-    cover_image_url = html.escape(story_data.get('cover_image_url') or 'https://via.placeholder.com/150x220.png?text=No+Cover')
+    cover_image_url = html.escape(story_data.get('cover_image_url') or '')
+    if not cover_image_url:
+        cover_image_url = f"https://via.placeholder.com/150x220.png/302b63/ffffff?text={html.escape(title[:20])}"
+    
     synopsis = html.escape(story_data.get('synopsis') or 'No synopsis available.')
     progress_text = html.escape(story_data.get('progress_text') or 'N/A')
     status_display_text = html.escape(story_data.get('status') or 'N/A')
@@ -106,13 +113,14 @@ def generate_story_card_html(story_data, format_timestamp_func):
     epub_files_list = story_data.get('epub_files', [])
     story_id_for_epub_toggle = sanitize_for_css_class(story_data.get('story_id') or '')
     story_id_display = html.escape(story_data.get('story_id') or 'N/A')
-    backup_summary_display_text = html.escape(story_data.get('backup_status_summary') or 'N/A')
+    backup_summary = html.escape(story_data.get('backup_status_summary') or 'N/A')
     backup_service = html.escape(story_data.get('backup_service') or 'N/A')
-    backup_last_success_ts = html.escape(story_data.get('formatted_last_successful_backup_ts') or 'N/A')
+    backup_last_ts = html.escape(story_data.get('formatted_last_successful_backup_ts') or 'N/A')
     backup_files_detail_list = story_data.get('backup_files_status', [])
     last_updated = html.escape(story_data.get('formatted_last_updated_ts') or 'N/A')
     chapters_for_report = story_data.get('chapters_for_report', [])
 
+    # Data attributes for sorting/filtering
     data_title = html.escape(story_data.get('title') or '')
     data_author = html.escape(story_data.get('author') or '')
     data_status = html.escape(story_data.get('status') or '')
@@ -120,124 +128,117 @@ def generate_story_card_html(story_data, format_timestamp_func):
         story_data.get('last_download_timestamp') or
         story_data.get('last_updated_timestamp') or
         story_data.get('last_archived_timestamp') or
-        story_data.get('epub_generation_timestamp_raw') or
         ''
     )
     data_progress = html.escape(str(story_data.get('progress_percentage', 0)))
 
-    status_class = sanitize_for_css_class(story_data.get('status'))
-    backup_summary_class = sanitize_for_css_class(story_data.get('backup_status_summary'))
-
+    # Classes
+    status_class_suffix = sanitize_for_css_class(story_data.get('status')) # e.g. 'ongoing', 'complete'
+    
+    # Progress
+    progress_percentage = story_data.get('progress_percentage', 0)
+    
+    # EPUB List
     epub_list_html = generate_epub_list_html(epub_files_list, story_id_for_epub_toggle)
     story_id_for_modal = story_id_for_epub_toggle
 
+    # Chapters HTML
     chapters_html = ""
     if chapters_for_report:
         chapter_items = []
         for chapter in chapters_for_report:
-            title = html.escape(chapter.get('title', 'Untitled Chapter'))
-            url = html.escape(chapter.get('url', '#'))
-            status = chapter.get('status', 'active')
-            downloaded = chapter.get('downloaded', False)
+            c_title = html.escape(chapter.get('title', 'Untitled'))
+            c_url = html.escape(chapter.get('url', '#'))
+            c_downloaded = chapter.get('downloaded', False)
+            
+            badge_class = "downloaded" if c_downloaded else "missing"
+            badge_text = "Downloaded" if c_downloaded else "Not Downloaded"
 
-            # Determine status class and icon
-            status_class = "archived" if status == 'archived' else ("downloaded" if downloaded else "not-downloaded")
-            status_icon = "📚" if status == 'archived' else ("✅" if downloaded else "⏳")
-            status_text = "Archived" if status == 'archived' else ("Downloaded" if downloaded else "Not Downloaded")
-
-            chapter_content = f'<span class="chapter-title">{title}</span>'
-            if url and url != '#':
-                chapter_content = f'<a href="{url}" target="_blank" rel="noopener">{title}</a>'
-
+            link_html = f'<a href="{c_url}" target="_blank">{c_title}</a>' if c_url != '#' else c_title
+            
             chapter_items.append(f'''
                 <li>
-                    {chapter_content}
-                    <span class="chapter-status {status_class}">
-                        {status_icon} {status_text}
-                    </span>
+                    <span class="chapter-title">{link_html}</span>
+                    <span class="chapter-badge {badge_class}">{badge_text}</span>
                 </li>
             ''')
-
-        if chapter_items:
-            chapters_html = f'''
-            <p class="section-title">Chapters ({len(chapters_for_report)} total):</p>
-            <ul class="file-list chapter-list">{' '.join(chapter_items)}</ul>
-            '''
-        else:
-            chapters_html = '<p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>'
+        
+        chapters_html = f'''
+        <div class="modal-section-title">📂 Chapters ({len(chapters_for_report)})</div>
+        <ul class="file-list chapter-list" style="max-height: 300px; overflow-y: auto;">
+            {''.join(chapter_items)}
+        </ul>
+        '''
     else:
-        chapters_html = '<p class="section-title">Chapters:</p><p class="no-items">No chapter details available.</p>'
+        chapters_html = '<div class="modal-section-title">📂 Chapters</div><p class="text-content">No chapter details available.</p>'
 
-    # Calculate progress percentage for progress bar
-    progress_percentage = story_data.get('progress_percentage', 0)
-
+    # Card HTML
     card_html = f'''
-    <div class="story-card" data-title="{data_title}" data-author="{data_author}" data-status="{data_status}" data-last-updated="{data_last_updated}" data-progress="{data_progress}">
-        <div class="story-card-summary">
+    <div class="story-card" 
+         data-title="{data_title}" 
+         data-author="{data_author}" 
+         data-status="{data_status}" 
+         data-last-updated="{data_last_updated}" 
+         data-progress="{data_progress}">
+        
+        <div class="story-header">
             <div class="story-cover">
-                <img src="{cover_image_url}" alt="Cover for {title}" loading="lazy">
+                <img src="{cover_image_url}" alt="{title}" loading="lazy">
             </div>
-            <div class="story-summary-info">
-                <h2><a href="{story_url}" target="_blank" rel="noopener">{title}</a></h2>
-                <p><strong>Author:</strong> {author}</p>
-                <p><strong>Story ID:</strong> {story_id_display}</p>
-
-                <div class="progress-container">
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: {progress_percentage}%"></div>
-                    </div>
-                    <div class="progress-text">{progress_text}</div>
+            <div class="story-info">
+                <h2 class="story-title"><a href="{story_url}" target="_blank">{title}</a></h2>
+                <p class="story-author">by {author}</p>
+                <div class="badges">
+                    <span class="badge status-{status_class_suffix}">{status_display_text}</span>
+                    <span class="badge" style="background:rgba(255,255,255,0.05);">ID: {story_id_display}</span>
                 </div>
-
-                <div class="story-meta">
-                    <div class="story-meta-item">
-                        <span class="badge status-{status_class}">{status_display_text}</span>
-                    </div>
-                    <div class="story-meta-item">
-                        <span>📅 {last_updated}</span>
-                    </div>
-                </div>
-
-                <button class="view-details-btn" data-story-id="{story_id_for_modal}">
-                    <span>📖</span>
-                    View Details
-                </button>
             </div>
         </div>
+
+        <div class="progress-section">
+            <div class="progress-text">
+                <span>Progress</span>
+                <span>{progress_percentage}%</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-fill" style="width: {progress_percentage}%"></div>
+            </div>
+            <div class="progress-text" style="justify-content: flex-end;">
+                <span style="font-size: 0.7rem; opacity: 0.7;">Last: {last_updated}</span>
+            </div>
+        </div>
+
+        <button class="btn-primary view-details-btn" style="margin-top: 15px; justify-content: center; width: 100%;" data-story-id="{story_id_for_modal}">
+            View Details
+        </button>
+
+        <!-- Hidden Modal Content Data -->
         <div class="story-card-modal-content" style="display: none;">
-            <div class="modal-header">
-                <h1>{title}</h1>
-                <p class="modal-subtitle">by {author}</p>
-            </div>
+            <!-- Simple header data for JS to grab -->
+            <div class="hidden-header-data" data-title="{title}" data-author="{author}"></div>
 
-            <p class="section-title">📝 Synopsis</p>
+            <div class="modal-section-title">📝 Synopsis</div>
             <div class="synopsis" onclick="toggleSynopsis(this)">{synopsis}</div>
-            <span class="synopsis-toggle" onclick="toggleSynopsis(this.previousElementSibling)">(Read more)</span>
-
-            <p class="section-title">📊 Download Progress</p>
-            <div class="progress-container">
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: {progress_percentage}%"></div>
-                </div>
-                <div class="progress-text">{progress_text}</div>
+            
+            <div class="modal-section-title">📊 Progress</div>
+            <div class="text-content">
+                <p><strong>Status:</strong> <span class="badge status-{status_class_suffix}">{status_display_text}</span> ({progress_text})</p>
+                <p><strong>Last Updated:</strong> {last_updated}</p>
             </div>
-            <p><strong>Story Status:</strong> <span class="badge status-{status_class}">{status_display_text}</span></p>
 
             {chapters_html}
 
-            <p class="section-title">📚 Local EPUBs</p>
-            <p><em>Generated: {epub_gen_ts}</em></p>
+            <div class="modal-section-title">📚 Local EPUBs</div>
+            <div style="margin-bottom:8px; font-size:0.8rem; color:var(--text-muted);">Generated: {epub_gen_ts}</div>
             {epub_list_html}
 
-            <p class="section-title">☁️ Cloud Backup</p>
-            <p><strong>Status:</strong> <span class="badge backup-{backup_summary_class}">{backup_summary_display_text}</span>
-               <br><em>Service: {backup_service}</em>
-            </p>
-            <p><strong>Last Successful Backup:</strong> {backup_last_success_ts}</p>
+            <div class="modal-section-title">☁️ Cloud Backup</div>
+            <div class="text-content">
+                <p><strong>Service:</strong> {backup_service}</p>
+                <p><strong>Summary:</strong> {backup_summary}</p>
+                <p><strong>Last Success:</strong> {backup_last_ts}</p>
+            </div>
             {generate_backup_files_html(backup_files_detail_list, format_timestamp)}
-
-            <p class="section-title">🕒 Last Local Update</p>
-            <p>{last_updated}</p>
         </div>
     </div>
     '''

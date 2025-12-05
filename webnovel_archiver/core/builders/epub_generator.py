@@ -2,12 +2,12 @@ import ebooklib # type: ignore
 from ebooklib import epub
 import os
 import datetime
-import requests # Added for downloading cover image
-import shutil # Added for saving cover image
+import requests
+import shutil
 import imghdr
 from typing import Optional, List, Dict, Any
 from webnovel_archiver.utils.logger import get_logger
-from webnovel_archiver.core.path_manager import PathManager # Added PathManager
+from webnovel_archiver.core.path_manager import PathManager
 from webnovel_archiver.core.storage.progress_manager import add_epub_file_to_progress
 
 logger = get_logger(__name__)
@@ -15,24 +15,19 @@ logger = get_logger(__name__)
 class EPUBGenerator:
     def __init__(self, path_manager: PathManager):
         self.pm = path_manager
-        # self.workspace_root = workspace_root # Removed
-        # self.ebooks_dir_name = "ebooks" # Removed
-        # self.processed_content_dir_name = "processed_content" # Removed
-        # self.temp_cover_dir_name = "temp_cover_images" # Removed
 
-    def _download_cover_image(self, cover_url: str) -> Optional[str]: # story_id removed, available from self.pm
+    def _download_cover_image(self, cover_url: str) -> Optional[str]:
         """Downloads the cover image and returns the local path."""
         if not cover_url:
             return None
 
-        story_id = self.pm.get_story_id() # Get story_id from PathManager
+        story_id = self.pm.get_story_id()
 
         try:
             response = requests.get(cover_url, stream=True)
             response.raise_for_status()
 
             # Ensure the temp directory for covers exists
-            # temp_cover_path = os.path.join(self.workspace_root, self.ebooks_dir_name, story_id, self.temp_cover_dir_name) # Replaced
             temp_cover_path = self.pm.get_temp_cover_story_dir()
             os.makedirs(temp_cover_path, exist_ok=True)
 
@@ -61,48 +56,57 @@ class EPUBGenerator:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to download cover image for story {self.pm.get_story_id()} from {cover_url}: {e}")
             return None
-        except IOError as e: # file_path might not be defined if os.makedirs failed, though unlikely here
-            logger.error(f"Failed to save cover image for story {self.pm.get_story_id()} to {local_filename} in {temp_cover_path}: {e}") # Log temp_cover_path and local_filename
+        except IOError as e:
+            logger.error(f"Failed to save cover image for story {self.pm.get_story_id()} in {temp_cover_path}: {e}")
             return None
 
 
     def generate_epub(self, progress_data: Dict[Any, Any], chapters_per_volume: Optional[int] = None) -> Dict[Any, Any]:
-        # story_id is available via self.pm.get_story_id()
-        # workspace_root is available via self.pm.get_workspace_root()
         story_id = self.pm.get_story_id()
+        downloaded_chapters = progress_data.get("downloaded_chapters", [])
 
+        if not downloaded_chapters:
+            logger.warning(f"No chapters downloaded for story {story_id}. Cannot generate EPUB.")
+            return progress_data
+
+        active_chapters = [c for c in downloaded_chapters if c.get("status") != 'archived']
+        archived_chapters = [c for c in downloaded_chapters if c.get("status") == 'archived']
+
+        if active_chapters:
+            progress_data = self._process_epub_generation(progress_data, active_chapters, chapters_per_volume, is_archived_variant=False)
+
+        if archived_chapters:
+            progress_data = self._process_epub_generation(progress_data, archived_chapters, chapters_per_volume, is_archived_variant=True)
+
+        return progress_data
+
+    def _process_epub_generation(self, progress_data: Dict[Any, Any], chapters: List[Dict[Any, Any]], chapters_per_volume: Optional[int], is_archived_variant: bool = False) -> Dict[Any, Any]:
+        story_id = self.pm.get_story_id()
         story_title = progress_data.get("effective_title", "Unknown Title")
         author_name = progress_data.get("author", "Unknown Author")
         synopsis = progress_data.get("synopsis")
         cover_image_url = progress_data.get("cover_image_url")
 
-        downloaded_chapters = progress_data.get("downloaded_chapters", [])
+        if not chapters:
+            return progress_data
 
-        if not downloaded_chapters:
-            logger.warning(f"No chapters downloaded for story {story_id}. Cannot generate EPUB.")
-            return []
-
-        # ebooks_base_path = os.path.join(self.workspace_root, self.ebooks_dir_name, story_id) # Replaced
         ebooks_base_path = self.pm.get_ebooks_story_dir()
         os.makedirs(ebooks_base_path, exist_ok=True)
 
-        # processed_content_path = os.path.join(self.workspace_root, self.processed_content_dir_name, story_id) # Replaced
         processed_content_path = self.pm.get_processed_content_story_dir()
-
-        generated_epub_files = []
 
         # Sanitize story title for filename
         sanitized_story_title = "".join(c if c.isalnum() or c in [' ', '.', '_'] else '_' for c in story_title).replace(' ', '_')
 
-        num_chapters = len(downloaded_chapters)
+        num_chapters = len(chapters)
         if chapters_per_volume is None or chapters_per_volume <= 0 or chapters_per_volume >= num_chapters:
             # Single volume
-            volume_chapters_list = [downloaded_chapters]
+            volume_chapters_list = [chapters]
             volume_number_offset = 0 # for naming if there's only one volume
         else:
             # Multiple volumes
             volume_chapters_list = [
-                downloaded_chapters[i:i + chapters_per_volume]
+                chapters[i:i + chapters_per_volume]
                 for i in range(0, num_chapters, chapters_per_volume)
             ]
             volume_number_offset = 1
@@ -112,12 +116,19 @@ class EPUBGenerator:
             volume_number = i + volume_number_offset
             book = epub.EpubBook()
 
+            suffix = ""
+            if is_archived_variant:
+                suffix = "_Archived"
+
             volume_specific_title = story_title
+            if is_archived_variant:
+                 volume_specific_title = f"[Archived] {volume_specific_title}"
+
             if len(volume_chapters_list) > 1:
-                volume_specific_title = f"{story_title} Vol. {volume_number}"
-                book.set_identifier(f"{story_id}_vol_{volume_number}")
+                volume_specific_title = f"{volume_specific_title} Vol. {volume_number}"
+                book.set_identifier(f"{story_id}{suffix}_vol_{volume_number}")
             else:
-                book.set_identifier(story_id)
+                book.set_identifier(f"{story_id}{suffix}")
 
             book.set_title(volume_specific_title)
             book.set_language('en')
@@ -126,7 +137,7 @@ class EPUBGenerator:
             # Download and set cover image
             local_cover_path = None
             if cover_image_url:
-                local_cover_path = self._download_cover_image(cover_image_url) # story_id removed
+                local_cover_path = self._download_cover_image(cover_image_url)
                 if local_cover_path:
                     try:
                         with open(local_cover_path, 'rb') as f:
@@ -140,9 +151,6 @@ class EPUBGenerator:
                              mime_type = 'image/gif'
 
                         book.set_cover(os.path.basename(local_cover_path), cover_image_data, create_page=True)
-                        # No need to add to spine manually if create_page=True, it's handled by some readers.
-                        # However, for broader compatibility, it's better to explicitly add it.
-                        # The set_cover method in ebooklib does not automatically add to spine or toc.
                     except FileNotFoundError:
                         logger.error(f"Cover image file not found at {local_cover_path} for story {story_id} during EPUB generation.")
                     except Exception as e:
@@ -174,7 +182,6 @@ class EPUBGenerator:
                     logger.error(f"Missing 'local_processed_filename' for chapter {chapter_info.get('download_order')} in story {story_id}. Skipping.")
                     continue
 
-                # html_file_path = os.path.join(processed_content_path, local_filename) # Replaced
                 html_file_path = self.pm.get_processed_content_chapter_filepath(local_filename)
 
                 try:
@@ -213,46 +220,24 @@ class EPUBGenerator:
                 continue
 
             # Define Table of Contents for NCX
-            book.toc = tuple(toc) # NCX TOC should primarily list chapters and major sections like synopsis
+            book.toc = tuple(toc)
 
             # Add default NCX and Nav file
             book.add_item(epub.EpubNcx())
             book.add_item(epub.EpubNav())
 
-
-            # Define CSS style (optional)
-            # style = 'BODY {color: white;}'
-            # nav_css = epub.EpubItem(uid="style_nav", file_name="style/nav.css", media_type="text/css", content=style)
-            # book.add_item(nav_css)
-
-            # Set the book spine
-            # The spine determines the linear reading order.
-            # 'nav' should come first. If a cover page was generated by set_cover(create_page=True),
-            # it's often named 'cover.xhtml' and should be at the beginning of the spine or handled by reader.
-            # For explicit control, we can add it. ebooklib's set_cover with create_page=True adds an item
-            # book.guide also gets 'cover' entry pointing to the image.
-            # Let's ensure 'nav' is first, then our content items.
-            # If book.cover_page (an EpubHtml item created by set_cover) exists, add it to spine.
             spine_items = ['nav']
             if hasattr(book, 'cover_page') and book.cover_page:
-                 # ebooklib might add the cover_page to items automatically.
-                 # We don't need to add it to book.items again if set_cover did.
-                 # We just need to ensure it's in the spine if desired.
-                 # However, standard practice is that the cover is not part of the linear reading order (spine)
-                 # but is pointed to by metadata. Some readers might display it if it's first in spine.
-                 # For now, let's not add cover.xhtml to spine, as `set_cover` handles metadata.
-                 # The `create_page=True` makes an XHTML wrapper, which some readers use.
-                 pass # Cover is handled by metadata and `set_cover(create_page=True)`
+                 pass
 
             spine_items.extend(epub_items_for_book)
             book.spine = spine_items
 
             if len(volume_chapters_list) > 1:
-                epub_filename = f"{sanitized_story_title}_vol_{volume_number}.epub"
+                epub_filename = f"{sanitized_story_title}{suffix}_vol_{volume_number}.epub"
             else:
-                epub_filename = f"{sanitized_story_title}.epub"
+                epub_filename = f"{sanitized_story_title}{suffix}.epub"
 
-            # epub_filepath = os.path.join(ebooks_base_path, epub_filename) # Replaced
             epub_filepath = self.pm.get_epub_filepath(epub_filename)
 
             try:
